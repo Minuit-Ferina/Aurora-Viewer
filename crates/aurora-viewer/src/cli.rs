@@ -209,7 +209,43 @@ fn parse_fps_limit(value: &str) -> Option<u32> {
 /// The window title, ending with the build profile ("(Dev)", "(Release)",
 /// "(Debug)"): test windows of different builds can be told apart.
 pub fn window_title() -> String {
-    title_with(get().title.as_deref(), env!("AURORA_BUILD_PROFILE"), aurora_version::version())
+    let title = get().title.as_deref();
+    title_with(
+        aurora_i18n::language(),
+        title,
+        env!("AURORA_BUILD_PROFILE"),
+        aurora_version::version(),
+    )
+    .render(None)
+}
+
+pub(crate) fn window_title_parts(language: &str) -> TitleParts {
+    title_with(
+        language,
+        get().title.as_deref(),
+        env!("AURORA_BUILD_PROFILE"),
+        aurora_version::version(),
+    )
+}
+
+pub(crate) struct TitleParts {
+    base: String,
+    profile: Option<&'static str>,
+    account_separator: &'static str,
+}
+
+impl TitleParts {
+    pub(crate) fn render(&self, account: Option<&str>) -> String {
+        let mut base = self.base.clone();
+        if let Some(account) = account {
+            base.push_str(self.account_separator);
+            base.push_str(account);
+        }
+        match self.profile {
+            Some(profile) => format!("{base} ({profile})"),
+            None => base,
+        }
+    }
 }
 
 /// The viewer's identity on the Linux desktop: Wayland app_id, X11
@@ -235,24 +271,29 @@ pub fn with_desktop_id(attrs: winit::window::WindowAttributes) -> winit::window:
     attrs
 }
 
-fn title_with(title: Option<&str>, profile_dir: &str, version: &str) -> String {
+pub(crate) fn title_with(language: &str, title: Option<&str>, profile_dir: &str, version: &str) -> TitleParts {
     let base = match title {
-        Some(t) => aurora_i18n::tr!("cli-aurora-viewer-2", version = version.to_string(), t = t.to_string()),
-        None => aurora_i18n::tr!("cli-aurora-viewer", version = version.to_string()),
+        Some(t) => aurora_i18n::tr_in!(language, "cli-aurora-viewer-2", version = version, t = t),
+        None => aurora_i18n::tr_in!(language, "cli-aurora-viewer", version = version),
     };
-    match profile_label(profile_dir) {
-        Some(p) => format!("{base} ({p})"),
-        None => base,
+    TitleParts {
+        base,
+        profile: profile_label_in(language, profile_dir),
+        account_separator: aurora_i18n::tr_in!(language, "window-title-account-separator"),
     }
 }
 
 /// Label of a cargo profile from its target directory (`dev` builds into
 /// `debug`; `debugging` is aurora-tools' debug viewer).
 pub fn profile_label(dir: &str) -> Option<&'static str> {
+    profile_label_in(aurora_i18n::language(), dir)
+}
+
+fn profile_label_in(language: &str, dir: &str) -> Option<&'static str> {
     match dir {
         "release" => Some("Release"),
         "debug" => Some("Dev"),
-        "debugging" => Some(aurora_i18n::tr!("common-debug")),
+        "debugging" => Some(aurora_i18n::tr_in!(language, "common-debug")),
         "ci" => Some("CI"),
         _ => None,
     }
@@ -304,24 +345,25 @@ mod tests {
 
     #[test]
     fn title_ends_with_the_build_profile() {
+        let language = aurora_i18n::language();
         assert_eq!(
-            title_with(Some("Test ombres"), "debug", "0.2.0"),
+            title_with(language, Some("Test ombres"), "debug", "0.2.0").render(None),
             aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - Test ombres (Dev)").as_str()
         );
         assert_eq!(
-            title_with(None, "release", "0.2.0"),
+            title_with(language, None, "release", "0.2.0").render(None),
             aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Release)").as_str()
         );
         assert_eq!(
-            title_with(None, "debugging", "0.2.0"),
+            title_with(language, None, "debugging", "0.2.0").render(None),
             aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Debug)").as_str()
         );
         assert_eq!(
-            title_with(Some("X"), "unknown", "0.2.0"),
+            title_with(language, Some("X"), "unknown", "0.2.0").render(None),
             aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - X").as_str()
         );
         assert_eq!(
-            title_with(None, "debug", "0.2.0+7.gabcdef123"),
+            title_with(language, None, "debug", "0.2.0+7.gabcdef123").render(None),
             aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0+7.gabcdef123 (Dev)").as_str()
         );
     }
