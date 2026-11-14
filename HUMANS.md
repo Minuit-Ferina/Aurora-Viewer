@@ -64,9 +64,9 @@ a review or that left the queue.
 ## Forks without a merge queue
 
 GitHub's merge queue is available for repositories owned by organizations.
-On a personal fork, use a protected `main` with pull requests, resolved
-review conversations, squash merges and required checks against the latest
-`main`. Do not grant bypass actors, force pushes or branch deletion.
+On this fork, both `main` and `develop` are protected with pull requests,
+resolved review conversations and required checks against the latest target branch,
+with no bypass actors, force pushes or branch deletion.
 
 The CI workflows run the complete Windows test suite on fork pull
 requests, plus the complete Linux suite and macOS tests and Metal demo
@@ -76,7 +76,23 @@ existing skip. The required check names are `fmt, clippy (Windows)`,
 `clippy, tests, demo (macOS)`. A skipped or cancelled required test job is
 not a successful test run. The upstream repository keeps its merge queue.
 
-If `main` advances, update the PR branch and wait for its checks again.
+`main` follows Aurora with our small fork CI/tooling adjustments; `develop` is
+our usable version with our viewer changes. Use squash for tooling and feature
+PRs, and merge commits for syncs from upstream to `main` and `main` to `develop`.
+The fork allows both methods and does not require linear history: this
+preserves Aurora's ancestry across repeated syncs. A sync still goes
+through a PR and all its required checks, with no administrator bypass.
+
+Start contributions to Aurora from `upstream/main`, push their branches to
+the fork, and explicitly open the PR in Aurora. Never merge the fork's
+`main` or `develop` into a contribution branch: it contains our CI and workflow changes.
+For early use in our version, create a separate integration branch from
+`develop` and a PR to `develop`. Never merge `develop` into `main`. The
+[step-by-step fork workflow](docs/FORK_WORKFLOW.md) gives the commands for
+branch creation, syncs, clean contributions, reviews and cleanup.
+
+If the target branch advances, update a PR **into the fork** and wait for its
+checks again. An upstream PR follows Aurora's own update and merge-queue rules.
 The usual human validation still comes before a viewer-changing PR;
 documentation and CI changes do not need a viewer test.
 
@@ -99,6 +115,10 @@ hundreds of Rust crates. We credit all of them, precisely, every time:
   and tests fail when they fall behind the code. When in doubt, credit.
 
 ## GitHub in practice
+
+This section describes the official `Aurora-Viewer/Aurora-Viewer` repository.
+For this personal fork, use the protection and `main` / `develop` workflow
+described above; it runs full scoped tests on PRs without a merge queue.
 
 - **`main` is protected**, for everyone, admins included: nobody pushes to it
   directly; everything goes through a PR, then through the merge queue.
