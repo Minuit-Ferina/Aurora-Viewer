@@ -219,7 +219,7 @@ pub fn window_title() -> String {
     .render(None)
 }
 
-pub(crate) fn window_title_parts(language: &str) -> TitleParts {
+pub(crate) fn window_title_parts(language: &str) -> TitleParts<'_> {
     title_with(
         language,
         get().title.as_deref(),
@@ -228,22 +228,37 @@ pub(crate) fn window_title_parts(language: &str) -> TitleParts {
     )
 }
 
-pub(crate) struct TitleParts {
-    base: String,
+pub(crate) struct TitleParts<'a> {
+    language: &'a str,
+    version: &'a str,
+    custom: Option<&'a str>,
     profile: Option<&'static str>,
-    account_separator: &'static str,
 }
 
-impl TitleParts {
+impl TitleParts<'_> {
     pub(crate) fn render(&self, account: Option<&str>) -> String {
-        let mut base = self.base.clone();
-        if let Some(account) = account {
-            base.push_str(self.account_separator);
-            base.push_str(account);
-        }
-        match self.profile {
-            Some(profile) => format!("{base} ({profile})"),
-            None => base,
+        // In an authenticated title the profile describes the version, and
+        // the account is the last part of the base title.
+        let profiled_version;
+        let version = if let (Some(_), Some(profile)) = (account, self.profile) {
+            profiled_version = format!("{} ({profile})", self.version);
+            profiled_version.as_str()
+        } else {
+            self.version
+        };
+        let language = self.language;
+        let mut base = match self.custom {
+            Some(t) => aurora_i18n::tr_in!(language, "cli-aurora-viewer-2", version = version, t = t),
+            None => aurora_i18n::tr_in!(language, "cli-aurora-viewer", version = version),
+        };
+        match (account, self.profile) {
+            (Some(account), _) => {
+                base.push_str(aurora_i18n::tr_in!(language, "window-title-account-separator"));
+                base.push_str(account);
+                base
+            }
+            (None, Some(profile)) => format!("{base} ({profile})"),
+            (None, None) => base,
         }
     }
 }
@@ -271,15 +286,12 @@ pub fn with_desktop_id(attrs: winit::window::WindowAttributes) -> winit::window:
     attrs
 }
 
-pub(crate) fn title_with(language: &str, title: Option<&str>, profile_dir: &str, version: &str) -> TitleParts {
-    let base = match title {
-        Some(t) => aurora_i18n::tr_in!(language, "cli-aurora-viewer-2", version = version, t = t),
-        None => aurora_i18n::tr_in!(language, "cli-aurora-viewer", version = version),
-    };
+pub(crate) fn title_with<'a>(language: &'a str, custom: Option<&'a str>, profile_dir: &str, version: &'a str) -> TitleParts<'a> {
     TitleParts {
-        base,
+        language,
+        version,
+        custom,
         profile: profile_label_in(language, profile_dir),
-        account_separator: aurora_i18n::tr_in!(language, "window-title-account-separator"),
     }
 }
 

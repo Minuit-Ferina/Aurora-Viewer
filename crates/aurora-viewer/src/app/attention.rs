@@ -152,7 +152,7 @@ impl TitleInputs {
         title
     }
 
-    fn compose(self, base: &crate::cli::TitleParts, account: Option<&str>) -> String {
+    fn compose(self, base: &crate::cli::TitleParts<'_>, account: Option<&str>) -> String {
         if let Some(account) = account {
             let prefix = unread_prefix(self.unread);
             // Measure with the localized separator and all annotations, before
@@ -596,13 +596,13 @@ mod tests {
             let shown = title_inputs(language, 100, true, true).compose(&base, Some("Zoë 名"));
             assert_eq!(
                 shown,
-                format!("(99+) {viewer}1.2.3{separator}{tag}{separator}Zoë 名 ({debug}) — {pause} — {memory}")
+                format!("(99+) {viewer}1.2.3 ({debug}){separator}{tag}{separator}Zoë 名 — {pause} — {memory}")
             );
             for (profile, suffix) in [("ci", " (CI)"), ("release", " (Release)"), ("debug", " (Dev)"), ("other", "")] {
                 let base = crate::cli::title_with(language, None, profile, "1.2.3");
                 assert_eq!(
                     title_inputs(language, 0, false, false).compose(&base, Some("例")),
-                    format!("{viewer}1.2.3{separator}例{suffix}")
+                    format!("{viewer}1.2.3{suffix}{separator}例")
                 );
             }
         }
@@ -618,7 +618,7 @@ mod tests {
                 let composed = inputs.compose(&base, Some(&name));
                 assert_eq!(composed.chars().count(), MAX_TITLE);
                 assert!(composed.contains("[AUTOMATION - DO NOT TOUCH] - 名"));
-                assert!(composed.ends_with(&inputs.annotate("名… (Dev)".into())));
+                assert!(composed.ends_with(&inputs.annotate("名…".into())));
                 let tag = "é".repeat(MAX_TITLE);
                 let overlong = crate::cli::title_with("en", Some(&tag), "debug", "1.2.3");
                 assert_eq!(inputs.compose(&overlong, Some("Example")), inputs.compose(&overlong, None));

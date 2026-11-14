@@ -111,7 +111,8 @@ when driving the window automatically.
 
 - `AURORA_DEMO=1 AURORA_DEMO_LOGIN=connecting` stays generic while login is pending.
 - `AURORA_DEMO=1 AURORA_DEMO_EXIT=logout` shows the synthetic account
-  `Aurora Demo` before the build profile. At the automatic logout (frame
+  `Aurora Demo` after the custom title, with the build profile next to the
+  version. At the automatic logout (frame
   800), the title returns to its generic form.
 - `AURORA_DEMO=1 AURORA_DEMO_GPU_LOST=600 AURORA_GPU_RECOVERY=1` recreates
   the native window. Check that the account and test title appear on
