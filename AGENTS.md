@@ -181,6 +181,19 @@ gestures, wearables and object contents.
 
 ## 3. Working in parallel: one worktree per task
 
+### Forks without a merge queue
+
+The official repository uses a merge queue. Forks run the complete Windows
+suite, and the scoped Linux and macOS tests and demo, on pull requests
+instead. Their required checks must be strict: a PR must include the latest
+`origin/main` before it merges. When such a PR is behind, update its branch
+from `origin/main` and rerun the checks even without a merge conflict; this
+is the fork exception to section 11, point 1. Merge only after those checks
+pass, through the PR with squash, without an administrator bypass.
+`scripts/merge-pr.ps1` also waits for ordinary auto-merge on these forks.
+The human validation and review requirements remain the same.
+
+
 **Never work directly in the main repository.** Each task has its own git
 worktree, branch, `target` folder and logs.
 

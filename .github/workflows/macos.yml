@@ -4,8 +4,9 @@ name: macOS
 # of its own (Metal memory budget, the Cmd key…) that Windows and Linux
 # never build. Same two stages as the CI workflow: a pull request gets
 # clippy on macOS; the merge queue also runs the tests and one demo frame
-# on the runner's Apple GPU. That frame is the check that matters most: it
-# compiles every pipeline of the scene with Apple's Metal compiler, which
+# on the runner's Apple GPU. Fork pull requests run those checks themselves
+# because they may not have a merge queue. The frame compiles every pipeline
+# of the scene with Apple's Metal compiler, which
 # crashed on a shader that Vulkan accepted (object.wgsl, shade_material)
 # and can do so again after any shader change.
 #
@@ -180,7 +181,7 @@ jobs:
         with:
           key: ${{ steps.cache.outputs.key }}
       - name: Tests (rest)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.repository != 'Aurora-Viewer/Aurora-Viewer'
         # every failure of the run at once: the Apple GPU is reached here only
         run: |
           cargo test --profile ci --workspace --locked --no-fail-fast -- --skip ui::
@@ -193,7 +194,7 @@ jobs:
       # shows, and the frames must go on behind it (on macOS it froze the
       # main thread until a click, which no runner gives)
       - name: A demo frame on Metal
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.repository != 'Aurora-Viewer/Aurora-Viewer'
         timeout-minutes: 15
         env:
           AURORA_DEMO: '1'
@@ -220,7 +221,7 @@ jobs:
             exit 1
           fi
       - name: Demo image and log
-        if: always() && github.event_name != 'pull_request'
+        if: always() && (github.event_name != 'pull_request' || github.repository != 'Aurora-Viewer/Aurora-Viewer')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-demo
@@ -230,12 +231,12 @@ jobs:
           if-no-files-found: warn
 
   macos-interface:
-    # The queue and main only: no runner is taken on a pull request. A
-    # libtest filter and its `--skip` are exact complements, so every test
+    # The queue, main and fork pull requests. A libtest filter and its
+    # `--skip` are exact complements, so every test
     # runs in one job and only one.
     name: tests (macOS, interface)
     needs: [scope, mac-runner]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.scope.result == 'success' && needs.scope.outputs.needed == 'true' }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.repository != 'Aurora-Viewer/Aurora-Viewer') && needs.scope.result == 'success' && needs.scope.outputs.needed == 'true' }}
     runs-on: ${{ needs.mac-runner.outputs.interface && fromJSON(needs.mac-runner.outputs.interface) || 'macos-15' }}
     timeout-minutes: 60
     steps:
@@ -260,7 +261,7 @@ jobs:
     # The check that main requires (its name is the one of the single job
     # it replaced): green when the scope was decided and every job that had
     # to run passed (both are skipped when the change does not need macOS,
-    # the interface one on a pull request), red otherwise.
+    # the interface one on an upstream pull request), red otherwise.
     name: clippy, tests, demo (macOS)
     if: always()
     needs: [scope, macos, macos-interface]
@@ -272,12 +273,22 @@ jobs:
           NEEDED: ${{ needs.scope.outputs.needed }}
           REST: ${{ needs.macos.result }}
           INTERFACE: ${{ needs.macos-interface.result }}
+          FULL: ${{ github.event_name != 'pull_request' || github.repository != 'Aurora-Viewer/Aurora-Viewer' }}
         run: |
           echo "scope: $SCOPE (needed: $NEEDED), rest: $REST, interface: $INTERFACE"
           [ "$SCOPE" = success ] || exit 1
-          if [ "$NEEDED" != true ]; then
-            echo "macOS not needed by this change"
-            exit 0
-          fi
+          case "$NEEDED" in
+            false)
+              [ "$REST" = skipped ] || exit 1
+              [ "$INTERFACE" = skipped ] || exit 1
+              echo "macOS not needed by this change"
+              exit 0 ;;
+            true) ;;
+            *) exit 1 ;;
+          esac
           [ "$REST" = success ] || exit 1
-          case "$INTERFACE" in success|skipped) ;; *) exit 1 ;; esac
+          case "$INTERFACE" in
+            success) ;;
+            skipped) [ "$FULL" = false ] || exit 1 ;;
+            *) exit 1 ;;
+          esac

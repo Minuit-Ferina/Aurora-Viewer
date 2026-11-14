@@ -61,6 +61,25 @@ If the agent has not finished everything, it tells you before. If a session
 is interrupted, the agent of the next session first takes up the PRs without
 a review or that left the queue.
 
+## Forks without a merge queue
+
+GitHub's merge queue is available for repositories owned by organizations.
+On a personal fork, use a protected `main` with pull requests, resolved
+review conversations, squash merges and required checks against the latest
+`main`. Do not grant bypass actors, force pushes or branch deletion.
+
+The CI workflows run the complete Windows test suite on fork pull
+requests, plus the complete Linux suite and macOS tests and Metal demo
+when their platform scope applies. Documentation-only changes keep the
+existing skip. The required check names are `fmt, clippy (Windows)`,
+`tests (Windows)`, `secret scan`, `clippy (Linux)` and
+`clippy, tests, demo (macOS)`. A skipped or cancelled required test job is
+not a successful test run. The upstream repository keeps its merge queue.
+
+If `main` advances, update the PR branch and wait for its checks again.
+The usual human validation still comes before a viewer-changing PR;
+documentation and CI changes do not need a viewer test.
+
 ## Credits and licences
 
 Aurora is built on other people's work: the Second Life viewer, the Legacy
