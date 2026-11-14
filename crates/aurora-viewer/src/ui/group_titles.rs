@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(row.target.group, G1);
         assert!(row.active, "the selected blank title is the active row");
         assert_eq!(row.label, aurora_i18n::tr!("group-titles-blank"));
-        assert!(matches("blank", row, ""), "the filter sees the placeholder");
+        assert!(matches(&row.label, row, ""), "the filter sees the placeholder");
     }
 
     #[test]
