@@ -1,8 +1,13 @@
 ﻿<#
 .SYNOPSIS
     Creates the work folder of a task: a git worktree on its own branch,
-    next to the repository (..\work\<task>), with its own target\. Its
-    first build takes the dependencies from the shared compiler cache when
+    next to the repository (..\work\<task>), with its own target\.
+    Use -BaseRemote upstream for a clean contribution to Aurora, origin
+    (default) for fork work and sync PRs. -BaseBranch develop selects our
+    version. -SkipCleanup preserves all other task builds. These options
+    do not change where a later git push goes.
+
+    Its first build takes the dependencies from the shared compiler cache when
     sccache is installed (common.ps1).
 
     On its way, frees the target\ of the other tasks that no longer need
@@ -20,9 +25,16 @@ param(
     [Parameter(Mandatory)][string]$Name,
     [ValidateSet('feat', 'fix', 'perf', 'refactor', 'docs', 'chore')][string]$Kind = 'feat',
     [int]$IdleDays = 2,
-    [int]$TrimHours = 24
+    [int]$TrimHours = 24,
+    [ValidateSet('origin', 'upstream')][string]$BaseRemote = 'origin',
+    [ValidateSet('main', 'develop')][string]$BaseBranch = 'main',
+    [switch]$SkipCleanup
 )
 . "$PSScriptRoot\common.ps1"
+
+if ($BaseRemote -eq 'upstream' -and $BaseBranch -ne 'main') {
+    throw 'Aurora contributions must start from upstream/main.'
+}
 
 $p = Get-AuroraPaths
 $slug = Get-TaskSlug $Name
@@ -30,18 +42,32 @@ $branch = "$Kind/$slug"
 $dir = Join-Path $p.Work $slug
 if (Test-Path $dir) { throw "The folder $dir already exists (task in progress?)." }
 
+# Resolve the requested base before housekeeping. An explicitly requested
+# upstream must exist: falling back to fork main would contaminate its PR.
+$base = $BaseBranch
+$remoteUrl = git -C $p.Main remote get-url $BaseRemote 2>$null
+if ($LASTEXITCODE -eq 0) {
+    $refspec = "refs/heads/${BaseBranch}:refs/remotes/$BaseRemote/$BaseBranch"
+    Invoke-Checked 'git fetch' { git -C $p.Main fetch $BaseRemote $refspec --quiet }
+    $base = "$BaseRemote/$BaseBranch"
+} elseif ($BaseRemote -eq 'upstream' -or $BaseBranch -ne 'main') {
+    throw "No $BaseRemote remote. Configure it before requesting $BaseRemote/$BaseBranch."
+}
+$originUrl = git -C $p.Main remote get-url origin 2>$null
+$cleanupRepo = if ($LASTEXITCODE -eq 0 -and $originUrl -match 'github\.com[:/](?<repo>[^/]+/[^/]+?)(\.git)?$') { $Matches.repo } else { $null }
+
 # Free the build folders of the other tasks that no longer need them. The
 # last build is when Cargo last wrote into a deps\ or incremental\ folder.
 # Before the whole target\ goes, an idle task first loses its incremental
 # cache: it only speeds up the next small rebuild of that same task.
-if (Test-Path -LiteralPath $p.Work) {
+if (-not $SkipCleanup -and (Test-Path -LiteralPath $p.Work)) {
     foreach ($t in Get-ChildItem -LiteralPath $p.Work -Directory -Force) {
         $target = Join-Path $t.FullName 'target'
         if (-not (Test-Path -LiteralPath (Join-Path $target 'CACHEDIR.TAG'))) { continue }
         $why = $null
         $trim = @()
         $b = git -C $t.FullName rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -eq 0 -and (gh pr view $b.Trim() --json state --jq .state 2>$null) -eq 'MERGED') {
+        if ($LASTEXITCODE -eq 0 -and $cleanupRepo -and (gh pr view $b.Trim() -R $cleanupRepo --json state --jq .state 2>$null) -eq 'MERGED') {
             $why = 'PR merged'
         } else {
             $last = Get-ChildItem -LiteralPath $target -Directory -Force | ForEach-Object {
@@ -74,15 +100,9 @@ if (Test-Path -LiteralPath $p.Work) {
     }
 }
 
-# start from the latest main
-$base = 'main'
-git -C $p.Main remote get-url origin *> $null
-if ($LASTEXITCODE -eq 0) {
-    Invoke-Checked 'git fetch' { git -C $p.Main fetch origin main --quiet }
-    $base = 'origin/main'
-}
+
 New-Item -ItemType Directory -Force -Path $p.Work -ErrorAction Stop | Out-Null
-Invoke-Checked 'git worktree add' { git -C $p.Main worktree add -b $branch $dir $base }
+Invoke-Checked 'git worktree add' { git -C $p.Main worktree add --no-track -b $branch $dir $base }
 New-Item -ItemType Directory -Force -Path (Join-Path $dir '.scratch') | Out-Null
 # the first build of the task takes the dependencies from the shared cache
 Sync-BuildCache
@@ -94,4 +114,9 @@ Write-Host "  branch  $branch (from $base)"
 Write-Host ""
 Write-Host "Test:   `$env:AURORA_DEMO='1'; cargo run -p aurora-viewer -- --title `"Test $slug`""
 Write-Host "Check:  ./scripts/check.ps1"
-Write-Host "Finish: ./scripts/end-task.ps1 -Name $slug (after the PR is merged)"
+if ($BaseRemote -eq 'upstream') {
+    Write-Host 'PR target: upstream. Push explicitly to origin; never merge origin/main into this branch.'
+    Write-Host "Use the helpers in $($p.Main)\scripts with -Repository and -Pr for the upstream PR."
+} else {
+    Write-Host "Finish: ./scripts/end-task.ps1 -Name $slug (after the PR is merged)"
+}

@@ -185,28 +185,52 @@ gestures, wearables and object contents.
 
 The official repository uses a merge queue. Forks run the complete Windows
 suite, and the scoped Linux and macOS tests and demo, on pull requests
-instead. Their required checks must be strict: a PR must include the latest
-`origin/main` before it merges. When such a PR is behind, update its branch
-from `origin/main` and rerun the checks even without a merge conflict; this
-is the fork exception to section 11, point 1. Merge only after those checks
-pass, through the PR with squash, without an administrator bypass.
-`scripts/merge-pr.ps1` also waits for ordinary auto-merge on these forks.
-The human validation and review requirements remain the same.
+instead. Their required checks must be strict: a PR **into the fork** must
+include its latest target (`origin/main` or `origin/develop`) before it
+merges. Update that PR branch from that target and rerun the checks even without a merge conflict; this
+is the fork exception to section 11, point 1. Do not apply this exception
+to a contribution targeting Aurora.
 
+Read [the fork workflow](docs/FORK_WORKFLOW.md) before creating a task:
+
+- Fork tooling and CI start from `origin/main` and use a squash PR to fork `main`.
+- Our viewer changes start from `origin/develop` (`-BaseBranch develop`) and
+  use a PR to `develop`. This branch is our usable version. Update it from
+  `main` through a tested merge PR; never merge `develop` back into `main`.
+- A sync starts from `origin/main`, merges `upstream/main`, and merges its
+  PR into the fork **with a merge commit**, never squash or rebase. Preserve
+  upstream ancestry and fork PR testing when resolving conflicts.
+- Contributions to Aurora start from `upstream/main` with
+  `new-task.ps1 -BaseRemote upstream -SkipCleanup`. Never merge fork `main`
+  or `develop` into them or copy fork CI/docs onto them. Push the branch to `origin` and
+  open the PR explicitly in `Aurora-Viewer/Aurora-Viewer`. Use a separate
+  integration branch from `origin/develop` if the feature is needed in our
+  version first.
+
+Always name the repository on PR operations; numbers are not shared
+between the fork and Aurora. Use the helpers in the fork's main checkout
+with `-Repository` (and `-Pr` for cleanup), since a clean upstream-based
+worktree does not contain these fork options. `merge-pr.ps1` supports
+ordinary auto-merge and `-Method merge` for syncs. Protected `main` and
+`develop` allow no administrator bypass, force push, branch deletion, or
+weakening of required checks.
+The human validation and review requirements remain the same. A contributor
+without upstream merge permission leaves the merge to Aurora's maintainers.
 
 **Never work directly in the main repository.** Each task has its own git
 worktree, branch, `target` folder and logs.
 
 ```powershell
 # from the main repository
-./scripts/new-task.ps1 -Name "avatar-gaze" -Kind feat
+./scripts/new-task.ps1 -Name "avatar-gaze" -Kind feat -BaseBranch develop -SkipCleanup
 # → ..\work\avatar-gaze, next to the repository  (branch feat/avatar-gaze)
 ```
 
 - `-Kind`: `feat` (feature), `fix`, `perf`, `refactor`, `docs`, `chore`
   (tooling, dependencies). Task names are in English.
 - The worktree is created in `../work/<name>` from an up-to-date
-  `origin/main`. Its `target/` is its own: your builds do not disturb the
+  `origin/main` by default, `upstream/main` with `-BaseRemote upstream`, or
+  `origin/develop` with `-BaseBranch develop` (see above). Its `target/` is its own: your builds do not disturb the
   other agents and theirs do not disturb you.
 - The first build of a worktree takes a few minutes; that is normal. When
   sccache is installed, the scripts point Cargo at a compiler cache shared by
@@ -229,7 +253,7 @@ worktree, branch, `target` folder and logs.
 - `new-task.ps1` frees, on its way, the `incremental/` caches of the tasks
   that have built nothing for 24 hours, and the whole `target/` of the tasks
   whose PR is merged or that have built nothing for 2 days (the code stays).
-  A task that resumes rebuilds: its dependencies come from sccache.
+  Use `-SkipCleanup` to preserve existing builds. A task that resumes rebuilds: its dependencies come from sccache.
 - To see the space taken by builds and free some: `./scripts/clean.ps1`
   (deletes nothing without `-Apply`).
 - `aurora-tools.cmd` (repository root) is the humans' menu: do not launch it,
