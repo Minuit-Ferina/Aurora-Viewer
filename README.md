@@ -1170,6 +1170,9 @@ exe before publishing; the local build also writes it to `version.txt`.
 
 - `--title`: the build profile ends the title (Dev, Release, Debug); the log
   file is `aurora-<text>.log` (`aurora-demo-<text>.log` in demo mode).
+  After login, the main window shows the build profile next to the version,
+  then the custom title and the authenticated account. Returning to the login
+  screen removes the account name.
 - `--fps-limit`: applies an extra limit to this process, including captures
   and online sessions; a lower user preference remains effective.
 - `--vr`: what the VR button's "Restart in VR" passes when the headset was
