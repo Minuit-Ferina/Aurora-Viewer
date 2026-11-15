@@ -70,6 +70,8 @@ pub(super) enum Panel {
     WorldMap,
     Bumps,
     GroupTitles,
+    RegionTracker,
+    AvatarRenderSettings,
 }
 
 struct Host {
@@ -739,6 +741,11 @@ impl NativeWindows {
                 LogicalSize::new(640.0, 540.0),
                 LogicalSize::new(520.0, 340.0),
             ),
+            Panel::RegionTracker | Panel::AvatarRenderSettings => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(620.0, 420.0),
+                LogicalSize::new(460.0, 260.0),
+            ),
             Panel::WorldMap => (
                 self.detached[&panel].clone(),
                 LogicalSize::new(1040.0, 640.0),
@@ -913,6 +920,8 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
         Panel::WorldMap => "world-map",
         Panel::Bumps => "bumps",
         Panel::GroupTitles => "group-titles",
+        Panel::RegionTracker => "region-tracker",
+        Panel::AvatarRenderSettings => "avatar-render-settings",
         _ => return None,
     };
     Some(egui::Id::unique(("native_window_placement", panel_type)))

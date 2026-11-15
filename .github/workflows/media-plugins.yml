@@ -1,4 +1,5 @@
 name: Native-window test builds
+run-name: Native-window test builds - ${{ github.sha }}
 
 on:
   workflow_dispatch:
