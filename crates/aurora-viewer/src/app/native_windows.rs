@@ -548,17 +548,6 @@ impl NativeWindows {
         ))
     }
 
-    #[cfg(target_os = "macos")]
-    pub(super) fn raise_above_viewer(&self, root: &Window) {
-        chrome::raise_above_viewer(
-            root,
-            self.hosts
-                .iter()
-                .filter(|host| host.stage == Stage::Live)
-                .map(|host| host.window.as_ref()),
-        );
-    }
-
     pub(super) fn any_visible(&self) -> bool {
         self.hosts.iter().any(Host::visible)
     }

@@ -195,8 +195,3 @@ impl Chrome {
         widgets::caption_button(ui, palette, self.icons.get(icon), label)
     }
 }
-
-#[cfg(target_os = "macos")]
-pub(super) fn raise_above_viewer<'a>(root: &Window, panels: impl Iterator<Item = &'a Window>) {
-    macos::raise_above_viewer(root, panels);
-}

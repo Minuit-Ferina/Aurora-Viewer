@@ -3,7 +3,7 @@
 use std::cell::Cell;
 
 use objc2::{MainThreadMarker, rc::Retained};
-use objc2_app_kit::{NSView, NSWindow, NSWindowNumberListOptions, NSWindowOrderingMode};
+use objc2_app_kit::{NSView, NSWindow};
 use objc2_core_foundation::CGRect;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
@@ -39,31 +39,6 @@ impl Zoom {
         } else if let Some(screen) = window.screen() {
             self.restore_frame.set(Some(window.frame()));
             window.setFrame_display(screen.visibleFrame(), true);
-        }
-    }
-}
-
-pub(super) fn raise_above_viewer<'a>(root: &Window, panels: impl Iterator<Item = &'a Window>) {
-    let panels: Vec<_> = panels.filter_map(ns_window).collect();
-    if panels.is_empty() {
-        return;
-    }
-    let Some(root) = ns_window(root) else { return };
-    let Some(mtm) = MainThreadMarker::new() else { return };
-    let Some(order) = NSWindow::windowNumbersWithOptions(NSWindowNumberListOptions::empty(), mtm) else {
-        return;
-    };
-    let root = root.windowNumber();
-    // The list is front to back, on the active Space. Moving only panels
-    // behind the viewer preserves their order, focus and desktop positions.
-    for number in order
-        .iter()
-        .map(|number| number.as_isize())
-        .skip_while(|&number| number != root)
-        .skip(1)
-    {
-        if let Some(panel) = panels.iter().find(|panel| panel.windowNumber() == number) {
-            panel.orderWindow_relativeTo(NSWindowOrderingMode::Above, root);
         }
     }
 }

@@ -142,7 +142,7 @@ libc = "0.2.190"
 # The application menu's Quit item routed to the window's close
 # (mac_quit.rs); the versions already in the tree
 objc2 = "0.6.5"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSGraphics", "NSMenu", "NSMenuItem", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSMenu", "NSMenuItem", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
 # The graphics card box (app/gpu_stall.rs): a CFUserNotification kept to be
 # cancelled; already in the tree through rfd
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFBase", "CFCGTypes", "CFDate", "CFDictionary", "CFString", "CFUserNotification"] }
