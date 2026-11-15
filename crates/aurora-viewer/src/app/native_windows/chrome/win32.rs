@@ -17,8 +17,9 @@ use winit::{
     window::Window,
 };
 
+use super::EDGE;
+
 const SUBCLASS_ID: usize = 1;
-const EDGE: f64 = 5.0;
 
 #[derive(Clone, Copy, Default)]
 struct Geometry {

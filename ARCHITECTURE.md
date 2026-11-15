@@ -4139,7 +4139,7 @@ buffers and preview cache. The egui texture shadow carries managed texture
 updates between passes in order. A child uploads only the complete textures it
 uses whose revisions changed. The render worker accepts one outstanding native
 job and gives root frames priority. GPU recovery rehosts the logical panels in
-the root. The Windows caption in app/native_windows/chrome uses native drag
+the root. The shared caption in app/native_windows/chrome uses native drag
 and resize hit testing and themed title controls.
 
 The conversation action dispatcher and viewer panel presenters borrow the
