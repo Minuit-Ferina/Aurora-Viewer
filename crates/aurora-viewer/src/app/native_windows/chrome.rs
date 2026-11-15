@@ -107,6 +107,9 @@ impl Chrome {
             })
             .inner
         });
+        // The client area starts at the caption edge. Keep the theme's
+        // widget spacing inside both areas.
+        ui.add_space(-ui.spacing().item_spacing.y);
         #[cfg(windows)]
         if let Some(caption) = &self.caption {
             caption.update(window, ui.ctx().pixels_per_point(), row.inner - 2.0, row.response.rect.bottom());
