@@ -19474,13 +19474,7 @@ impl App {
                 if !desktop.requested.is_empty() {
                     self.native_windows.detach(panel, aurora_i18n::tr!("common-world-map").to_owned());
                 }
-                self.region_tracker_ui.show(
-                    &ctx,
-                    &p,
-                    &mut self.world,
-                    &mut self.panels.region_tracker,
-                    &mut self.panels.world_map,
-                );
+                self.region_tracker_window(&ctx, &p);
                 self.apply_world_map_actions(wm, &mut a);
                 t = self.ui_parts.lap(Part::UiMaps, t);
                 let mut open = self.panels.perf;

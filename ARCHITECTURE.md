@@ -4158,6 +4158,9 @@ and positioning on other platforms follow their window manager.
 | `About` and `GridStatus` | Shared panel models and platform clipboard or external browser output. |
 | `GroupTitles` and `Bumps` | Shared rows, filter or selection, actions, and region privacy checks. |
 | `WorldMap` | Both styles use the same tiles, camera, actions and RLVa checks. The minimap remains attached to the world. |
+| `RegionTracker` and `AvatarRenderSettings` | Shared tracker and display-exception state. The resident picker opens in the editor's viewport and the tracker opens the shared World Map. |
+| People | The map, detail sheets and shared contact dialogs need to follow the People window's host. |
+| Area Search | Object actions use viewer-level confirmations and secondary windows that need a route to the initiating host. |
 | World, login, loading, HUDs and world overlays | Root window. |
 | Menus, tooltips and modal dialogs | Follow the panel or application that owns them. |
 | Avatar, group and place profiles | Profile inventory drops and child dialogs need an owner route. The avatar feed also needs native web-surface placement. |

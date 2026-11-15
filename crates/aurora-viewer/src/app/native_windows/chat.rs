@@ -203,7 +203,7 @@ impl App {
                 self.paint_desktop_build(event_loop);
                 return;
             }
-            Panel::About | Panel::GridStatus | Panel::Bumps | Panel::GroupTitles => {
+            Panel::About | Panel::GridStatus | Panel::Bumps | Panel::GroupTitles | Panel::RegionTracker | Panel::AvatarRenderSettings => {
                 self.paint_desktop_info(event_loop, drawable);
                 return;
             }

@@ -2,7 +2,7 @@
 //! floater_region_tracker.xml): label, maturity, region and avatar count of
 //! the regions the account watches, redrawn every 5 s while it is open.
 
-use super::widgets::{self, Floater};
+use super::widgets::{self, Floater, PanelHost};
 use crate::theme::Palette;
 use crate::world::{
     World,
@@ -85,7 +85,15 @@ impl RegionTrackerUi {
         *map_open = true;
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, world: &mut World, open: &mut bool, map_open: &mut bool) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Palette,
+        world: &mut World,
+        open: &mut bool,
+        map_open: &mut bool,
+        mut host: PanelHost<'_, ()>,
+    ) {
         if !*open {
             self.refreshed = None;
             return;
@@ -103,7 +111,7 @@ impl RegionTrackerUi {
         );
         floater.min_size = Vec2::new(420.0, 260.0);
         let mut changed = false;
-        floater.show(ctx, p, open, |ui| {
+        host.show((), floater, ctx, p, open, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(aurora_i18n::tr!("region-tracker-region"));
                 ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(160.0));
@@ -269,7 +277,7 @@ mod tests {
             &[Vec2::new(620.0, 420.0), Vec2::new(420.0, 260.0)],
             aurora_i18n::tr!("common-world-map"),
             RegionTrackerUi::default,
-            |ui, ctx, p| ui.show(ctx, p, &mut world, &mut true, &mut false),
+            |ui, ctx, p| ui.show(ctx, p, &mut world, &mut true, &mut false, PanelHost::Embedded),
         );
     }
 

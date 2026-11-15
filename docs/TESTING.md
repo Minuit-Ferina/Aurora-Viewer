@@ -6082,6 +6082,12 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   graphics settings. Read the native surface's present mode from the log.
   With `AURORA_DEMO_GPU_LOST=600` and `AURORA_GPU_RECOVERY=1`, the test
   documents should return to the rebuilt root window.
+  For a packaged Linux build, run the extracted executable with
+  `AURORA_DEMO=1 AURORA_DEMO_NATIVE_WINDOWS=2 ./aurora-viewer --title "Test native-detachable-windows"`.
+  For macOS, set the same variables and arguments when running
+  `"./Aurora Viewer.app/Contents/MacOS/aurora-viewer"` from the extracted bundle.
+  Check the actual desktop windows with the root minimized. On Linux, run
+  on X11 and Wayland separately and move the windows using the window manager.
 
 - In the offline demo, the window-and-arrow icon
   moves the current panel to the desktop. The inverse icon returns it to
@@ -6101,6 +6107,12 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   With `AURORA_DEMO_MAP=1` and `AURORA_DEMO_MAP=legacy`, pan and zoom the
   detached map and check its view on return. The demos `AURORA_DEMO_GROUP_REGION=1`
   and `AURORA_DEMO_COLLISIONS=1` populate Group Titles and Bumps, Pushes & Hits.
+  Open Region Tracker from the toolbar or the World Map and check that the
+  label and selection survive a round trip to the desktop. Use its World Map
+  button from the desktop. With `AURORA_DEMO_AVATAR_RENDER_SETTINGS=1`, filter
+  the synthetic exceptions, detach the editor, then open Add and confirm
+  that the resident picker appears in the editor. Ctrl/Cmd+W closes the
+  picker first. Check that the filter and changes survive Return to viewer.
 
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers

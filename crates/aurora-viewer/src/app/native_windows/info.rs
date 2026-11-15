@@ -22,6 +22,26 @@ impl App {
         }
     }
 
+    pub(in crate::app) fn region_tracker_window(&mut self, ctx: &egui::Context, palette: &crate::theme::Palette) {
+        let panel = Panel::RegionTracker;
+        if self.native_windows.is_native(panel) {
+            return;
+        }
+        let mut desktop = ui::widgets::DesktopPanels::default();
+        self.region_tracker_ui.show(
+            ctx,
+            palette,
+            &mut self.world,
+            &mut self.panels.region_tracker,
+            &mut self.panels.world_map,
+            ui::widgets::PanelHost::Viewer(&mut desktop),
+        );
+        if !desktop.requested.is_empty() {
+            self.native_windows
+                .detach(panel, aurora_i18n::tr!("toolbar-command-region-tracker").to_owned());
+        }
+    }
+
     pub(super) fn reconcile_desktop_info(&mut self) {
         let visible = self.in_world() && !ui::widgets::interface_hidden(&self.egui_ctx);
         self.native_windows.reconcile(Panel::About, visible && self.panels.about);
@@ -29,6 +49,10 @@ impl App {
         self.native_windows.reconcile(Panel::Bumps, visible && self.panels.bumps);
         self.native_windows
             .reconcile(Panel::GroupTitles, visible && self.panels.group_titles);
+        self.native_windows
+            .reconcile(Panel::RegionTracker, visible && self.panels.region_tracker);
+        self.native_windows
+            .reconcile(Panel::AvatarRenderSettings, visible && self.panels.avatar_render_settings);
     }
 
     pub(super) fn paint_desktop_info(&mut self, event_loop: &ActiveEventLoop, panel: Panel) {
@@ -42,7 +66,9 @@ impl App {
             .as_ref()
             .filter(|_| panel == Panel::About)
             .map(|gfx| self.about_sections(&gfx.renderer));
+        let render_rows = (panel == Panel::AvatarRenderSettings).then(|| self.avatar_render_settings_rows());
         let Some(gfx) = &mut self.gfx else { return };
+        let mut render_change = None;
         let mut close_all = false;
         let mut refresh = false;
         let mut titles = Vec::new();
@@ -64,6 +90,10 @@ impl App {
                     ui.disable();
                 }
                 close_all |= !modal && ui::close_key::desktop_close_all(ui.ctx());
+                if !modal && panel == Panel::AvatarRenderSettings {
+                    // The in-window resident picker owns Ctrl/Cmd+W while frontmost.
+                    ui::close_key::begin(ui.ctx());
+                }
                 let close = !modal && (close || ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::W)));
                 let host = ui::widgets::PanelHost::Desktop { ui, key: () };
                 match panel {
@@ -104,6 +134,30 @@ impl App {
                         );
                         !self.panels.group_titles
                     }
+                    Panel::RegionTracker => {
+                        self.panels.region_tracker &= !close;
+                        self.region_tracker_ui.show(
+                            &ctx,
+                            &self.palette,
+                            &mut self.world,
+                            &mut self.panels.region_tracker,
+                            &mut self.panels.world_map,
+                            host,
+                        );
+                        !self.panels.region_tracker
+                    }
+                    Panel::AvatarRenderSettings => {
+                        self.panels.avatar_render_settings &= !close;
+                        render_change = self.avatar_render_settings_ui.show(
+                            &ctx,
+                            &self.palette,
+                            render_rows.as_deref().unwrap_or_default(),
+                            &mut self.world,
+                            &mut self.panels.avatar_render_settings,
+                            host,
+                        );
+                        !self.panels.avatar_render_settings
+                    }
                     _ => true,
                 }
             },
@@ -117,6 +171,9 @@ impl App {
         }
         if refresh {
             self.grid_status.refresh();
+        }
+        if let Some(change) = render_change {
+            self.set_avatar_render_settings(&change.ids, change.mode);
         }
     }
 }

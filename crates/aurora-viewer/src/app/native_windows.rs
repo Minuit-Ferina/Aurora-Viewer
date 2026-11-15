@@ -70,6 +70,8 @@ pub(super) enum Panel {
     WorldMap,
     Bumps,
     GroupTitles,
+    RegionTracker,
+    AvatarRenderSettings,
 }
 
 struct Host {
@@ -90,6 +92,7 @@ struct Host {
     occluded: bool,
     repaint: Option<Instant>,
     geometry_changed: Option<Instant>,
+    dismiss_menus: bool,
 }
 
 impl Host {
@@ -129,7 +132,13 @@ impl Host {
         if let Some(drop) = &drop {
             drop.add_events(root_context, &self.window, &mut raw);
         }
-        let mut output = root_context.run_ui(raw, |ui| presenter(ui, &self.chrome, &self.window));
+        let dismiss_menus = std::mem::take(&mut self.dismiss_menus);
+        let mut output = root_context.run_ui(raw, |ui| {
+            if dismiss_menus {
+                crate::ui::menu::window_geometry_changed(ui.ctx());
+            }
+            presenter(ui, &self.chrome, &self.window);
+        });
         if drop.is_some() {
             egui::DragAndDrop::clear_payload(root_context);
         }
@@ -504,6 +513,7 @@ impl NativeWindows {
             WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }
         ) {
             host.geometry_changed = Some(Instant::now());
+            host.dismiss_menus = true;
         }
         if let WindowEvent::Occluded(occluded) = event {
             host.occluded = *occluded;
@@ -739,6 +749,11 @@ impl NativeWindows {
                 LogicalSize::new(640.0, 540.0),
                 LogicalSize::new(520.0, 340.0),
             ),
+            Panel::RegionTracker | Panel::AvatarRenderSettings => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(620.0, 420.0),
+                LogicalSize::new(460.0, 260.0),
+            ),
             Panel::WorldMap => (
                 self.detached[&panel].clone(),
                 LogicalSize::new(1040.0, 640.0),
@@ -824,6 +839,7 @@ impl NativeWindows {
             occluded: false,
             repaint: None,
             geometry_changed: None,
+            dismiss_menus: false,
         });
     }
 
@@ -913,6 +929,8 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
         Panel::WorldMap => "world-map",
         Panel::Bumps => "bumps",
         Panel::GroupTitles => "group-titles",
+        Panel::RegionTracker => "region-tracker",
+        Panel::AvatarRenderSettings => "avatar-render-settings",
         _ => return None,
     };
     Some(egui::Id::unique(("native_window_placement", panel_type)))

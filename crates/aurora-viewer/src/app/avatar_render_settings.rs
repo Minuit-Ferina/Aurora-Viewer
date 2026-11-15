@@ -24,7 +24,7 @@ impl App {
         }
     }
 
-    pub(super) fn avatar_render_settings_window(&mut self, ctx: &egui::Context, p: &crate::theme::Palette) {
+    pub(super) fn avatar_render_settings_rows(&mut self) -> Vec<Row> {
         let mut rows = Vec::new();
         if self.panels.avatar_render_settings {
             for (id, mode) in self.settings.render_exceptions_map() {
@@ -41,11 +41,29 @@ impl App {
                 rows.push(Row { id, mode, name, can_name });
             }
         }
-        if let Some(change) = self
-            .avatar_render_settings_ui
-            .show(ctx, p, &rows, &mut self.world, &mut self.panels.avatar_render_settings)
-        {
+        rows
+    }
+
+    pub(super) fn avatar_render_settings_window(&mut self, ctx: &egui::Context, p: &crate::theme::Palette) {
+        let panel = super::native_windows::Panel::AvatarRenderSettings;
+        if self.native_windows.is_native(panel) {
+            return;
+        }
+        let rows = self.avatar_render_settings_rows();
+        let mut desktop = ui::widgets::DesktopPanels::default();
+        if let Some(change) = self.avatar_render_settings_ui.show(
+            ctx,
+            p,
+            &rows,
+            &mut self.world,
+            &mut self.panels.avatar_render_settings,
+            ui::widgets::PanelHost::Viewer(&mut desktop),
+        ) {
             self.set_avatar_render_settings(&change.ids, change.mode);
+        }
+        if !desktop.requested.is_empty() {
+            self.native_windows
+                .detach(panel, aurora_i18n::tr!("avatar-render-title").to_owned());
         }
     }
 
