@@ -91,9 +91,7 @@ impl Host {
         egui_winit::update_viewport_info(info, &self.context, &self.window, false);
         info.parent = Some(egui::ViewportId::ROOT);
         let mut output = self.context.run_ui(raw, |ui| presenter(ui, &self.chrome, &self.window));
-        if let Some(cursor) = self.chrome.cursor(&self.window) {
-            output.platform_output.cursor_icon = cursor;
-        }
+
         self.input
             .handle_platform_output_with_event_loop(&self.window, event_loop, output.platform_output);
         let mut close_requested = false;
@@ -233,9 +231,7 @@ impl NativeWindows {
         if let WindowEvent::Occluded(occluded) = event {
             host.occluded = *occluded;
         }
-        if host.chrome.event(&host.window, event) {
-            return Some(true);
-        }
+
         let repaint = host.input.on_window_event(&host.window, event).repaint;
         if repaint || matches!(event, WindowEvent::RedrawRequested | WindowEvent::Occluded(false)) {
             host.set_repaint(Duration::ZERO);
@@ -402,7 +398,7 @@ impl NativeWindows {
             window.theme(),
             Some(renderer.device.limits().max_texture_dimension_2d as usize),
         );
-        let chrome = chrome::Chrome::new(&context);
+        let chrome = chrome::Chrome::new(&context, &window);
         self.hosts.push(Host {
             id,
             document,

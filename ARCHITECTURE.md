@@ -4133,7 +4133,8 @@ state and tears down the presentation after the render owner acknowledges
 retirement. Native-window events enter the fixture before world controls.
 `app/native_windows/chrome.rs` provides the compact Windows title bar and a
 return control on other desktops. The title controls load their own Tabler
-textures into the host's egui context.
+textures into the host's egui context. The Windows hook in `chrome/win32.rs`
+lets Windows handle dragging and resizing and keeps the controls clickable.
 
 `aurora-render/src/native_ui.rs` holds UI-only surfaces in the existing
 Backend. Each host's egui renderer owns its transient buffers and preview

@@ -6065,8 +6065,9 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   embedded document that can be detached manually. A positive value opens
   that many desktop windows. The paired window-and-arrow icons in the top
   right detach and return a document. On Windows, drag the compact title
-  bar and resize at the window edges. Check the compact window controls,
-  focus, typing and clipboard. Return to viewer and
+  bar across displays, including to a monitor to the left of the primary
+  one if available. Resize at the window edges and check focus, typing,
+  clipboard and the compact window controls. Return to viewer and
   Return All should keep the draft, while native Close and Ctrl/Cmd+W should
   close the selected test document. Minimize the main window and verify a
   child still responds. Capture the actual desktop windows and include the
