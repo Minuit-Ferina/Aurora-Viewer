@@ -135,13 +135,6 @@ pub(super) fn enabled(setting: bool) -> bool {
     forced().unwrap_or(setting)
 }
 
-/// egui's CPU copy (egui_shadow.rs) is kept unless the recovery is forced
-/// off: the setting can be turned on during the session, and a copy begun
-/// then would miss the textures egui sent before.
-pub(super) fn shadow_kept() -> bool {
-    forced() != Some(false)
-}
-
 /// `AURORA_GPU_RECOVERY`: `1` on, `0` off, whatever the setting.
 fn forced() -> Option<bool> {
     // read every frame: once per run

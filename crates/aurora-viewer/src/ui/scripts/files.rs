@@ -21,7 +21,7 @@ pub(super) enum Done {
     Failed(String),
     Cancelled,
 }
-pub(super) struct Job(pub mpsc::Receiver<Done>);
+pub(super) struct Job(pub mpsc::Receiver<Done>, pub bool);
 
 fn failure(error: impl std::fmt::Display) -> Done {
     Done::Failed(aurora_i18n::tr!("script-file-error", reason = error.to_string()))
@@ -44,11 +44,11 @@ pub(super) fn read(path: &Path, convert_tabs: bool) -> Result<String, String> {
     Ok(source)
 }
 
-pub(super) fn open(convert_tabs: bool) -> Job {
+pub(super) fn open(convert_tabs: bool, parent: Option<Arc<winit::window::Window>>) -> Job {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         // LLFilePicker's script filter: LSL and SLua (*.lsl; *.lua; *.luau)
-        let done = match rfd::FileDialog::new()
+        let done = match dialog(parent.as_deref())
             .add_filter("LSL / SLua", &["lsl", "luau", "lua", "txt"])
             .pick_file()
         {
@@ -60,7 +60,7 @@ pub(super) fn open(convert_tabs: bool) -> Job {
         };
         let _ = tx.send(done);
     });
-    Job(rx)
+    Job(rx, true)
 }
 
 /// The file extension of a script: `.luau` for SLua (LLPreviewLSL /
@@ -69,10 +69,10 @@ fn extension(lua: bool) -> &'static str {
     if lua { "luau" } else { "lsl" }
 }
 
-pub(super) fn save(name: String, source: String, lua: bool) -> Job {
+pub(super) fn save(name: String, source: String, lua: bool, parent: Option<Arc<winit::window::Window>>) -> Job {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let done = match rfd::FileDialog::new()
+        let done = match dialog(parent.as_deref())
             .set_file_name(format!("{}.{}", safe_name(&name), extension(lua)))
             .add_filter(if lua { "SLua" } else { "LSL" }, &[extension(lua)])
             .save_file()
@@ -85,7 +85,16 @@ pub(super) fn save(name: String, source: String, lua: bool) -> Job {
         };
         let _ = tx.send(done);
     });
-    Job(rx)
+    Job(rx, true)
+}
+
+fn dialog(parent: Option<&winit::window::Window>) -> rfd::FileDialog {
+    let dialog = rfd::FileDialog::new();
+    if let Some(parent) = parent {
+        dialog.set_parent(parent)
+    } else {
+        dialog
+    }
 }
 
 fn safe_name(name: &str) -> String {
@@ -250,7 +259,7 @@ pub(super) fn external(name: String, source: String, command_line: String, conve
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir(&directory);
     });
-    Job(rx)
+    Job(rx, false)
 }
 
 #[cfg(test)]

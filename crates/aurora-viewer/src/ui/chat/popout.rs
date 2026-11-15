@@ -102,6 +102,9 @@ pub(crate) struct Popped {
 }
 
 impl Popped {
+    pub(super) fn available(&self, conversation: Option<Uuid>) -> bool {
+        self.windows.iter().any(|w| w.conversation == conversation && !w.hidden)
+    }
     pub(super) fn nearby_state(&self) -> crate::settings::NearbyChatWindow {
         use crate::settings::NearbyChatWindow;
         match self.windows.iter().find(|w| w.conversation.is_none()) {
@@ -368,10 +371,34 @@ pub(super) struct Env<'a> {
     pub style: crate::settings::ChatStyle,
 }
 
+#[derive(Default)]
+pub(crate) struct DesktopPopouts {
+    pub live: Vec<Option<Uuid>>,
+    pub requested: Vec<Option<Uuid>>,
+    pub reveal: Vec<Option<Uuid>>,
+}
+
+pub(super) enum Host<'a> {
+    Viewer(&'a mut DesktopPopouts),
+    Desktop {
+        ui: &'a mut egui::Ui,
+        conversation: Option<Uuid>,
+        close: bool,
+    },
+}
+
 /// Draw the windows of their own. A conversation that ended loses its
 /// window; a window closed by its cross closes its conversation (the nearby
 /// chat docks back), its title button docks it back.
-pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut ChatUi, actions: &mut Vec<ConvAction>, main_open: &mut bool) {
+pub(super) fn show(
+    ctx: &egui::Context,
+    env: Env,
+    world: &mut World,
+    st: &mut ChatUi,
+    actions: &mut Vec<ConvAction>,
+    main_open: &mut bool,
+    mut host: Host<'_>,
+) {
     let Env {
         p,
         icons,
@@ -399,6 +426,28 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
         if w.hidden {
             continue;
         }
+        let mut move_to_desktop = false;
+        let desktop = match &mut host {
+            Host::Viewer(desktop) => {
+                if desktop.live.contains(&w.conversation) {
+                    if std::mem::take(&mut w.raise) {
+                        desktop.reveal.push(w.conversation);
+                    }
+                    continue;
+                }
+                None
+            }
+            Host::Desktop { ui, conversation, close } => {
+                if w.conversation != *conversation {
+                    continue;
+                }
+                if *close {
+                    closed.push(w.conversation);
+                    continue;
+                }
+                Some(&mut **ui)
+            }
+        };
         if std::mem::take(&mut w.held) {
             ctx.request_repaint();
             continue;
@@ -413,7 +462,7 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
             Some(id) => (world.session_title(&id), sessions.get(&id).copied().unwrap_or(0)),
         };
         let mut open = true;
-        let mut dock = super::docking::title_drop(ctx, p, &w.floater);
+        let mut dock = desktop.is_none() && super::docking::title_drop(ctx, p, &w.floater);
         let mut floater = crate::ui::widgets::Floater::new(&w.floater, title, default.min, default.size())
             .chat()
             .action("login-2", aurora_i18n::tr!("ui-chat-attach-to-conversations"), &mut dock)
@@ -430,7 +479,7 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
         floater.min_size = floater.min_size.max(MIN_SIZE);
         w.view.swap(st);
         WINDOW.with(|cell| cell.set(Some(w.conversation)));
-        floater.show(ctx, p, &mut open, |ui| {
+        let body = |ui: &mut egui::Ui| {
             if style.workspace() {
                 let h = ui.available_height().max(MIN_SIZE.y - 40.0);
                 ui.vertical(|ui| {
@@ -446,7 +495,12 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
                     super::classic_pane(ui, p, icons, emoji, pics, gestures, world, st, actions, h, &own_name);
                 });
             }
-        });
+        };
+        if let Some(ui) = desktop {
+            floater.show_desktop(ui, p, body);
+        } else {
+            floater.desktop_action(&mut move_to_desktop).show(ctx, p, &mut open, body);
+        }
         WINDOW.with(|cell| cell.set(None));
         // the keyboard of the field drawn in this window
         let field = st.typing_field.take();
@@ -460,6 +514,8 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
             docked.push(w.conversation);
         } else if !open {
             closed.push(w.conversation);
+        } else if move_to_desktop && let Host::Viewer(desktop) = &mut host {
+            desktop.requested.push(w.conversation);
         }
     }
     // windows popped out while these drew (none so far) come after them
@@ -477,11 +533,22 @@ pub(super) fn show(ctx: &egui::Context, env: Env, world: &mut World, st: &mut Ch
 }
 
 /// The conversations in sight in their own windows: drawn, not minimized.
-pub(super) fn in_sight<'a>(ctx: &'a egui::Context, popped: &'a Popped) -> impl Iterator<Item = Option<Uuid>> + 'a {
+pub(super) fn in_sight<'a>(
+    ctx: &'a egui::Context,
+    popped: &'a Popped,
+    desktop: &'a super::DesktopPresence,
+) -> impl Iterator<Item = Option<Uuid>> + 'a {
     popped
         .windows
         .iter()
-        .filter(|w| !w.hidden && !crate::ui::widgets::floater_minimized(ctx, &w.floater))
+        .filter(|w| {
+            !w.hidden
+                && desktop
+                    .popouts
+                    .iter()
+                    .find(|(id, _)| *id == w.conversation)
+                    .map_or_else(|| !crate::ui::widgets::floater_minimized(ctx, &w.floater), |(_, seen)| *seen)
+        })
         .map(|w| w.conversation)
 }
 
@@ -1257,10 +1324,13 @@ mod tests {
         assert!(popped.shown(None));
         assert!(popped.set_hidden(None, true));
         assert!(popped.contains(None) && !popped.shown(None));
-        assert_eq!(in_sight(&ctx, &popped).count(), 0);
+        assert_eq!(in_sight(&ctx, &popped, &super::super::DesktopPresence::default()).count(), 0);
         assert!(popped.raise(None, true));
         assert!(popped.shown(None) && popped.windows[0].view.conv_focus_request);
-        assert_eq!(in_sight(&ctx, &popped).collect::<Vec<_>>(), [None]);
+        assert_eq!(
+            in_sight(&ctx, &popped, &super::super::DesktopPresence::default()).collect::<Vec<_>>(),
+            [None]
+        );
         popped.set_hidden(None, true);
         popped.pop_out(None, false, false, false);
         assert!(popped.shown(None));

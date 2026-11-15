@@ -15,7 +15,7 @@ mod overlay;
 
 use super::map_tiles::{MAP_LEVELS, MapTiles, scale_to_level, tile_origin};
 use super::minimap::{MapCamera, TRACK_COLOR, View, draw_directions, draw_self, draw_tracking, text_shadow, to_global};
-use super::widgets::{self, Floater};
+use super::widgets::{self, Floater, PanelHost};
 use crate::settings::{MapSettings, WorldMapStyle};
 use crate::theme::Palette;
 use crate::world::World;
@@ -185,8 +185,12 @@ impl WorldMapUi {
         style: WorldMapStyle,
         pictures: &MapPictures,
         open: &mut bool,
+        mut host: PanelHost<'_, ()>,
     ) -> Vec<WorldMapAction> {
         let mut actions = Vec::new();
+        if !host.draws(()) {
+            return actions;
+        }
         if !*open {
             self.was_open = false;
             return actions;
@@ -206,19 +210,18 @@ impl WorldMapUi {
             // the mockup's window: a map twice the side panel layout's
             let size = vec2(1040.0, 640.0);
             let default_pos = pos2((screen.width() - size.x).max(0.0) * 0.5, 60.0);
-            Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, size)
-                .help(aurora_i18n::tr!(
-                    "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
-                ))
-                .show(ctx, p, open, |ui| {
-                    self.full_frame(ui, p, world, tiles, cam, opts, pictures, &mut actions);
-                });
+            let floater = Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, size).help(aurora_i18n::tr!(
+                "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
+            ));
+            host.show((), floater, ctx, p, open, |ui| {
+                self.full_frame(ui, p, world, tiles, cam, opts, pictures, &mut actions);
+            });
             return actions;
         }
         let default_pos = pos2((screen.width() - 700.0).max(0.0) * 0.5, 60.0);
         let mut floater = Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, vec2(700.0, 600.0));
         floater.min_size = side_panel_min_size(ctx);
-        floater
+        let floater = floater
             .help(aurora_i18n::tr!(
                 "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
             ))
@@ -228,35 +231,35 @@ impl WorldMapUi {
             // window grew by that excess at every frame up to the screen's
             // width, and snapped back after each drag of an edge (#2669).
             // The body is laid out in the window's rect instead.
-            .steady_size()
-            .show(ctx, p, open, |ui| {
-                let avail = ui.available_size();
-                let gap = ui.spacing().item_spacing.x;
-                ui.horizontal_top(|ui| {
-                    let map_size = vec2(
-                        (avail.x - SIDE_W - gap).max(SIDE_MAP_MIN.0).floor(),
-                        avail.y.max(SIDE_MAP_MIN.1).floor(),
-                    );
-                    self.map(ui, p, world, tiles, cam, opts, map_size, None);
-                    ui.vertical(|ui| {
-                        ui.set_width(SIDE_W);
-                        ui.set_max_width(SIDE_W);
-                        ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
-                        let footer_height = side_footer_height(ui.ctx());
-                        let scroll_height = (avail.y - footer_height - ui.spacing().item_spacing.y).max(0.0);
-                        egui::ScrollArea::vertical()
-                            .id_salt("worldmap-side")
-                            .auto_shrink([false, false])
-                            .max_height(scroll_height)
-                            .show(ui, |ui| {
-                                self.side_panel(ui, p, world, cam, opts, &mut actions);
-                            });
-                        let footer = ui.vertical(|ui| self.position_panel(ui, p, world, cam, &mut actions));
-                        ui.ctx()
-                            .data_mut(|d| d.insert_temp(side_footer_id(), footer.response.rect.height()));
-                    });
+            .steady_size();
+        host.show((), floater, ctx, p, open, |ui| {
+            let avail = ui.available_size();
+            let gap = ui.spacing().item_spacing.x;
+            ui.horizontal_top(|ui| {
+                let map_size = vec2(
+                    (avail.x - SIDE_W - gap).max(SIDE_MAP_MIN.0).floor(),
+                    avail.y.max(SIDE_MAP_MIN.1).floor(),
+                );
+                self.map(ui, p, world, tiles, cam, opts, map_size, None);
+                ui.vertical(|ui| {
+                    ui.set_width(SIDE_W);
+                    ui.set_max_width(SIDE_W);
+                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                    let footer_height = side_footer_height(ui.ctx());
+                    let scroll_height = (avail.y - footer_height - ui.spacing().item_spacing.y).max(0.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("worldmap-side")
+                        .auto_shrink([false, false])
+                        .max_height(scroll_height)
+                        .show(ui, |ui| {
+                            self.side_panel(ui, p, world, cam, opts, &mut actions);
+                        });
+                    let footer = ui.vertical(|ui| self.position_panel(ui, p, world, cam, &mut actions));
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(side_footer_id(), footer.response.rect.height()));
                 });
             });
+        });
         actions
     }
 
@@ -1724,6 +1727,7 @@ mod size_tests {
                 style,
                 &pictures,
                 &mut open,
+                PanelHost::Embedded,
             );
         }
     }

@@ -17,6 +17,11 @@ pub(super) fn show(
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
     actions: &mut Vec<InvAction>,
 ) {
+    if let Some(item) = st.dialog.as_ref().and_then(super::note_dialog)
+        && super::notecard_is_native(ctx, super::NotecardKey { editor: st.ui_id, item })
+    {
+        return;
+    }
     let Some(mut dialog) = st.dialog.take() else {
         return;
     };
@@ -573,6 +578,36 @@ pub(super) fn preview(
     god_level: u8,
     actions: &mut Vec<InvAction>,
 ) {
+    preview_placed(
+        ctx,
+        p,
+        icons,
+        inv,
+        drag_inventory,
+        st,
+        images,
+        prefs,
+        script_settings,
+        god_level,
+        actions,
+        None,
+    );
+}
+
+pub(super) fn preview_placed(
+    ctx: &egui::Context,
+    p: &Palette,
+    icons: &Icons,
+    inv: &Inventory,
+    drag_inventory: &Inventory,
+    st: &mut InventoryUi,
+    images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    prefs: &mut InventoryPreferences,
+    script_settings: &crate::ui::scripts::settings::ScriptSettings,
+    god_level: u8,
+    actions: &mut Vec<InvAction>,
+    mut desktop: Option<super::DesktopNotecard<'_>>,
+) {
     let Some(id) = st.preview else {
         return;
     };
@@ -580,6 +615,13 @@ pub(super) fn preview(
         st.preview = None;
         return;
     };
+    let key = super::NotecardKey {
+        editor: st.ui_id,
+        item: id,
+    };
+    if desktop.is_none() && it.asset_type == 7 && super::notecard_is_native(ctx, key) {
+        return;
+    }
     if it.asset_type == 20 {
         animation(ctx, p, inv, st, it, actions);
         return;
@@ -606,21 +648,22 @@ pub(super) fn preview(
             editable,
         );
     }
-    let mut open = true;
+    let mut open = !desktop.as_ref().is_some_and(|host| host.close);
     let size = if it.asset_type == 7 {
         Vec2::new(760.0, 600.0)
     } else {
         Vec2::new(500.0, 400.0)
     };
     let size = size.min((ctx.content_rect().size() - Vec2::splat(32.0)).max(Vec2::new(300.0, 220.0)));
-    Floater::new(
-        &super::document::preview_window_id(st.ui_id, id, it.asset_type),
+    let window_id = super::document::preview_window_id(st.ui_id, id, it.asset_type);
+    let floater = Floater::new(
+        &window_id,
         format!("{}{}", it.name, if st.preview_dirty { " *" } else { "" }),
         ctx.content_rect().center() - size * 0.5,
         size,
     )
-    .cascade(crate::ui::widgets::CascadeGroup::inventory(it.asset_type))
-    .show(ctx, p, &mut open, |ui| {
+    .cascade(crate::ui::widgets::CascadeGroup::inventory(it.asset_type));
+    let body = |ui: &mut egui::Ui| {
         if it.asset_type == 0 {
             st.wanted_images.insert(it.asset_id);
             if let Some(t) = images.get(&it.asset_id) {
@@ -856,7 +899,23 @@ pub(super) fn preview(
                 ui.label(RichText::new(&st.preview_message).color(if saved { p.success } else { p.warn }));
             }
         }
-    });
+    };
+    if let Some(host) = &mut desktop {
+        if open {
+            floater.show_desktop(host.ui, p, body);
+        }
+    } else if it.asset_type == 7 {
+        let mut detach = false;
+        floater.desktop_action(&mut detach).show(ctx, p, &mut open, body);
+        if detach && open {
+            ctx.data_mut(|data| {
+                data.get_temp_mut_or_default::<Vec<super::NotecardKey>>(egui::Id::unique("desktop_notecard_requests"))
+                    .push(key);
+            });
+        }
+    } else {
+        floater.show(ctx, p, &mut open, body);
+    }
     super::embedded::preview(ctx, p, st, images);
     if !open {
         if st.save_pending {

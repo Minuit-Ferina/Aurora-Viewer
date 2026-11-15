@@ -37,6 +37,7 @@ pub(super) struct Tools {
     pub scroll_to_cursor: bool,
     pub revert: bool,
     pub file_job: Option<files::Job>,
+    pub file_parent: std::sync::Weak<winit::window::Window>,
     pub file_snapshot: String,
     pub external: Option<files::Watch>,
     pub external_snapshot: String,
@@ -149,9 +150,16 @@ fn run(
         Command::Revert => e.tools.revert = true,
         Command::Open => {
             e.tools.file_snapshot.clone_from(&e.source);
-            e.tools.file_job = Some(files::open(settings.convert_tabs));
+            e.tools.file_job = Some(files::open(settings.convert_tabs, e.tools.file_parent.upgrade()));
         }
-        Command::Export => e.tools.file_job = Some(files::save(e.name.clone(), e.source.clone(), e.lua())),
+        Command::Export => {
+            e.tools.file_job = Some(files::save(
+                e.name.clone(),
+                e.source.clone(),
+                e.lua(),
+                e.tools.file_parent.upgrade(),
+            ))
+        }
         Command::Preferences => prefs.preferences.open = true,
         Command::External => {
             e.tools.file_snapshot.clone_from(&e.source);

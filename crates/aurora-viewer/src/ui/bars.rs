@@ -208,6 +208,7 @@ pub enum BarAction {
     /// Show User Interface (Alt+Shift+U), and hiding it once confirmed.
     ToggleInterface,
     HideInterface,
+    ReturnDesktopWindows,
     /// Immersive mode (#859): the interface hidden but the chat.
     ToggleImmersive,
     /// The HUDs shown or hidden in immersive mode (#1190).
@@ -1000,6 +1001,14 @@ fn main_menus(ui: &mut egui::Ui, p: &Palette, panels: &mut Panels, st: &StatusIn
         // Preferences, Toolbar Buttons and Show HUD Attachments
         if interface_item(ui, p, st) {
             *action = BarAction::ToggleInterface;
+        }
+        if ui
+            .ctx()
+            .data(|data| data.get_temp::<bool>(egui::Id::unique("aurora_detached_windows")))
+            .unwrap_or(false)
+            && menu::item(ui, p, "picture-in-picture-off", aurora_i18n::tr!("native-windows-return-all"))
+        {
+            *action = BarAction::ReturnDesktopWindows;
         }
         if immersive_item(ui, p) {
             *action = BarAction::ToggleImmersive;

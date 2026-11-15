@@ -83,6 +83,24 @@ fn listed(list: &[(Id, u64)], id: Id, frame: u64) -> bool {
     list.iter().any(|(other, at)| *other == id && at + 1 >= frame)
 }
 
+fn root_close_all_id() -> Id {
+    Id::unique("desktop_close_all_requested")
+}
+
+pub(crate) fn queue_root_close_all(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(root_close_all_id(), true));
+}
+
+pub(crate) fn desktop_close_all(ctx: &egui::Context) -> bool {
+    let shift = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    if ctx.memory(|m| m.top_modal_layer()).is_none() && pressed_alone(ctx, egui::Key::W, shift) {
+        ctx.input_mut(|i| i.consume_key(shift, egui::Key::W));
+        true
+    } else {
+        false
+    }
+}
+
 /// At the start of the interface's frame: Ctrl+Shift+W closes every window
 /// drawn on the last frame, and Ctrl+W alone goes to the frontmost. The key
 /// is taken. Nothing with a dialog open (the menu entry is disabled while
@@ -95,10 +113,12 @@ pub fn begin(ctx: &egui::Context) {
     state.extra.retain(|(_, at)| at + 1 >= frame);
     state.target = None;
     state.all = false;
+    let requested =
+        ctx.viewport_id() == egui::ViewportId::ROOT && ctx.data_mut(|d| d.remove_temp::<bool>(root_close_all_id())).unwrap_or_default();
     // held down, it closes once, not on each repeat
     if ctx.memory(|m| m.top_modal_layer()).is_none() {
         let shift = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
-        if pressed_alone(ctx, egui::Key::W, shift) && (!state.shown.is_empty() || !state.extra.is_empty()) {
+        if requested || (pressed_alone(ctx, egui::Key::W, shift) && (!state.shown.is_empty() || !state.extra.is_empty())) {
             ctx.input_mut(|i| i.consume_key(shift, egui::Key::W));
             state.all = true;
         } else if pressed_alone(ctx, egui::Key::W, egui::Modifiers::COMMAND) {

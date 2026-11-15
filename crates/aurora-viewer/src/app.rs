@@ -1580,6 +1580,7 @@ impl App {
         let cache_root = cache.clone();
         let geometry_needs = crate::scene::geometry_need::GeometryNeeds::load(&cache);
         let egui_ctx = egui::Context::default();
+        egui_ctx.set_embed_viewports(false);
         // Restore window state before the theme and fonts: loading egui's
         // memory drops pending font definitions and the transient text scale.
         if std::env::var_os("AURORA_CAPTURE").is_none() || std::env::var_os("AURORA_CAPTURE_LAYOUT").is_some() {
@@ -5027,7 +5028,16 @@ impl App {
             Action::Friends => self.people_tab_shortcut(ui::people::TAB_FRIENDS),
             Action::Groups => self.people_tab_shortcut(ui::people::TAB_GROUPS),
             Action::ContactSets => self.people_tab_shortcut(ui::people::TAB_SETS),
-            Action::Inventory => ui::widgets::toggle_floater(&self.egui_ctx, "inventory", &mut self.panels.inventory),
+            Action::Inventory => {
+                let panel = native_windows::Panel::Inventory(None);
+                if self.world.rlva.has("showinv") {
+                    self.panels.inventory = false;
+                } else if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "inventory", &mut self.panels.inventory);
+                }
+            }
             Action::NewInventoryWindow => self.inventory_ui.open_additional_window(&self.egui_ctx),
             Action::Appearance => ui::widgets::toggle_floater(&self.egui_ctx, "appearance", &mut self.panels.appearance),
             Action::Quit => self.request_exit(),
@@ -5043,7 +5053,16 @@ impl App {
             }
             Action::Gestures => ui::widgets::toggle_floater(&self.egui_ctx, "gestures", &mut self.panels.gestures),
             Action::Minimap => self.panels.minimap = !self.panels.minimap,
-            Action::WorldMap => ui::widgets::toggle_floater(&self.egui_ctx, "worldmap", &mut self.panels.world_map),
+            Action::WorldMap => {
+                let panel = native_windows::Panel::WorldMap;
+                if self.world.rlva.has("showworldmap") {
+                    self.panels.world_map = false;
+                } else if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "worldmap", &mut self.panels.world_map);
+                }
+            }
             Action::TeleportHistory => self.toggle_teleport_history(),
             // World.TeleportHome: the bar's Home, with its confirmation
             Action::TeleportHome => {
@@ -8382,6 +8401,13 @@ impl App {
     /// in (a notification's toast or card, `show_conversation_to_type`).
     fn show_conversation_to_type(&mut self, id: uuid::Uuid) {
         show_conversation_to_type(&self.egui_ctx, &mut self.world, &mut self.chat_ui, &mut self.panels.chat, id);
+        let conversation = (!id.is_nil()).then_some(id);
+        let panel = if ui::chat::has_popout(&self.chat_ui, conversation) {
+            native_windows::Panel::Conversation(conversation)
+        } else {
+            native_windows::Panel::Conversations
+        };
+        self.native_windows.reveal(panel);
     }
 
     /// The Conversations window for a conversation the user asked for (Send
@@ -8391,6 +8417,7 @@ impl App {
     /// the conversation (setMinimized(false), setVisibleAndFrontmost).
     pub(super) fn show_conversations(&mut self) {
         ui::notifications::open_conversations(&self.egui_ctx, &mut self.panels.chat);
+        self.native_windows.reveal(native_windows::Panel::Conversations);
     }
 
     /// The Snooze of a group chat (FSFloaterIM::onSnooze, confirmSnooze):
@@ -8484,13 +8511,13 @@ impl App {
                     self.alt_codes.alt_pressed();
                 }
             } else if let Some(text) = self.alt_codes.alt_released(ke.text.as_deref())
-                && self.egui_ctx.egui_wants_keyboard_input()
+                && self.root_gui_wants_keyboard()
             {
                 self.alt_text.push(text);
             }
             return false;
         }
-        if !pressed || !self.alt_codes.active() || !self.egui_ctx.egui_wants_keyboard_input() {
+        if !pressed || !self.alt_codes.active() || !self.root_gui_wants_keyboard() {
             return false;
         }
         self.alt_codes.key_pressed(code, ke.repeat)
@@ -9003,7 +9030,12 @@ impl App {
                 self.send(ui::contacts::friendship_offer(to, message, folder));
             }
             ContactsAction::GroupTitles => {
-                ui::widgets::toggle_floater(&self.egui_ctx, ui::group_titles::WINDOW, &mut self.panels.group_titles);
+                let panel = native_windows::Panel::GroupTitles;
+                if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, ui::group_titles::WINDOW, &mut self.panels.group_titles);
+                }
             }
             ContactsAction::Conference(ids) => self.on_ctx_action(ui::context::CtxAction::Conference(ids)),
             ContactsAction::SearchGroups => {
@@ -11986,6 +12018,10 @@ impl App {
         }
         ui::fonts::preview::release_unused(&self.egui_ctx);
         let mut raw = gfx.egui_state.take_egui_input(&gfx.window);
+        let desktop_drop = self.native_windows.take_root_drop(gfx.window.id());
+        if let Some(drop) = &desktop_drop {
+            drop.add_events(&self.egui_ctx, &gfx.window, &mut raw);
+        }
         raw.events.extend(self.alt_text.drain(..).map(egui::Event::Text));
         self.demo_script_input(&mut raw);
         // Synthetic preedit uses the ordinary focused Conversations editor.
@@ -12326,6 +12362,8 @@ impl App {
         let t_pass = Instant::now();
         let mut windows_ms = 0.0;
         let mut full = ctx.run_ui(raw, |ui| {
+            self.native_windows.begin_root_pass(ui.ctx());
+            self.native_windows.declare_viewports(ui.ctx());
             self.sound_cues.pass_start(ui.ctx());
             // before any field reads its keys: Ctrl+W is the frontmost window's
             ui::close_key::begin(ui.ctx());
@@ -12357,6 +12395,7 @@ impl App {
             }
             windows_ms += t.elapsed().as_secs_f32() * 1000.0;
         });
+        self.native_windows.finish_root_pass(&ctx);
         // a capture leaves the user's layout as it is (as at exit)
         if self.capture.is_none() {
             self.layout_autosave.after_pass(&ctx, Instant::now());
@@ -12570,9 +12609,11 @@ impl App {
             .handle_platform_output_with_event_loop(&gfx.window, event_loop, full.platform_output);
         self.perf.ui_ms = t_ui.elapsed().as_secs_f32() * 1000.0;
         self.frame_profile.lap(Lap::Hover);
-        let mut textures = std::mem::take(&mut full.textures_delta);
-        if gpu_recovery::shadow_kept() {
-            self.egui_shadow.note(&textures);
+        let textures = std::mem::take(&mut full.textures_delta);
+        self.egui_shadow.note(&textures);
+        let mut textures = self.native_windows.root_textures(textures);
+        if desktop_drop.is_some() {
+            egui::DragAndDrop::clear_payload(&self.egui_ctx);
         }
         if std::mem::take(&mut self.egui_replay) {
             log::info!("GPU recovery: egui's textures sent again ({} KB)", self.egui_shadow.bytes() >> 10);
@@ -12852,9 +12893,10 @@ impl App {
         self.screen_rate.poll(&gfx.window, Instant::now());
         let monitor_hz = self.screen_rate.hz();
         let timed = self.capture.is_some() || self.frame_profile.enabled();
+        let app_focused = self.focused || self.native_windows.owns_focus();
         let cap = frame_cap(
             &self.settings,
-            self.focused,
+            app_focused,
             gfx.renderer.vr_engaged(),
             self.in_world(),
             monitor_hz,
@@ -12865,7 +12907,7 @@ impl App {
         // (instances.rs)
         let cap = crate::instances::throttle(
             cap,
-            self.focused,
+            app_focused,
             self.instances.peers().in_front(),
             timed || !self.settings.background_fps_cap,
         );
@@ -15441,6 +15483,7 @@ impl App {
                 }
             }
             BarAction::ToggleImmersive => self.toggle_immersive(),
+            BarAction::ReturnDesktopWindows => self.native_windows.return_all(),
             BarAction::ImmersiveHuds(visible) => self.set_immersive_huds(visible),
             BarAction::HoverTips(menu) => {
                 let tips = &mut self.settings.hover_tips;
@@ -16772,6 +16815,18 @@ impl App {
             .data_mut(|data| data.insert_temp(ui::bars::rlva_sit_locked_id(), sit_locked));
         self.world.refresh_rlva_privacy();
         self.notif_ui.privacy = self.world.rlva_privacy.clone();
+        ui.ctx().data_mut(|data| {
+            data.insert_temp(
+                egui::Id::unique("aurora_detached_windows"),
+                self.native_windows.has_detached_panels(),
+            );
+        });
+        if self.native_windows.has_detached_panels() {
+            ui::close_key::shown_extra(ui.ctx(), egui::Id::unique("desktop_panels"));
+        }
+        if ui::close_key::closes_every_window(ui.ctx()) {
+            self.native_windows.request_close_all();
+        }
         let mut a = UiActions::default();
         let p = self.palette;
         let ctx = ui.ctx().clone();
@@ -17850,10 +17905,26 @@ impl App {
                         demo: self.demo,
                     };
                     self.settings.build.show_parcel_owners = self.settings.world_overlays.land_owners;
-                    if crate::build::ui::show(&ctx, &p, &mut self.build, &mut self.world, &mut self.settings.build, mods, &mut env) {
-                        self.settings.save();
+                    if !self.native_windows.is_native(native_windows::Panel::Build) {
+                        let mut desktop = ui::widgets::DesktopPanels::default();
+                        if crate::build::ui::show(
+                            &ctx,
+                            &p,
+                            &mut self.build,
+                            &mut self.world,
+                            &mut self.settings.build,
+                            mods,
+                            &mut env,
+                            ui::widgets::PanelHost::Viewer(&mut desktop),
+                        ) {
+                            self.settings.save();
+                        }
+                        if !desktop.requested.is_empty() {
+                            self.native_windows
+                                .detach(native_windows::Panel::Build, aurora_i18n::tr!("build-compact-title").to_owned());
+                        }
+                        self.settings.world_overlays.land_owners = self.settings.build.show_parcel_owners;
                     }
-                    self.settings.world_overlays.land_owners = self.settings.build.show_parcel_owners;
                 }
                 ui::debug_overlay::draw(
                     &ctx,
@@ -18041,16 +18112,7 @@ impl App {
                     }
                 }
                 t = self.ui_parts.lap(Part::UiOverlays, t);
-                let map_cam = {
-                    let r = ctx.content_rect();
-                    let aspect = (r.width() / r.height().max(1.0)).max(0.1);
-                    ui::minimap::MapCamera {
-                        pos: self.camera.position,
-                        dir: self.camera.target - self.camera.position,
-                        hfov: 2.0 * ((self.camera.fov_y * 0.5).tan() * aspect).atan(),
-                        far: self.settings.draw_distance,
-                    }
-                };
+                let map_cam = self.map_camera(ctx.content_rect().size());
                 let mut mini = Vec::new();
                 let mut open = self.panels.chat;
                 let mut contact_actions = Vec::new();
@@ -18236,8 +18298,10 @@ impl App {
                     images: &self.ui_images,
                 });
                 let mut contacts_people = Vec::new();
-                let mut snoozes = Vec::new();
-                let conversation_actions = ui::chat::show(
+                let mut move_conversations = false;
+                let mut desktop_popouts = self.native_windows.popped_windows();
+                let desktop_conversations = self.native_windows.is_native(native_windows::Panel::Conversations);
+                let conversation_actions = ui::chat::show_placed(
                     &ctx,
                     &p,
                     icons,
@@ -18252,7 +18316,30 @@ impl App {
                     self.settings.show_contacts_tab,
                     friends,
                     &mut open,
+                    ui::chat::ContainerHost::Viewer {
+                        detached: desktop_conversations,
+                        move_to_desktop: &mut move_conversations,
+                        popouts: &mut desktop_popouts,
+                    },
                 );
+                if move_conversations && open {
+                    self.native_windows.detach(
+                        native_windows::Panel::Conversations,
+                        aurora_i18n::tr!("common-conversations").to_owned(),
+                    );
+                }
+                for conversation in desktop_popouts.requested {
+                    let title = if conversation.is_none() {
+                        aurora_i18n::tr!("common-nearby-chat")
+                    } else {
+                        aurora_i18n::tr!("common-conversations")
+                    };
+                    self.native_windows
+                        .detach(native_windows::Panel::Conversation(conversation), title.to_owned());
+                }
+                for conversation in desktop_popouts.reveal {
+                    self.native_windows.reveal(native_windows::Panel::Conversation(conversation));
+                }
                 // the torn-off Contacts window, in the look of the tab it
                 // left (#961): the friends pane where Conversations shows it
                 // (Aurora's People in the workspace), the contact list
@@ -18284,105 +18371,11 @@ impl App {
                     contacts_people.extend(people);
                     self.panels.contacts = contacts_open;
                 }
-                for c in conversation_actions {
-                    match c {
-                        ui::chat::ConvAction::ColumnCollapsed(collapsed) => {
-                            // (demo mode: this session only, never the file)
-                            if self
-                                .chat_ui
-                                .column_collapsed_by_button(&mut self.settings.chat_column_collapsed, collapsed, self.demo)
-                            {
-                                self.settings.save();
-                            }
-                        }
-                        ui::chat::ConvAction::Local(out) => a.chat = Some(out),
-                        ui::chat::ConvAction::Im { to, text } => a.ims.push((to, text)),
-                        ui::chat::ConvAction::OfferTeleport(id) => a.offer_tp.push(id),
-                        ui::chat::ConvAction::ToggleBlock(id) => a.ctx_action = Some(ui::context::CtxAction::ToggleBlock(id)),
-                        ui::chat::ConvAction::Close(id) => {
-                            self.world.conversation_closed(&id);
-                            self.world.leave_session(id);
-                            self.chat_ui.forget(id);
-                            // closed from the list, another conversation may be shown
-                            if self.chat_ui.selected == Some(id) {
-                                self.chat_ui.selected = None;
-                                self.chat_ui.show_profile = false;
-                            }
-                        }
-                        ui::chat::ConvAction::Call(id) => a.ctx_action = Some(ui::context::CtxAction::Call(id)),
-                        ui::chat::ConvAction::HangUp => self.world.end_call(),
-                        ui::chat::ConvAction::ToggleMic => {
-                            // toggle_mic, written out: the skin's icons stay borrowed
-                            if self.speak_denied().is_none() {
-                                self.mic_on = !self.mic_on;
-                            }
-                        }
-                        ui::chat::ConvAction::AnswerCall { session, answer } => self.world.answer_call_invite(session, answer),
-                        ui::chat::ConvAction::PickPeople(conversation) => self.call_invite_ui.pick_for(conversation),
-                        ui::chat::ConvAction::AddPeople(conversation, ids) => self.call_invite_ui.add(&mut self.world, conversation, ids),
-                        ui::chat::ConvAction::SetVolume(id, v) => {
-                            self.world.calls.set_volume(id, v);
-                            // saved once the slider rests
-                            self.volumes_save_at = Some(Instant::now() + std::time::Duration::from_millis(500));
-                        }
-                        ui::chat::ConvAction::Snooze(id) => snoozes.push(id),
-                        ui::chat::ConvAction::BlockGroupChat(id) => {
-                            self.world.conversation_closed(&id);
-                            self.world.set_group_chat_blocked(id, true);
-                            self.chat_ui.forget(id);
-                            self.chat_ui.selected = None;
-                        }
-                        ui::chat::ConvAction::OpenPeople(tab) => {
-                            self.panels.people = true;
-                            self.panels.people_tab = tab;
-                        }
-                        ui::chat::ConvAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
-                        ui::chat::ConvAction::Contacts(c) => contact_actions.push(c),
-                        ui::chat::ConvAction::People(pa) => contacts_people.push(pa),
-                        ui::chat::ConvAction::OpenIm(id) => self.world.start_text_conference(vec![id]),
-                        ui::chat::ConvAction::StartGroupChat(group) => self.world.start_group_chat(group),
-                        // LLIMModel::sendTypingState: to the resident, in
-                        // the session of the two of us (agent XOR other)
-                        ui::chat::ConvAction::Typing { to, typing } => a.typing.push(NetCommand::SendImDialog {
-                            to,
-                            dialog: if typing {
-                                crate::world::IM_TYPING_START
-                            } else {
-                                crate::world::IM_TYPING_STOP
-                            },
-                            id: uuid::Uuid::from_u128(self.world.agent_id.as_u128() ^ to.as_u128()),
-                            message: "typing".to_owned(),
-                            bucket: Vec::new(),
-                        }),
-                        // the inventory's Share dialog confirms, then gives
-                        // (LLGiveInventory::doGiveInventoryItem)
-                        ui::chat::ConvAction::GiveItems { to, items } => {
-                            self.inventory_ui.dialog = Some(ui::inventory::EditDialog::Share(items, to));
-                        }
-                        // shown and in front even when already open
-                        // (LLAvatarActions::share → showInstance), else the
-                        // menu entry seems to do nothing (#627)
-                        ui::chat::ConvAction::OpenInventory => {
-                            ui::widgets::open_floater(&self.egui_ctx, "inventory", &mut self.panels.inventory);
-                            self.egui_ctx
-                                .move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::unique("inventory")));
-                        }
-                        ui::chat::ConvAction::SetOutputDevice(device) => {
-                            self.settings.audio.output_device = device;
-                            self.settings.save();
-                        }
-                        ui::chat::ConvAction::ListOutputDevices => {
-                            self.device_lister.request();
-                        }
-                        // done by the window before it returns
-                        ui::chat::ConvAction::PopOut(_) | ui::chat::ConvAction::DockBack(_) | ui::chat::ConvAction::PopOutAt(..) => {}
-                    }
-                }
+                self.apply_conversation_actions(conversation_actions, &mut a, &mut contact_actions, &mut contacts_people);
+                let icons = &self.skin.icons;
                 self.panels.chat = open;
-                for group in snoozes {
-                    Self::ask_or_snooze(&self.settings, self.demo, &mut self.world, &mut self.chat_ui, group);
-                }
-                if let Some((group, minutes)) = ui::chat::snooze::dialog(&ctx, &p, &self.world, &mut self.chat_ui) {
+                if !desktop_conversations && let Some((group, minutes)) = ui::chat::snooze::dialog(&ctx, &p, &self.world, &mut self.chat_ui)
+                {
                     Self::snooze_group_chat(&mut self.world, &mut self.chat_ui, group, minutes.saturating_mul(60));
                 }
                 // a link's menu hid the previews of its site
@@ -18493,67 +18486,7 @@ impl App {
                     self.settings.save();
                 }
                 // (and those of Conversations › Contacts, the same tab)
-                for pa in people.into_iter().chain(contacts_people) {
-                    match pa {
-                        ui::people::PeopleAction::OpenIm(id) => {
-                            self.open_conversation_to_type(id);
-                        }
-                        ui::people::PeopleAction::OfferTeleport(id) => a.offer_tp.push(id),
-                        ui::people::PeopleAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
-                        ui::people::PeopleAction::ZoomRefused { name, why } => {
-                            let meters = |d: f32| aurora_i18n::number(f64::from(d), 0);
-                            let text = match why {
-                                ui::people::ZoomRefusal::BeyondDrawDistance { range, draw_distance } => aurora_i18n::tr!(
-                                    "radar-zoom-beyond-draw-distance",
-                                    name = name,
-                                    distance = meters(range),
-                                    draw = meters(draw_distance)
-                                ),
-                                ui::people::ZoomRefusal::Unplaced => aurora_i18n::tr!("radar-zoom-unplaced", name = name),
-                            };
-                            self.world.system_message(text);
-                        }
-                        ui::people::PeopleAction::GroupChat(id) => {
-                            self.world.ui_sounds.push(UiSound::StartIm);
-                            self.world.start_group_chat(id);
-                            self.show_conversations();
-                        }
-                        ui::people::PeopleAction::GroupNotices(id, on) => self.world.groups.set_accept_notices(id, on),
-                        ui::people::PeopleAction::ModifyRights { friend, rights, grant } => {
-                            self.contacts_ui.ask_modify_rights(friend, rights, grant)
-                        }
-                        ui::people::PeopleAction::PickFriend => self.contacts_ui.pick_new_friend(),
-                        ui::people::PeopleAction::Unblock(id, name) => self.world.unblock(id, &name, 0),
-                        ui::people::PeopleAction::BlockByName(name) => {
-                            if let Err(e) = self.world.block(uuid::Uuid::nil(), &name, crate::world::mutes::MuteType::ByName) {
-                                self.world.system_message(e);
-                            }
-                        }
-                        ui::people::PeopleAction::BlockFlag { id, name, kind, flag, on } => {
-                            if on {
-                                if let Err(e) = self.world.block_flags(id, &name, kind, flag) {
-                                    self.world.system_message(e);
-                                }
-                            } else {
-                                self.world.unblock(id, &name, flag);
-                            }
-                        }
-                        ui::people::PeopleAction::SearchGroups => {
-                            self.panels.search = true;
-                            self.search_ui.open_tab(crate::world::search::Tab::Groups);
-                        }
-                        ui::people::PeopleAction::GroupData(group) => self.world.group_data.open(group, true),
-                        ui::people::PeopleAction::GroupTitle { group, role } => {
-                            if !self.world.rlva.has("setgroup") {
-                                self.world.group_data.set_title(group, role);
-                            }
-                        }
-                        ui::people::PeopleAction::GroupFlags { group, notices, profile } => {
-                            self.world.groups.set_flags(group, notices, profile)
-                        }
-                        ui::people::PeopleAction::InviteToGroup(group) => self.group_profile_ui.open_with_invite(&mut self.world, group),
-                    }
-                }
+                self.apply_people_actions(people.into_iter().chain(contacts_people), &mut a);
                 t = self.ui_parts.lap(Part::UiPeople, t);
                 self.poll_inventory_animation_stats();
                 self.show_imports(&ctx, &p);
@@ -18566,7 +18499,9 @@ impl App {
                     self.send(NetCommand::RequestInventoryMerchant);
                 }
                 self.prepare_inventory_marketplace_commands();
-                for ia in ui::inventory::show(
+                let classic_inventory = self.classic_inventory_window();
+                let mut desktop_inventory = self.native_windows.inventory_windows();
+                for ia in ui::inventory::show_placed(
                     &ctx,
                     &p,
                     &self.skin.icons,
@@ -18579,13 +18514,8 @@ impl App {
                     &self.inventory_hover_images.ready,
                     &self.avatar_pics,
                     &self.settings.script_editor,
-                    // the inventory scenarios were written for the Legacy window,
-                    // but for Aurora's own
-                    if self.demo && ui::inventory::aurora_demo_active() {
-                        false
-                    } else {
-                        self.settings.classic_inventory || (self.demo && ui::inventory::legacy_demo())
-                    },
+                    classic_inventory,
+                    ui::widgets::PanelHost::Viewer(&mut desktop_inventory),
                 ) {
                     match ia {
                         ui::inventory::InvAction::TeleportLandmark(asset) => a.landmark = Some(asset),
@@ -18593,6 +18523,12 @@ impl App {
                     }
                 }
                 self.panels.inventory = open;
+                for id in desktop_inventory.requested {
+                    self.native_windows.detach(
+                        native_windows::Panel::Inventory(id),
+                        aurora_i18n::tr!("common-inventory").to_owned(),
+                    );
+                }
                 ui::inventory::default_permissions::show(
                     &ctx,
                     &p,
@@ -19135,7 +19071,7 @@ impl App {
                 self.sound_explorer_window(&ctx, &p);
                 self.animation_explorer_window(&ctx, &p);
                 self.avatar_render_settings_window(&ctx, &p);
-                self.bumps_ui.show(&ctx, &p, &self.world, &mut self.panels.bumps);
+                self.bumps_window(&ctx, &p);
                 self.grid_status_window(&ctx, &p);
                 self.avatar_align_window(&ctx, &p);
                 if let Some(ui::voice_controls::Action::LeaveCall) = self.voice_controls_ui.show(
@@ -19512,7 +19448,12 @@ impl App {
                         ui::minimap::MiniMapAction::Close => self.panels.minimap = false,
                     }
                 }
-                let mut open = self.panels.world_map;
+                let mut open = self.panels.world_map && !self.world.rlva.has("showworldmap");
+                let panel = native_windows::Panel::WorldMap;
+                let mut desktop = ui::widgets::DesktopPanels {
+                    live: self.native_windows.is_native(panel).then_some(()).into_iter().collect(),
+                    requested: Vec::new(),
+                };
                 let pictures = ui::worldmap::MapPictures {
                     images: &self.ui_images,
                     avatars: &self.avatar_pics,
@@ -19527,8 +19468,12 @@ impl App {
                     self.settings.world_map_style,
                     &pictures,
                     &mut open,
+                    ui::widgets::PanelHost::Viewer(&mut desktop),
                 );
                 self.panels.world_map = open;
+                if !desktop.requested.is_empty() {
+                    self.native_windows.detach(panel, aurora_i18n::tr!("common-world-map").to_owned());
+                }
                 self.region_tracker_ui.show(
                     &ctx,
                     &p,
@@ -19536,21 +19481,7 @@ impl App {
                     &mut self.panels.region_tracker,
                     &mut self.panels.world_map,
                 );
-                for wa in wm {
-                    match wa {
-                        ui::worldmap::WorldMapAction::TrackRegion(name) => {
-                            self.region_tracker_ui.track_region(&self.world, name);
-                            self.panels.region_tracker = true;
-                        }
-                        ui::worldmap::WorldMapAction::TeleportHome => {
-                            a.bar = BarAction::TeleportHome;
-                            self.panels.world_map = false;
-                        }
-                        ui::worldmap::WorldMapAction::TeleportLandmark(asset) => a.landmark = Some(asset),
-                        ui::worldmap::WorldMapAction::TeleportHistory(global) => self.teleport_saved_place(global),
-                        ui::worldmap::WorldMapAction::OpenPlace(source) => self.show_place_profile(source),
-                    }
-                }
+                self.apply_world_map_actions(wm, &mut a);
                 t = self.ui_parts.lap(Part::UiMaps, t);
                 let mut open = self.panels.perf;
                 let view = ui::perf::PerfView {
@@ -22651,7 +22582,25 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        if let Some(activity) = self.native_windows.event(id, &event) {
+        #[cfg(windows)]
+        if !self.exit_prompt.open
+            && let Some(gfx) = &self.gfx
+        {
+            self.native_windows.bridge_drag(
+                &self.egui_ctx,
+                &gfx.window,
+                egui::Modifiers {
+                    alt: self.alt,
+                    ctrl: self.ctrl,
+                    shift: self.shift,
+                    command: self.ctrl,
+                    ..egui::Modifiers::NONE
+                },
+                id,
+                &event,
+            );
+        }
+        if let Some(activity) = self.native_windows.event(id, &event, self.exit_prompt.open) {
             if activity {
                 self.last_input = Instant::now();
             }
@@ -22659,9 +22608,17 @@ impl ApplicationHandler for App {
         }
         // the window of a lost device, on screen until its successor has
         // presented: its redraws and sizes are not the new renderer's
-        if self.retired_window.as_ref().is_some_and(|w| w.id() == id) && !matches!(event, WindowEvent::CloseRequested) {
+        let retiring_root = self.retired_window.as_ref().is_some_and(|w| w.id() == id);
+        if retiring_root {
+            if !matches!(event, WindowEvent::CloseRequested) {
+                return;
+            }
+        } else if self.gfx.as_ref().is_none_or(|gfx| gfx.window.id() != id) {
             return;
         }
+        let gui_wants_keyboard = self.root_gui_wants_keyboard();
+        let gui_popup_open = self.root_gui_popup_open();
+        let root_text_edit = self.root_text_edit_focused();
         // The system's view of the keys when the focus comes back is no key
         // press: a key it wrongly reports as down (#2287) would stay held
         // here, with no release to come. Like egui-winit, and like
@@ -22719,14 +22676,14 @@ impl ApplicationHandler for App {
         // egui as well would focus a viewer widget and steal the next key.
         let web_tab = bound_key == Some(KeyCode::Tab)
             && self.web_has_focus()
-            && !self.egui_ctx.egui_wants_keyboard_input()
-            && !egui::Popup::is_any_open(&self.egui_ctx)
+            && !gui_wants_keyboard
+            && !gui_popup_open
             && self.options_ui.capture.is_none()
             && !self.exit_prompt.open;
         let lens_shortcut = matches!(bound_key, Some(code)
             if matches!(self.settings.keybinds.triggered(&Input::key(code), key_mods),
                 Some(Action::LensZoomIn | Action::LensZoomOut | Action::LensZoomDefault))
-                && (!(self.egui_ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(&self.egui_ctx))
+                && (!(gui_wants_keyboard || gui_popup_open)
                     || shortcut_while_typing(true, key_mods, code, None, true)))
             && self.in_world()
             && self.options_ui.capture.is_none()
@@ -22770,8 +22727,8 @@ impl ApplicationHandler for App {
                         ke.repeat,
                         code,
                         key_mods,
-                        self.egui_ctx.egui_wants_keyboard_input()
-                            || egui::Popup::is_any_open(&self.egui_ctx)
+                        gui_wants_keyboard
+                            || gui_popup_open
                             || self.web_has_focus()
                             || self.media.focus.is_some(),
                         self.options_ui.capture.is_some()
@@ -22800,7 +22757,13 @@ impl ApplicationHandler for App {
                 repaint: true,
             }
         } else {
-            g.egui_state.on_window_event(&g.window, &event)
+            let mut response = g.egui_state.on_window_event(&g.window, &event);
+            if matches!(event, WindowEvent::KeyboardInput { .. })
+                && let Some(keyboard) = self.native_windows.root_keyboard()
+            {
+                response.consumed = keyboard.wants;
+            }
+            response
         };
         match &event {
             WindowEvent::CloseRequested => {
@@ -23006,20 +22969,14 @@ impl ApplicationHandler for App {
                         return;
                     }
                     // the photo viewfinder's keys (the shutter, its menu…)
-                    if behind.is_none()
-                        && !self.egui_ctx.egui_wants_keyboard_input()
-                        && self.viewfinder_key(code, &ke.logical_key, pressed, ke.repeat)
-                    {
+                    if behind.is_none() && !gui_wants_keyboard && self.viewfinder_key(code, &ke.logical_key, pressed, ke.repeat) {
                         self.down.remove(&Input::key(code));
                         return;
                     }
                     // The command table is shared with egui's dispatcher:
                     // an editing accelerator must never become a held move.
                     let input = Input::key(code);
-                    let build_keyboard = self.in_world()
-                        && !altgr_text
-                        && !self.egui_ctx.egui_wants_keyboard_input()
-                        && !egui::Popup::is_any_open(&self.egui_ctx);
+                    let build_keyboard = self.in_world() && !altgr_text && !gui_wants_keyboard && !gui_popup_open;
                     let build_shortcut = pressed
                         .then(|| {
                             crate::build::ui::Shortcut::take_native_key(
@@ -23044,7 +23001,7 @@ impl ApplicationHandler for App {
                         let _ = self.settings.keybinds.update_held_input(&mut self.down, &input, pressed, mods);
                     }
                     // Releases always go through so keys never get stuck.
-                    let typing = self.egui_ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(&self.egui_ctx);
+                    let typing = gui_wants_keyboard || gui_popup_open;
                     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
                     let gesture_key = crate::gestures::keys::from_key(code, &ke.key_without_modifiers());
                     if !pressed && let Some(key) = gesture_key {
@@ -23211,12 +23168,8 @@ impl ApplicationHandler for App {
                 // when it turns into a drag (LLTool::handleAnyMouseClick:
                 // setKeyboardFocus(NULL)); egui lets it go on a click only
                 if pressed && !over_ui && self.in_world() {
-                    let typing = self.egui_ctx.text_edit_focused();
-                    self.egui_ctx.memory_mut(|m| {
-                        if let Some(id) = m.focused() {
-                            m.surrender_focus(id);
-                        }
-                    });
+                    let typing = root_text_edit;
+                    self.native_windows.surrender_root_focus(&self.egui_ctx);
                     // the field commits first, to what it was typed for
                     if typing {
                         self.press_while_typing();
@@ -23308,10 +23261,7 @@ impl ApplicationHandler for App {
         if self.demo && self.in_world() && self.frame_count >= 120 {
             self.native_windows.start_demo();
         }
-        if let Some(gfx) = self.gfx.as_mut() {
-            self.native_windows
-                .pump(event_loop, &mut gfx.renderer, &gfx.window, &self.egui_ctx, &self.palette);
-        }
+        self.pump_native_windows(event_loop);
         self.sync_minimized_mute();
         if self.settings.window_fullscreen != self.fullscreen_applied {
             self.apply_fullscreen_setting();

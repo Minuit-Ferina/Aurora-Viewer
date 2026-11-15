@@ -144,7 +144,19 @@ impl AboutUi {
     }
 
     /// Draw the window while `open`.
+    #[cfg(test)]
     pub fn show(&mut self, ctx: &egui::Context, p: &Palette, view: &AboutView, open: &mut bool) {
+        self.show_placed(ctx, p, view, open, widgets::PanelHost::Embedded);
+    }
+
+    pub(crate) fn show_placed(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Palette,
+        view: &AboutView,
+        open: &mut bool,
+        mut host: widgets::PanelHost<'_, ()>,
+    ) {
         if !*open {
             return;
         }
@@ -155,7 +167,7 @@ impl AboutUi {
             Vec2::new(600.0, 720.0),
         );
         floater.min_size = Vec2::new(440.0, 420.0);
-        floater.show(ctx, p, open, |ui| {
+        host.show((), floater, ctx, p, open, |ui| {
             hero(ui, p, view.logo);
             ui.add_space(10.0);
             ui.horizontal(|ui| {

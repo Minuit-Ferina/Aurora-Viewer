@@ -50,7 +50,28 @@ impl App {
         if moving {
             ctx.request_repaint();
         }
-        match ui::grid_status::show(ctx, p, &self.grid_status, &mut self.panels.grid_status) {
+        if self.native_windows.is_native(native_windows::Panel::GridStatus) {
+            return;
+        }
+        let mut desktop = ui::widgets::DesktopPanels::default();
+        let action = ui::grid_status::show(
+            ctx,
+            p,
+            &self.grid_status,
+            &mut self.panels.grid_status,
+            ui::widgets::PanelHost::Viewer(&mut desktop),
+        );
+        if !desktop.requested.is_empty() {
+            self.native_windows.detach(
+                native_windows::Panel::GridStatus,
+                aurora_i18n::tr!("toolbar-command-grid-status").to_owned(),
+            );
+        }
+        self.apply_grid_status_action(ctx, action);
+    }
+
+    pub(super) fn apply_grid_status_action(&mut self, ctx: &egui::Context, action: Option<ui::grid_status::Action>) {
+        match action {
             Some(ui::grid_status::Action::Refresh) => self.grid_status.refresh(),
             Some(ui::grid_status::Action::Open(url)) => ctx.open_url(egui::OpenUrl::new_tab(url)),
             None => {}

@@ -6083,6 +6083,25 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   With `AURORA_DEMO_GPU_LOST=600` and `AURORA_GPU_RECOVERY=1`, the test
   documents should return to the rebuilt root window.
 
+- In the offline demo, the window-and-arrow icon
+  moves the current panel to the desktop. The inverse icon returns it to
+  its viewer floater. The viewer's Me menu returns all desktop panels.
+  Use `AURORA_DEMO_CONV_POPOUT=1` to test the Conversations container and a
+  group popout. Type an unsent draft, return the window, and check the draft.
+  The conversation's Attach to Conversations command still docks it as a tab.
+  Open both Inventory styles and open an additional Inventory. Detach the
+  construction inspector with a selected demo object, check Contents and
+  textures, and drop a test item between windows on Windows. In an offline
+  script or notecard editor, edit the document, then close the desktop window.
+  Try Cancel, a successful save, and a failed save. Verify that returning all
+  panels with a draft does not open a save prompt. In a script, open the OS
+  file picker and check that its owner is kept until the picker closes.
+  Check the app-wide close prompt and the Return All command with more
+  than one desktop window. About and Grid Status use the same controls.
+  With `AURORA_DEMO_MAP=1` and `AURORA_DEMO_MAP=legacy`, pan and zoom the
+  detached map and check its view on return. The demos `AURORA_DEMO_GROUP_REGION=1`
+  and `AURORA_DEMO_COLLISIONS=1` populate Group Titles and Bumps, Pushes & Hits.
+
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers
   the same commands while the global opt-in stays off; `released` enables

@@ -1450,6 +1450,7 @@ impl Inspector {
                 &mut self.settings,
                 Mods::default(),
                 &mut env,
+                crate::ui::widgets::PanelHost::Viewer(&mut Default::default()),
             );
         });
         if let Some(drag) = &mut self.numeric_drag {

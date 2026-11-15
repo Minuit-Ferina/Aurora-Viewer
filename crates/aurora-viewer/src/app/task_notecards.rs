@@ -10,7 +10,7 @@ use uuid::Uuid;
 const GP_OBJECT_MANIPULATE: u64 = 1 << 38;
 
 pub(super) struct TaskNotecard {
-    inventory: Inventory,
+    pub(super) inventory: Inventory,
     pub(super) state: InventoryUi,
 }
 
@@ -51,6 +51,22 @@ impl TaskNotecard {
         Self { inventory, state }
     }
 
+    pub(super) fn refresh_permissions(&mut self, item: Uuid, metadata: Option<&InvItem>) {
+        let allowed = metadata.is_some_and(|it| it.owner_mask & (rules::COPY | rules::MODIFY) == rules::COPY | rules::MODIFY);
+        if let Some(model) = self.inventory.items.get_mut(&item) {
+            model.owner_mask = metadata.map_or(0, |it| it.owner_mask);
+            if let Some(metadata) = metadata {
+                model.desc.clone_from(&metadata.desc);
+            }
+        }
+        if self.state.preview_source.is_some() {
+            self.state.preview_can_edit = allowed;
+        }
+        if metadata.is_none() {
+            self.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();
+        }
+    }
+
     fn load(&mut self, item: Uuid, asset: Uuid, result: Result<Vec<u8>, String>) {
         if self.inventory.items.get(&item).is_some_and(|it| it.asset_id == asset) {
             self.state
@@ -60,7 +76,7 @@ impl TaskNotecard {
 }
 
 impl App {
-    fn task_notecard_item(&self, object: Uuid, item: Uuid) -> Option<InvItem> {
+    pub(super) fn task_notecard_item(&self, object: Uuid, item: Uuid) -> Option<InvItem> {
         let idx = self.world.objects.index_of_uuid(&object)?;
         let metadata = self
             .build
@@ -188,22 +204,8 @@ impl App {
             let Some(d) = self.task_notecards.get_mut(&(object, item)) else {
                 continue;
             };
-            let allowed = metadata
-                .as_ref()
-                .is_some_and(|it| it.owner_mask & (rules::COPY | rules::MODIFY) == rules::COPY | rules::MODIFY);
-            if let Some(model) = d.inventory.items.get_mut(&item) {
-                model.owner_mask = metadata.as_ref().map_or(0, |it| it.owner_mask);
-                if let Some(metadata) = &metadata {
-                    model.desc.clone_from(&metadata.desc);
-                }
-            }
-            if d.state.preview_source.is_some() {
-                d.state.preview_can_edit = allowed;
-            }
-            if metadata.is_none() {
-                d.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();
-            }
-            for action in ui::inventory::show_document(
+            d.refresh_permissions(item, metadata.as_ref());
+            for action in ui::inventory::show_document_placed(
                 ctx,
                 p,
                 &self.skin.icons,
@@ -213,6 +215,8 @@ impl App {
                 &self.ui_images,
                 &mut self.settings.inventory,
                 &self.settings.script_editor,
+                0,
+                None,
             ) {
                 if let InvAction::SaveContent { text, close, .. } = action {
                     saves.push((object, item, text, close));
@@ -257,6 +261,21 @@ impl App {
         self.task_notecards.retain(|_, d| d.state.preview.is_some());
     }
 
+    pub(super) fn apply_task_note_description(&mut self, object: Uuid, item: Uuid, change: aurora_net::inventory::operations::Mutation) {
+        for operation in change.operations {
+            if let aurora_net::inventory::operations::Operation::Patch { id, folder: false, body } = operation
+                && id == item
+                && body.has("desc")
+                && self
+                    .task_notecard_item(object, item)
+                    .is_some_and(|it| it.owner_mask & rules::MODIFY != 0)
+                && let Some(idx) = self.world.objects.index_of_uuid(&object)
+            {
+                self.build.describe_item(&self.world, idx, item, body["desc"].as_str());
+            }
+        }
+    }
+
     pub(super) fn task_document_state(&mut self, editor: Uuid) -> Option<&mut InventoryUi> {
         self.task_notecards
             .values_mut()
@@ -264,7 +283,7 @@ impl App {
             .map(|d| &mut d.state)
     }
 
-    fn save_task_notecard(&mut self, object: Uuid, item: Uuid, text: String, close: bool) {
+    pub(super) fn save_task_notecard(&mut self, object: Uuid, item: Uuid, text: String, close: bool) {
         let Some(metadata) = self.task_notecard_item(object, item) else {
             if let Some(d) = self.task_notecards.get_mut(&(object, item)) {
                 d.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();

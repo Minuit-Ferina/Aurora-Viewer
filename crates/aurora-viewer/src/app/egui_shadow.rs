@@ -5,35 +5,89 @@
 //! made after a GPU device loss (gpu_recovery.rs) gets them all again from
 //! here, whole, before its first frame.
 
-use egui::epaint::{ImageData, ImageDelta, TextureId, textures::TexturesDelta};
+use egui::epaint::{ClippedShape, ImageData, ImageDelta, Shape, TextureId, textures::TexturesDelta};
 use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct EguiShadow {
-    images: HashMap<TextureId, ImageDelta>,
+    images: HashMap<TextureId, Image>,
+    revision: u64,
 }
+
+struct Image {
+    full: ImageDelta,
+    revision: u64,
+}
+
+/// Textures uploaded to one desktop presentation's egui renderer.
+#[derive(Default)]
+pub(super) struct NativeTextures(HashMap<TextureId, u64>);
 
 impl EguiShadow {
     /// A frame's delta, applied to the copy.
     pub fn note(&mut self, delta: &TexturesDelta) {
+        self.note_updates(delta);
+        self.note_frees(delta);
+    }
+
+    pub(super) fn note_updates(&mut self, delta: &TexturesDelta) {
+        if delta.set.is_empty() {
+            return;
+        }
+        self.revision += 1;
         for (id, changes) in &delta.set {
             for change in changes {
                 match change.pos {
                     None => {
-                        self.images.insert(*id, change.clone());
+                        self.images.insert(
+                            *id,
+                            Image {
+                                full: change.clone(),
+                                revision: self.revision,
+                            },
+                        );
                     }
                     Some(pos) => {
-                        if let Some(whole) = self.images.get_mut(id) {
-                            patch(whole, &change.image, pos);
-                            whole.options = change.options;
+                        if let Some(image) = self.images.get_mut(id) {
+                            patch(&mut image.full, &change.image, pos);
+                            image.full.options = change.options;
+                            image.revision = self.revision;
                         }
                     }
                 }
             }
         }
+    }
+
+    pub(super) fn note_frees(&mut self, delta: &TexturesDelta) {
         for id in &delta.free {
             self.images.remove(id);
         }
+    }
+
+    /// Only upload changed textures used by this presentation. A fresh
+    /// surface can start from complete images even if it missed their patches.
+    pub(super) fn for_native(&self, state: &mut NativeTextures, shapes: &[ClippedShape]) -> TexturesDelta {
+        let mut delta = TexturesDelta::default();
+        state.0.retain(|id, _| {
+            if self.images.contains_key(id) {
+                true
+            } else {
+                delta.free.insert(*id);
+                false
+            }
+        });
+        let mut texture = |id| {
+            if let Some(image) = self.images.get(&id)
+                && state.0.insert(id, image.revision) != Some(image.revision)
+            {
+                delta.set.insert(id, [image.full.clone()].into_iter().collect());
+            }
+        };
+        for shape in shapes {
+            visit_textures(&shape.shape, &mut texture);
+        }
+        delta
     }
 
     /// Every texture whole, as the delta of a renderer that has none (the
@@ -47,7 +101,7 @@ impl EguiShadow {
             set: self
                 .images
                 .iter()
-                .map(|(id, image)| (*id, [image.clone()].into_iter().collect()))
+                .map(|(id, image)| (*id, [image.full.clone()].into_iter().collect()))
                 .collect(),
             free,
         }
@@ -55,7 +109,21 @@ impl EguiShadow {
 
     /// Bytes held, for the log.
     pub fn bytes(&self) -> usize {
-        self.images.values().map(|d| d.image.size()[0] * d.image.size()[1] * 4).sum()
+        self.images
+            .values()
+            .map(|d| d.full.image.size()[0] * d.full.image.size()[1] * 4)
+            .sum()
+    }
+}
+
+fn visit_textures(shape: &Shape, visit: &mut impl FnMut(TextureId)) {
+    match shape {
+        Shape::Vec(shapes) => {
+            for shape in shapes {
+                visit_textures(shape, visit);
+            }
+        }
+        _ => visit(shape.texture_id()),
     }
 }
 
@@ -91,6 +159,51 @@ mod tests {
     fn pixels(d: &ImageDelta) -> Vec<Color32> {
         let ImageData::Color(c) = &d.image;
         c.pixels.clone()
+    }
+
+    #[test]
+    fn desktop_textures_follow_shared_images_without_replaying_unseen_textures() {
+        let icon = TextureId::Managed(4);
+        let hidden = TextureId::Managed(7);
+        let mut shadow = EguiShadow::default();
+        let mut first = delta(
+            vec![
+                (icon, ImageDelta::full(image(2, 1, Color32::RED), TextureOptions::LINEAR)),
+                (hidden, ImageDelta::full(image(1, 1, Color32::BLACK), TextureOptions::LINEAR)),
+            ],
+            vec![],
+        );
+        shadow.note(&first);
+        first.clear();
+
+        let mesh = egui::Mesh::with_texture(icon);
+        let shapes = [ClippedShape::new(egui::Rect::EVERYTHING, Shape::Vec(vec![Shape::mesh(mesh)]))];
+        let mut child = NativeTextures::default();
+        let mut initial = shadow.for_native(&mut child, &shapes);
+        assert_eq!(initial.set.len(), 1);
+        assert!(initial.set.contains_key(&icon));
+        initial.clear();
+        assert!(shadow.for_native(&mut child, &shapes).is_empty());
+
+        let mut patch = delta(
+            vec![(
+                icon,
+                ImageDelta::partial([1, 0], image(1, 1, Color32::BLUE), TextureOptions::LINEAR),
+            )],
+            vec![],
+        );
+        shadow.note(&patch);
+        patch.clear();
+        let mut refreshed = shadow.for_native(&mut child, &shapes);
+        assert_eq!(pixels(&refreshed.set[&icon][0]), [Color32::RED, Color32::BLUE]);
+        refreshed.clear();
+
+        let mut freed = delta(vec![], vec![icon]);
+        shadow.note(&freed);
+        freed.clear();
+        let mut retire = shadow.for_native(&mut child, &[]);
+        assert!(retire.free.contains(&icon));
+        retire.clear();
     }
 
     #[test]

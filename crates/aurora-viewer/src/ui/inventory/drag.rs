@@ -8,9 +8,9 @@ use std::sync::Arc;
 /// A batch is deliberately distinct from single-item world/attachment cargo:
 /// a destination which accepts one item must never silently take its first ID.
 #[derive(Clone)]
-struct SelectionDrag(Vec<Uuid>);
+pub(crate) struct SelectionDrag(Vec<Uuid>);
 
-enum Cargo {
+pub(crate) enum Cargo {
     Item(Arc<InvDrag>),
     Folder(Arc<FolderDrag>),
     Selection(Arc<SelectionDrag>),
@@ -29,6 +29,20 @@ impl Cargo {
             .or_else(|| egui::DragAndDrop::payload::<InvDrag>(ctx).map(Self::Item))
             .or_else(|| egui::DragAndDrop::payload::<FolderDrag>(ctx).map(Self::Folder))
     }
+    pub(crate) fn take_desktop(ctx: &egui::Context) -> Option<Self> {
+        let cargo = Self::carried(ctx)?;
+        egui::DragAndDrop::clear_payload(ctx);
+        Some(cargo)
+    }
+
+    pub(crate) fn present(&self, ctx: &egui::Context) {
+        match self {
+            Self::Item(item) => egui::DragAndDrop::set_payload(ctx, **item),
+            Self::Folder(folder) => egui::DragAndDrop::set_payload(ctx, **folder),
+            Self::Selection(selection) => egui::DragAndDrop::set_payload(ctx, (**selection).clone()),
+        }
+    }
+
     fn ids(&self) -> &[Uuid] {
         match self {
             Self::Item(d) => std::slice::from_ref(&d.0),

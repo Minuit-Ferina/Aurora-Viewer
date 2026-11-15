@@ -9,7 +9,7 @@
 
 use super::context::{self, AvatarList};
 use super::menu;
-use super::widgets::{self, Floater};
+use super::widgets::{self, Floater, PanelHost};
 use crate::theme::Palette;
 use crate::world::World;
 use crate::world::collisions::{Collision, Kind};
@@ -73,7 +73,7 @@ impl BumpsUi {
     }
 
     /// Draw the window while `open`.
-    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, world: &World, open: &mut bool) {
+    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, world: &World, open: &mut bool, mut host: PanelHost<'_, ()>) {
         if !*open {
             return;
         }
@@ -87,7 +87,7 @@ impl BumpsUi {
             Vec2::new(480.0, 220.0),
         );
         floater.min_size = Vec2::new(300.0, 140.0);
-        floater.show(ctx, p, open, |ui| {
+        host.show((), floater, ctx, p, open, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 if rows.is_empty() {

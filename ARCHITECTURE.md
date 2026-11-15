@@ -4123,38 +4123,54 @@ at 200/255. Fuller mips keep their plain alpha, while foliage still receives
 the coverage boost. `scene/texture_cache.rs` uses mask code 4 to regenerate
 the old adjusted chains (code 3) without invalidating opaque/blended ones.
 
-### Native UI presentation fixture
+### Native UI presentation
 
-The offline `AURORA_DEMO_NATIVE_WINDOWS` scenario in `app/native_windows.rs`
-uses independent top-level windows with an event-loop-owned egui input state
-and disposable synthetic documents. The embedded pane stays available while
-its render surface is being opened. Rehosting moves the document's edit
-state and tears down the presentation after the render owner acknowledges
-retirement. Native-window events enter the fixture before world controls.
-`app/native_windows/chrome.rs` provides the compact Windows title bar and a
-return control on other desktops. The title controls load their own Tabler
-textures into the host's egui context. The Windows hook in `chrome/win32.rs`
-lets Windows handle dragging and resizing and keeps the controls clickable.
+The manager in app/native_windows.rs creates top-level windows on the event
+loop. A logical panel retains its embedded presentation until the worker
+accepts its surface. Closing a panel runs its existing close flow. Returning
+it to the viewer preserves its model and widget state, hides the desktop
+presentation and waits for render-side retirement before dropping the handle.
 
-`aurora-render/src/native_ui.rs` holds UI-only surfaces in the existing
-Backend. Each host's egui renderer owns its transient buffers and preview
-cache, so drawing one viewport never evicts another's preview targets.
-The render handoff provides one background slot for these jobs, with root
-frames first when both are ready. The fixture permits one outstanding job
-and builds a new pass only after the previous result, so skipped presents
-still consume their texture changes. Device recovery returns synthetic
-documents to the root.
+The child and root passes share the egui context, with separate viewport input,
+platform output, bounds and repaint timing. The snapshot in
+app/native_windows/input.rs retains the root's hit regions and focus while
+egui memory is using the last child viewport. Each renderer owns its transient
+buffers and preview cache. The egui texture shadow carries managed texture
+updates between passes in order. A child uploads only the complete textures it
+uses whose revisions changed. The render worker accepts one outstanding native
+job and gives root frames priority. GPU recovery rehosts the logical panels in
+the root. The Windows caption in app/native_windows/chrome uses native drag
+and resize hit testing and themed title controls.
 
-| Surface | Current host and native integration work |
+The conversation action dispatcher and viewer panel presenters borrow the
+canonical application models. Placement in app/native_windows/placement.rs
+keeps desktop bounds separate from the embedded layout. The application
+remembers the workspace's general-purpose placements in ui_layout.ron and
+uses in-memory geometry for individual conversations and documents. Geometry
+never opens a panel. Windows restores against monitor work areas. Sizing
+and positioning on other platforms follow their window manager.
+
+| Logical panel or floater type | Desktop integration |
 |---|---|
-| Synthetic editor fixture | Embedded or native. Text state, rehosting and OS input use the fixture's document identity. |
-| Conversations and individual popouts (`ui/chat.rs`, `ui/chat/popout.rs`) | Embedded. Preserve docking, shared drafts, chat visibility and notification targets across hosts. |
-| Main and additional Inventory (`ui/inventory.rs`) | Embedded. Move each inventory view with its search and selection. Route internal drags to the actual target host. |
-| Build and its auxiliary tools (`build/ui`) | Embedded. Keep both layouts on the same live selection, preview and permission checks. Route pickers and Contents drops through the owning hosts. |
-| Inventory and object scripts and notecards (`ui/scripts.rs`, `ui/inventory/document.rs`, `app/task_notecards.rs`) | Embedded. Preserve document editor state, save and close flows, and ownership of file jobs and OS dialogs. |
-| Profiles, land, preferences and other ordinary floaters | Embedded. Audit each presenter's actions, previews, privacy and ownership before enabling it. |
-| World view, login, loading, HUDs and world overlays | Main window. |
-| Menus and modal dialogs | Follow their owners in the viewer. Independent OS/modal ownership is pending. |
+| `Conversations` and `Conversation` | Shared chat models, layouts, drafts and the existing reattach action. |
+| `Inventory` and `Build` | Shared selections, model updates, actions and owner dialogs. The Windows inventory and object-contents drag route in app/native_windows/drag.rs sends the real target's local pointer position to the original drop rules. |
+| `Script` and `Notecard` | Shared editor state, saves and close prompts. Script file dialogs retain their initiating window while open. |
+| `About` and `GridStatus` | Shared panel models and platform clipboard or external browser output. |
+| `GroupTitles` and `Bumps` | Shared rows, filter or selection, actions, and region privacy checks. |
+| `WorldMap` | Both styles use the same tiles, camera, actions and RLVa checks. The minimap remains attached to the world. |
+| World, login, loading, HUDs and world overlays | Root window. |
+| Menus, tooltips and modal dialogs | Follow the panel or application that owns them. |
+| Avatar, group and place profiles | Profile inventory drops and child dialogs need an owner route. The avatar feed also needs native web-surface placement. |
+| `web_browser`, `marketplace` and embedded web tabs | Web-view placement and focus still depend on the root window. |
+| Preferences and other file-oriented floaters | Binding capture and native file pickers require host ownership. |
+| About Land and `region_estate` | Attach world selection and panel-specific dialogs to the logical owner. |
+| `photo` and `photo_classic` | Scene capture, frame freezing and native file jobs need to remain coordinated with the world window. |
+| Gesture manager and `gesture_<item>` | The editor's save and discard dialogs and preview playback still follow the root owner. |
+| Appearance, material and environment editors, asset imports, animation tools | Verify scene and preview resources, owner dialogs and asset permissions in each host. |
+| Remaining shared floaters | Individual action, rendering, and lifecycle checks are pending. |
+
+The synthetic document and preview fixture remains available through
+AURORA_DEMO_NATIVE_WINDOWS.
 
 ## Threads and data ownership
 

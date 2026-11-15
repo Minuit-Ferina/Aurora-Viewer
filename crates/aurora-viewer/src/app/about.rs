@@ -25,7 +25,7 @@ pub(super) struct About {
 
 impl App {
     /// The window, drawn with the interface.
-    pub(super) fn about_window(&mut self, ctx: &egui::Context, p: &crate::theme::Palette, renderer: &Renderer) {
+    pub(super) fn refresh_about(&mut self, ctx: &egui::Context) {
         if !self.panels.about {
             // read afresh at the next opening
             self.about.machine = None;
@@ -48,14 +48,32 @@ impl App {
         if self.about.machine.is_none() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+    }
+
+    pub(super) fn about_window(&mut self, ctx: &egui::Context, p: &crate::theme::Palette, renderer: &Renderer) {
+        self.refresh_about(ctx);
+        if !self.panels.about || self.native_windows.is_native(super::native_windows::Panel::About) {
+            return;
+        }
         let view = AboutView {
             sections: self.about_sections(renderer),
             logo: self.logo.as_ref(),
         };
-        self.about.ui.show(ctx, p, &view, &mut self.panels.about);
+        let mut desktop = crate::ui::widgets::DesktopPanels::default();
+        self.about.ui.show_placed(
+            ctx,
+            p,
+            &view,
+            &mut self.panels.about,
+            crate::ui::widgets::PanelHost::Viewer(&mut desktop),
+        );
+        if !desktop.requested.is_empty() {
+            self.native_windows
+                .detach(super::native_windows::Panel::About, aurora_i18n::tr!("ui-bars-about").to_owned());
+        }
     }
 
-    fn about_sections(&self, renderer: &Renderer) -> Vec<Section> {
+    pub(super) fn about_sections(&self, renderer: &Renderer) -> Vec<Section> {
         let s = &self.settings;
         let gpu = &renderer.info;
         let mut sections = Vec::new();

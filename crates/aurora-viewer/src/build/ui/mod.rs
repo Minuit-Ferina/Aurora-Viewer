@@ -352,7 +352,7 @@ pub fn shortcuts(ctx: &egui::Context, tool: &mut BuildTool, world: &mut World, s
 }
 
 /// The floater. Returns true when a setting changed (to save them).
-pub fn show(
+pub(crate) fn show(
     ctx: &egui::Context,
     p: &Palette,
     tool: &mut BuildTool,
@@ -360,7 +360,9 @@ pub fn show(
     s: &mut BuildSettings,
     mods: super::Mods,
     env: &mut Env,
+    mut host: widgets::PanelHost<'_, ()>,
 ) -> bool {
+    let desktop = host.window_width();
     floaters::link_error(ctx, p, tool);
     contents_selection::finish_if_hidden_or_blurred(ctx, tool, world);
     if !tool.open {
@@ -432,10 +434,12 @@ pub fn show(
         ctx.data_mut(|data| data.insert_temp(demo_notice, true));
         tool.status = aurora_i18n::tr!("build-link-pending").into();
     }
-    let width = egui::AreaState::load(ctx, egui::Id::unique(INSPECTOR_ID))
-        .and_then(|state| state.size)
-        .unwrap_or(workspace::DEFAULT_SIZE)
-        .x;
+    let width = desktop.unwrap_or_else(|| {
+        egui::AreaState::load(ctx, egui::Id::unique(INSPECTOR_ID))
+            .and_then(|state| state.size)
+            .unwrap_or(workspace::DEFAULT_SIZE)
+            .x
+    });
     s.layout.normalize();
     if !s.legacy_window {
         // Aurora uses the floater's standard minimize/restore button.
@@ -519,7 +523,7 @@ pub fn show(
             .map_or(width, |size| size.x);
         floater = floater.auto_height();
     }
-    floater.show(ctx, p, &mut open, |ui| {
+    host.show((), floater, ctx, p, &mut open, |ui| {
         common::typography(ui);
         if s.legacy_window {
             legacy_toggle_sections = legacy::body(ui, p, tool, world, s, mods, env);
@@ -587,11 +591,11 @@ pub fn show(
         tool.dismiss_texture_picker();
         tool.close(world, s);
     }
-    status_notice(ctx, p, tool);
+    status_notice(ctx, p, tool, desktop.is_some());
     *s != before || *env.property_lines != property_lines_before
 }
 
-fn status_notice(ctx: &egui::Context, p: &Palette, tool: &mut BuildTool) {
+fn status_notice(ctx: &egui::Context, p: &Palette, tool: &mut BuildTool, desktop: bool) {
     let now = ctx.input(|input| input.time);
     if !tool.status.is_empty() {
         tool.ui.status_notice = Some((std::mem::take(&mut tool.status), now + 6.0));
@@ -600,7 +604,12 @@ fn status_notice(ctx: &egui::Context, p: &Palette, tool: &mut BuildTool) {
         tool.ui.status_notice = None;
     }
     let Some((text, until)) = &tool.ui.status_notice else { return };
-    let Some(anchor) = ctx.memory(|memory| memory.area_rect(egui::Id::unique(INSPECTOR_ID))) else {
+    let anchor = if desktop {
+        let client = ctx.content_rect().shrink(8.0);
+        egui::Rect::from_min_size(client.left_top() + egui::vec2(0.0, 24.0), egui::vec2(client.width(), 0.0))
+    } else if let Some(anchor) = ctx.memory(|memory| memory.area_rect(egui::Id::unique(INSPECTOR_ID))) {
+        anchor
+    } else {
         return;
     };
     // An opaque themed surface keeps text legible over emissive objects and
