@@ -382,6 +382,7 @@ pub(super) enum Host<'a> {
     Viewer(&'a mut DesktopPopouts),
     Desktop {
         ui: &'a mut egui::Ui,
+        caption: &'a mut egui::Ui,
         conversation: Option<Uuid>,
         close: bool,
     },
@@ -437,7 +438,12 @@ pub(super) fn show(
                 }
                 None
             }
-            Host::Desktop { ui, conversation, close } => {
+            Host::Desktop {
+                ui,
+                caption,
+                conversation,
+                close,
+            } => {
                 if w.conversation != *conversation {
                     continue;
                 }
@@ -445,7 +451,7 @@ pub(super) fn show(
                     closed.push(w.conversation);
                     continue;
                 }
-                Some(&mut **ui)
+                Some((&mut **ui, &mut **caption))
             }
         };
         if std::mem::take(&mut w.held) {
@@ -496,8 +502,8 @@ pub(super) fn show(
                 });
             }
         };
-        if let Some(ui) = desktop {
-            floater.show_desktop(ui, p, body);
+        if let Some((ui, caption)) = desktop {
+            floater.show_desktop(ui, p, Some(caption), body);
         } else {
             floater.desktop_action(&mut move_to_desktop).show(ctx, p, &mut open, body);
         }

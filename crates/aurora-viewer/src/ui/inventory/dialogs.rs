@@ -902,7 +902,7 @@ pub(super) fn preview_placed(
     };
     if let Some(host) = &mut desktop {
         if open {
-            floater.show_desktop(host.ui, p, body);
+            floater.show_desktop(host.ui, p, None, body);
         }
     } else if it.asset_type == 7 {
         let mut detach = false;

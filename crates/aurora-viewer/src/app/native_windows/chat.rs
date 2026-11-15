@@ -240,15 +240,17 @@ impl App {
                 shadow: &mut self.egui_shadow,
             },
             drawable,
-            |ui, close, _| {
+            |ui, close, _, caption| {
                 close_all |= !modal && ui::close_key::desktop_close_all(ui.ctx());
                 if modal {
                     ui.disable();
+                    caption.disable();
                 }
                 if let Panel::Conversation(conversation) = drawable {
                     let close = !modal && (close || ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::W)));
                     actions.extend(ui::chat::desktop_popout(
                         ui,
+                        caption,
                         &self.palette,
                         &self.skin.icons,
                         &mut self.emoji,
@@ -299,7 +301,7 @@ impl App {
                     self.settings.show_contacts_tab,
                     friends,
                     &mut self.panels.chat,
-                    ui::chat::ContainerHost::Desktop(ui),
+                    ui::chat::ContainerHost::Desktop { ui, caption },
                 ));
                 snooze = ui::chat::snooze::dialog(&ctx, &self.palette, &self.world, &mut self.chat_ui).or(snooze);
                 !self.panels.chat

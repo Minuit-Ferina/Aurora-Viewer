@@ -625,7 +625,12 @@ impl NativeWindows {
         Some(self.hosts[index].panel)
     }
 
-    pub(super) fn paint(&mut self, view: View<'_>, panel: Panel, mut presenter: impl FnMut(&mut egui::Ui, bool, &Arc<Window>) -> bool) {
+    pub(super) fn paint(
+        &mut self,
+        view: View<'_>,
+        panel: Panel,
+        mut presenter: impl FnMut(&mut egui::Ui, bool, &Arc<Window>, &mut egui::Ui) -> bool,
+    ) {
         let View {
             event_loop,
             renderer,
@@ -654,24 +659,25 @@ impl NativeWindows {
         };
         let drop = self.cross_window_drag.frame(host.window.id());
         let mut painted = host.paint(event_loop, root, context, &mut textures, drop, |ui, chrome, window| {
-            rehost |= chrome.show(ui, palette, window, &title).is_some_and(|action| {
+            let mut caption = chrome.show(ui, palette, window);
+            rehost |= caption.action.is_some_and(|action| {
                 close |= action == chrome::Action::Close;
                 deferred |= action == chrome::Action::Return && blocked;
                 action == chrome::Action::Return && !blocked
             });
-            if rehost {
-                return;
-            }
-            match panel {
-                Panel::Demo(index) => {
-                    let document = &mut self.documents[index];
-                    close |= ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::W));
-                    if !close {
-                        present_document(ui, palette, index, document);
+            if !rehost {
+                match panel {
+                    Panel::Demo(index) => {
+                        let document = &mut self.documents[index];
+                        close |= ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::W));
+                        if !close {
+                            present_document(ui, palette, index, document);
+                        }
                     }
+                    _ => close = presenter(ui, close, &owner, &mut caption.actions),
                 }
-                _ => close = presenter(ui, close, &owner),
             }
+            chrome.finish(caption, palette, window, &title);
         });
         self.root_input.child_pass_finished();
         host.return_when_unblocked |= deferred;

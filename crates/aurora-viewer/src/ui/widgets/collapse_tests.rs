@@ -520,11 +520,12 @@ fn a_floater_paints_between_the_bars_only() {
 }
 
 #[test]
-fn desktop_title_divider_follows_the_floater_layout_at_full_width() {
+fn desktop_title_divider_follows_the_floater_layout_and_content_width() {
     let palette = crate::theme::Theme::default().palette();
     for (flush, framed, has_divider) in [(true, false, false), (false, false, true), (true, true, true)] {
         let mut frames = elide_tests::Frames::new();
         let mut bounds = egui::Rect::NOTHING;
+        let mut content = egui::Rect::NOTHING;
         let shapes = frames.shapes(Vec::new(), |ui| {
             ui.add_space(32.0);
             bounds = ui.available_rect_before_wrap();
@@ -537,7 +538,7 @@ fn desktop_title_divider_follows_the_floater_layout_at_full_width() {
             if framed {
                 floater = floater.framed_header("app-window-filled");
             }
-            floater.show_desktop(ui, &palette, |_| {});
+            floater.show_desktop(ui, &palette, None, |ui| content = ui.available_rect_before_wrap());
         });
 
         assert!(
@@ -554,8 +555,8 @@ fn desktop_title_divider_follows_the_floater_layout_at_full_width() {
             .collect();
         assert_eq!(dividers.len(), usize::from(has_divider));
         if let Some(line) = dividers.first() {
-            assert_eq!(line[0], egui::pos2(bounds.left(), bounds.top() + 0.5));
-            assert_eq!(line[1], egui::pos2(bounds.right(), bounds.top() + 0.5));
+            assert_eq!(line[0], egui::pos2(content.left(), bounds.top() + 0.5));
+            assert_eq!(line[1], egui::pos2(content.right(), bounds.top() + 0.5));
         }
     }
 }

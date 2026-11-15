@@ -389,7 +389,7 @@ impl<K: Copy + Eq> PanelHost<'_, K> {
                 }
                 result
             }
-            Self::Desktop { ui, .. } => (*open).then(|| floater.show_desktop(ui, palette, body)),
+            Self::Desktop { ui, .. } => (*open).then(|| floater.show_desktop(ui, palette, None, body)),
         }
     }
 }
@@ -626,7 +626,19 @@ impl<'a> Floater<'a> {
     }
 
     /// Present the same body and panel-specific actions in a desktop client area.
-    pub(crate) fn show_desktop<R>(self, ui: &mut egui::Ui, p: &Palette, body: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    pub(crate) fn show_desktop<R>(
+        mut self,
+        ui: &mut egui::Ui,
+        p: &Palette,
+        caption: Option<&mut egui::Ui>,
+        body: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> R {
+        if let Some(caption) = caption {
+            for (icon, tip, clicked) in self.actions.drain(..) {
+                let texture = super::icons::global(icon);
+                *clicked |= caption_button(caption, p, texture.as_ref(), tip).clicked();
+            }
+        }
         let margin = if self.flush_body { egui::Margin::ZERO } else { FLOATER_MARGIN };
         let title_divider = self.framed_header.is_some() || !self.flush_body;
         desktop_client(ui, p, margin, title_divider, |ui| {
@@ -1775,8 +1787,8 @@ pub fn divider_stroke(p: &Palette) -> Stroke {
     border_stroke(p, Stroke::new(1.0, p.raised))
 }
 
-/// A desktop client fills the OS window below the caption. Its title
-/// divider spans the full client width, outside the body's inset.
+/// A desktop client fills the OS window below the caption. Its divider
+/// follows the same content margins as an embedded floater.
 pub(crate) fn desktop_client<R>(
     ui: &mut egui::Ui,
     p: &Palette,
@@ -1793,7 +1805,7 @@ pub(crate) fn desktop_client<R>(
         let stroke = divider_stroke(p);
         let painter = ui.painter();
         let y = painter.round_to_pixel_center(bounds.top() + stroke.width * 0.5);
-        painter.hline(bounds.x_range(), y, stroke);
+        painter.hline((bounds - inset).x_range(), y, stroke);
     }
     result
 }

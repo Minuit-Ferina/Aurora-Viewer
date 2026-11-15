@@ -3167,7 +3167,10 @@ pub(crate) enum ContainerHost<'a> {
         move_to_desktop: &'a mut bool,
         popouts: &'a mut DesktopPopouts,
     },
-    Desktop(&'a mut egui::Ui),
+    Desktop {
+        ui: &'a mut egui::Ui,
+        caption: &'a mut egui::Ui,
+    },
 }
 
 #[cfg(test)]
@@ -3234,7 +3237,7 @@ pub(crate) fn show_placed(
     open: &mut bool,
     host: ContainerHost<'_>,
 ) -> Vec<ConvAction> {
-    let native = matches!(&host, ContainerHost::Desktop(_));
+    let native = matches!(&host, ContainerHost::Desktop { .. });
     let draw_main = !matches!(&host, ContainerHost::Viewer { detached: true, .. });
     let enlarged = st.previews.enlarged();
     if draw_main {
@@ -3527,7 +3530,7 @@ pub(crate) fn show_placed(
         ContainerHost::Viewer {
             move_to_desktop, popouts, ..
         } => (floater.desktop_action(move_to_desktop).show(ctx, p, open, body), Some(popouts)),
-        ContainerHost::Desktop(ui) => ((*open).then(|| floater.show_desktop(ui, p, body)), None),
+        ContainerHost::Desktop { ui, caption } => ((*open).then(|| floater.show_desktop(ui, p, Some(caption), body)), None),
     };
     if !native {
         docking::target(ctx, *open && !minimized && image_bounds.is_some());
@@ -3621,6 +3624,7 @@ pub(crate) fn has_popout(state: &ChatUi, conversation: Option<uuid::Uuid>) -> bo
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn desktop_popout(
     ui: &mut egui::Ui,
+    caption: &mut egui::Ui,
     p: &Palette,
     icons: &super::icons::Icons,
     emoji: &mut super::emoji::Emoji,
@@ -3652,7 +3656,12 @@ pub(crate) fn desktop_popout(
         st,
         &mut actions,
         main_open,
-        popout::Host::Desktop { ui, conversation, close },
+        popout::Host::Desktop {
+            ui,
+            caption,
+            conversation,
+            close,
+        },
     );
     if close || ctx.input(|i| i.focused) {
         typing_actions(st, &mut actions);

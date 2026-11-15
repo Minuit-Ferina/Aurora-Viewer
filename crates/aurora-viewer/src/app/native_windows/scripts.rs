@@ -35,7 +35,7 @@ impl App {
                 shadow: &mut self.egui_shadow,
             },
             panel,
-            |ui, close, owner| {
+            |ui, close, owner, _| {
                 if modal {
                     ui.disable();
                 }

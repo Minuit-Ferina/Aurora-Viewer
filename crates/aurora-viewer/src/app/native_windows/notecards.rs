@@ -48,7 +48,7 @@ impl App {
                 shadow: &mut self.egui_shadow,
             },
             Panel::Notecard(key),
-            |ui, close, _| {
+            |ui, close, _, _| {
                 if modal {
                     ui.disable();
                 }
