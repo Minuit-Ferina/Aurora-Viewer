@@ -927,8 +927,7 @@ fn viewport(panel: Panel) -> egui::ViewportId {
 }
 
 fn present_document(ui: &mut egui::Ui, palette: &Palette, index: usize, document: &mut Document) {
-    let frame = widgets::overlay_frame(ui.ctx(), palette).inner_margin(egui::Margin::same(10));
-    egui::CentralPanel::default().frame(frame).show(ui, |ui| {
+    widgets::desktop_client(ui, palette, egui::Margin::same(10), true, |ui| {
         show_document(ui, index, document);
     });
 }

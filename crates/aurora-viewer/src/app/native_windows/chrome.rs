@@ -69,8 +69,8 @@ impl Chrome {
         #[cfg(not(windows))]
         let custom = false;
         let mut action = None;
-        // The client frame owns the divider. Carry the former stroke width
-        // in the inset to keep the caption controls and hit area in place.
+        // The panel's layout decides whether to draw a divider. Keep the
+        // caption controls and hit area inset by the former stroke width.
         let frame = widgets::overlay_frame(ui.ctx(), palette)
             .inner_margin(egui::Margin::symmetric(9, 3))
             .stroke(egui::Stroke::NONE)

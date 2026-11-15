@@ -518,3 +518,44 @@ fn a_floater_paints_between_the_bars_only() {
         "{clip:?}"
     );
 }
+
+#[test]
+fn desktop_title_divider_follows_the_floater_layout_at_full_width() {
+    let palette = crate::theme::Theme::default().palette();
+    for (flush, framed, has_divider) in [(true, false, false), (false, false, true), (true, true, true)] {
+        let mut frames = elide_tests::Frames::new();
+        let mut bounds = egui::Rect::NOTHING;
+        let shapes = frames.shapes(Vec::new(), |ui| {
+            ui.add_space(32.0);
+            bounds = ui.available_rect_before_wrap();
+            let mut floater = Floater::new("desktop-test", "Window", egui::Pos2::ZERO, egui::vec2(400.0, 350.0));
+            if flush {
+                floater = floater.flush_body();
+            } else {
+                floater = floater.compact_header();
+            }
+            if framed {
+                floater = floater.framed_header("app-window-filled");
+            }
+            floater.show_desktop(ui, &palette, |_| {});
+        });
+
+        assert!(
+            shapes
+                .iter()
+                .all(|shape| !matches!(shape, egui::Shape::Rect(rect) if rect.stroke.width > 0.0))
+        );
+        let dividers: Vec<_> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { points, stroke } if *stroke == divider_stroke(&palette) => Some(points),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dividers.len(), usize::from(has_divider));
+        if let Some(line) = dividers.first() {
+            assert_eq!(line[0], egui::pos2(bounds.left(), bounds.top() + 0.5));
+            assert_eq!(line[1], egui::pos2(bounds.right(), bounds.top() + 0.5));
+        }
+    }
+}

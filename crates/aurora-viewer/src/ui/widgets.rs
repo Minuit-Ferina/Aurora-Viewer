@@ -627,54 +627,52 @@ impl<'a> Floater<'a> {
 
     /// Present the same body and panel-specific actions in a desktop client area.
     pub(crate) fn show_desktop<R>(self, ui: &mut egui::Ui, p: &Palette, body: impl FnOnce(&mut egui::Ui) -> R) -> R {
-        let frame = overlay_frame(ui.ctx(), p).inner_margin(if self.flush_body { egui::Margin::ZERO } else { FLOATER_MARGIN });
-        egui::CentralPanel::default()
-            .frame(frame)
-            .show(ui, |ui| {
-                if !self.actions.is_empty() || self.title_note.is_some() || self.title_state.is_some() || self.help.is_some() {
-                    ui.horizontal(|ui| {
-                        if let Some(note) = self.title_note {
-                            let response = ui.label(egui::RichText::new(note).color(p.muted));
-                            if let Some(tip) = self.title_note_tooltip {
-                                response.on_hover_text(tip);
-                            }
+        let margin = if self.flush_body { egui::Margin::ZERO } else { FLOATER_MARGIN };
+        let title_divider = self.framed_header.is_some() || !self.flush_body;
+        desktop_client(ui, p, margin, title_divider, |ui| {
+            if !self.actions.is_empty() || self.title_note.is_some() || self.title_state.is_some() || self.help.is_some() {
+                ui.horizontal(|ui| {
+                    if let Some(note) = self.title_note {
+                        let response = ui.label(egui::RichText::new(note).color(p.muted));
+                        if let Some(tip) = self.title_note_tooltip {
+                            response.on_hover_text(tip);
                         }
-                        if let Some((color, label)) = self.title_state {
-                            ui.label(egui::RichText::new(label).color(color));
-                        }
-                        for (icon, tip, clicked) in self.actions {
-                            if title_button(ui, p, icon).on_hover_text(tip).clicked() {
-                                *clicked = true;
-                            }
-                        }
-                        if let Some(help) = self.help {
-                            title_button(ui, p, "help-circle-filled").on_hover_text(help);
-                        }
-                    });
-                }
-                if !self.header_status.is_empty() || self.header_status_action.is_some() {
-                    ui.horizontal_wrapped(|ui| {
-                        for (icon, label, role) in self.header_status {
-                            let _ = title_button(ui, p, icon);
-                            ui.label(egui::RichText::new(label).color(role));
-                        }
-                        if let Some((icon, label, tip, clicked)) = self.header_status_action {
-                            *clicked |= title_button(ui, p, icon).on_hover_text(format!("{label}\n{tip}")).clicked();
-                        }
-                    });
-                }
-                if let Some(summary) = self.header_summary {
-                    if let Some(clicked) = self.header_summary_action {
-                        *clicked |= ui.add(egui::Label::new(summary).sense(egui::Sense::click())).clicked();
-                    } else {
-                        ui.label(summary);
                     }
+                    if let Some((color, label)) = self.title_state {
+                        ui.label(egui::RichText::new(label).color(color));
+                    }
+                    for (icon, tip, clicked) in self.actions {
+                        if title_button(ui, p, icon).on_hover_text(tip).clicked() {
+                            *clicked = true;
+                        }
+                    }
+                    if let Some(help) = self.help {
+                        title_button(ui, p, "help-circle-filled").on_hover_text(help);
+                    }
+                });
+            }
+            if !self.header_status.is_empty() || self.header_status_action.is_some() {
+                ui.horizontal_wrapped(|ui| {
+                    for (icon, label, role) in self.header_status {
+                        let _ = title_button(ui, p, icon);
+                        ui.label(egui::RichText::new(label).color(role));
+                    }
+                    if let Some((icon, label, tip, clicked)) = self.header_status_action {
+                        *clicked |= title_button(ui, p, icon).on_hover_text(format!("{label}\n{tip}")).clicked();
+                    }
+                });
+            }
+            if let Some(summary) = self.header_summary {
+                if let Some(clicked) = self.header_summary_action {
+                    *clicked |= ui.add(egui::Label::new(summary).sense(egui::Sense::click())).clicked();
+                } else {
+                    ui.label(summary);
                 }
-                let id = desktop_body_scope(self.id);
-                let scope = ui.ctx().data(|d| d.get_temp::<egui::Id>(id)).unwrap_or(id);
-                ui.scope_builder(egui::UiBuilder::new().scope_id(scope), body).inner
-            })
-            .inner
+            }
+            let id = desktop_body_scope(self.id);
+            let scope = ui.ctx().data(|d| d.get_temp::<egui::Id>(id)).unwrap_or(id);
+            ui.scope_builder(egui::UiBuilder::new().scope_id(scope), body).inner
+        })
     }
 
     pub fn show<R>(mut self, ctx: &egui::Context, p: &Palette, open: &mut bool, body: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
@@ -1775,6 +1773,29 @@ pub fn scroll_strip(ui: &egui::Ui) -> f32 {
 /// hardly lighter than the panels (a light one in high contrast).
 pub fn divider_stroke(p: &Palette) -> Stroke {
     border_stroke(p, Stroke::new(1.0, p.raised))
+}
+
+/// A desktop client fills the OS window below the caption. Its title
+/// divider spans the full client width, outside the body's inset.
+pub(crate) fn desktop_client<R>(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    margin: egui::Margin,
+    title_divider: bool,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let bounds = ui.available_rect_before_wrap();
+    let frame = overlay_frame(ui.ctx(), p);
+    let inset = margin + egui::Margin::same(frame.stroke.width as i8);
+    let frame = frame.inner_margin(inset).stroke(Stroke::NONE).shadow(egui::Shadow::NONE);
+    let result = egui::CentralPanel::default().frame(frame).show(ui, body).inner;
+    if title_divider {
+        let stroke = divider_stroke(p);
+        let painter = ui.painter();
+        let y = painter.round_to_pixel_center(bounds.top() + stroke.width * 0.5);
+        painter.hline(bounds.x_range(), y, stroke);
+    }
+    result
 }
 
 /// The border of a window, panel, island or divider: `usual`, or in high
