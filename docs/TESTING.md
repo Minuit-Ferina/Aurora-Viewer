@@ -6070,7 +6070,11 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   clipboard and the compact window controls. Return to viewer and
   Return All should keep the draft, while native Close and Ctrl/Cmd+W should
   close the selected test document. Minimize the main window and verify a
-  child still responds. Capture the actual desktop windows and include the
+  child still responds. Detached panels offer Close, Maximize/Restore and
+  Return to viewer. On macOS, click the root after moving a detached panel
+  and check that it stays above the viewer at the same position. Activate
+  another app and check that the panel follows normal app ordering.
+  Capture the actual desktop windows and include the
   test-title automation marker on unattended runs. Only synthetic documents
   participate in this fixture. Add `:preview` to the count to include the
   standard 3D asset preview with a synthetic texture. With two windows,
@@ -6088,7 +6092,7 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   `"./Aurora Viewer.app/Contents/MacOS/aurora-viewer"` from the extracted bundle.
   Check the actual desktop windows with the root minimized. On macOS and
   on Linux, check that the compact caption moves the window, its buttons
-  minimize, resize or close it, and its edges can still resize it. Run the
+  maximize, restore or close it, and its edges can still resize it. Run the
   Linux demo on X11 and Wayland separately.
 
 - In the offline demo, the window-and-arrow icon

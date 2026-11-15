@@ -4140,7 +4140,10 @@ updates between passes in order. A child uploads only the complete textures it
 uses whose revisions changed. The render worker accepts one outstanding native
 job and gives root frames priority. GPU recovery rehosts the logical panels in
 the root. The shared caption in app/native_windows/chrome uses native drag
-and resize hit testing and themed title controls.
+and resize hit testing and themed title controls. On macOS, the AppKit adapter
+in app/native_windows/chrome/macos.rs resizes within the current display's
+visible frame and orders panels relative to the viewer on the active Space,
+without changing their native style or desktop positions.
 
 The conversation action dispatcher and viewer panel presenters borrow the
 canonical application models. Placement in app/native_windows/placement.rs

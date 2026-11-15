@@ -548,6 +548,17 @@ impl NativeWindows {
         ))
     }
 
+    #[cfg(target_os = "macos")]
+    pub(super) fn raise_above_viewer(&self, root: &Window) {
+        chrome::raise_above_viewer(
+            root,
+            self.hosts
+                .iter()
+                .filter(|host| host.stage == Stage::Live)
+                .map(|host| host.window.as_ref()),
+        );
+    }
+
     pub(super) fn any_visible(&self) -> bool {
         self.hosts.iter().any(Host::visible)
     }
@@ -947,7 +958,7 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
 
 fn remember_placement(placements: &mut BTreeMap<Panel, placement::Geometry>, ctx: &egui::Context, host: &mut Host) {
     host.geometry_changed = None;
-    if let Some(geometry) = placement::Geometry::from_window(&host.window) {
+    if let Some(geometry) = placement::Geometry::from_window(&host.window, host.chrome.is_maximized(&host.window)) {
         placements.insert(host.panel, geometry);
         if let Some(key) = placement_key(host.panel) {
             ctx.data_mut(|data| data.insert_persisted(key, geometry));

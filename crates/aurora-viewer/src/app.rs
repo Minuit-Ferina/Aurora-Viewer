@@ -22610,6 +22610,21 @@ impl ApplicationHandler for App {
         } else if self.gfx.as_ref().is_none_or(|gfx| gfx.window.id() != id) {
             return;
         }
+        #[cfg(target_os = "macos")]
+        if !retiring_root
+            && !self.exit_prompt.open
+            && matches!(
+                event,
+                WindowEvent::Focused(true)
+                    | WindowEvent::MouseInput {
+                        state: ElementState::Pressed,
+                        ..
+                    }
+            )
+            && let Some(gfx) = &self.gfx
+        {
+            self.native_windows.raise_above_viewer(&gfx.window);
+        }
         let gui_wants_keyboard = self.root_gui_wants_keyboard();
         let gui_popup_open = self.root_gui_popup_open();
         let root_text_edit = self.root_text_edit_focused();
