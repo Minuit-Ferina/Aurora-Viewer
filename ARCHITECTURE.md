@@ -4123,6 +4123,38 @@ at 200/255. Fuller mips keep their plain alpha, while foliage still receives
 the coverage boost. `scene/texture_cache.rs` uses mask code 4 to regenerate
 the old adjusted chains (code 3) without invalidating opaque/blended ones.
 
+### Native UI presentation fixture
+
+The offline `AURORA_DEMO_NATIVE_WINDOWS` scenario in `app/native_windows.rs`
+uses independent top-level windows with an event-loop-owned egui input state
+and disposable synthetic documents. The embedded pane stays available while
+its render surface is being opened. Rehosting moves the document's edit
+state and tears down the presentation after the render owner acknowledges
+retirement. Native-window events enter the fixture before world controls.
+`app/native_windows/chrome.rs` provides the compact Windows title bar and a
+return control on other desktops. The title controls load their own Tabler
+textures into the host's egui context.
+
+`aurora-render/src/native_ui.rs` holds UI-only surfaces in the existing
+Backend. Each host's egui renderer owns its transient buffers and preview
+cache, so drawing one viewport never evicts another's preview targets.
+The render handoff provides one background slot for these jobs, with root
+frames first when both are ready. The fixture permits one outstanding job
+and builds a new pass only after the previous result, so skipped presents
+still consume their texture changes. Device recovery returns synthetic
+documents to the root.
+
+| Surface | Current host and native integration work |
+|---|---|
+| Synthetic editor fixture | Embedded or native. Text state, rehosting and OS input use the fixture's document identity. |
+| Conversations and individual popouts (`ui/chat.rs`, `ui/chat/popout.rs`) | Embedded. Preserve docking, shared drafts, chat visibility and notification targets across hosts. |
+| Main and additional Inventory (`ui/inventory.rs`) | Embedded. Move each inventory view with its search and selection. Route internal drags to the actual target host. |
+| Build and its auxiliary tools (`build/ui`) | Embedded. Keep both layouts on the same live selection, preview and permission checks. Route pickers and Contents drops through the owning hosts. |
+| Inventory and object scripts and notecards (`ui/scripts.rs`, `ui/inventory/document.rs`, `app/task_notecards.rs`) | Embedded. Preserve document editor state, save and close flows, and ownership of file jobs and OS dialogs. |
+| Profiles, land, preferences and other ordinary floaters | Embedded. Audit each presenter's actions, previews, privacy and ownership before enabling it. |
+| World view, login, loading, HUDs and world overlays | Main window. |
+| Menus and modal dialogs | Follow their owners in the viewer. Independent OS/modal ownership is pending. |
+
 ## Threads and data ownership
 
 A frame costs the longer of the two threads, not their sum: the main thread

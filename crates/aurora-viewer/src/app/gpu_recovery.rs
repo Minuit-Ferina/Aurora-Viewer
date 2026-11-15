@@ -211,6 +211,7 @@ impl App {
             fullscreen: old.window.fullscreen(),
         };
         let maximized = old.window.is_maximized();
+        self.native_windows.renderer_lost();
         let Gfx { mut renderer, window, .. } = old;
         self.forget_gpu_scene(&mut renderer);
         // the lost renderer first: its surface is made from this window's

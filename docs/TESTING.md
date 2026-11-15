@@ -5985,6 +5985,7 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_RECENT_EMOJIS=1\|<emojis>` | Recent emojis over the chat fields (under them with the Legacy chat style): a full row, or the emojis given |
 | `AURORA_DEMO_FAVORITE_EMOJIS=<emojis>` | Favourite emojis: first in that row, the picker opening on their tab |
 | `AURORA_DEMO_CHAT_INPUT=1\|long\|ime` | Paragraph drafts or Japanese IME composition in chat inputs |
+| `AURORA_DEMO_NATIVE_WINDOWS=<count>` | Native UI presentation fixture with synthetic documents |
 | `AURORA_DEMO_SPELLING=1\|menu\|replace` | Misspelled words underlined in the chat bar and Conversations; their suggestions; auto-replace while typing |
 | `AURORA_DEMO_CONV_EMOJI=1` | Messages of emoji alone in the friend's conversation, drawn large (with `AURORA_DEMO_CONV`) |
 | `AURORA_DEMO_CONV_PREVIEWS=1\|states\|videos\|clips\|services\|links\|net` | Picture, GIF and YouTube cards; `clips` shows video files and an animated WebP; `links[:gif\|image\|video]` isolates URL actions; `services[:gyazo,…]` shows service pages and social posts; `net` uses real sites |
@@ -6058,6 +6059,28 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_GRID_STATUS=open\|new\|none\|error` | Help › Grid status: the grid's incidents, and its toolbar button's flash |
 
 ### Details
+
+- **`AURORA_DEMO_NATIVE_WINDOWS=0..6`**: with `AURORA_DEMO=1`, opens
+  synthetic editable documents after the demo starts. Zero shows one
+  embedded document that can be detached manually. A positive value opens
+  that many desktop windows. The paired window-and-arrow icons in the top
+  right detach and return a document. On Windows, drag the compact title
+  bar and resize at the window edges. Check the compact window controls,
+  focus, typing and clipboard. Return to viewer and
+  Return All should keep the draft, while native Close and Ctrl/Cmd+W should
+  close the selected test document. Minimize the main window and verify a
+  child still responds. Capture the actual desktop windows and include the
+  test-title automation marker on unattended runs. Only synthetic documents
+  participate in this fixture. Add `:preview` to the count to include the
+  standard 3D asset preview with a synthetic texture. With two windows,
+  orbit or resize one preview, then expose the idle window and check that
+  its preview and independent camera state are intact.
+  For a short pacing sample, use 0, 1, 3 and 6 idle child windows with
+  `AURORA_PROFILE=1` and `RUST_LOG=warn,aurora_viewer=info,aurora_render=info`.
+  Compare settled root `perf summary` lines with the same root size and
+  graphics settings. Read the native surface's present mode from the log.
+  With `AURORA_DEMO_GPU_LOST=600` and `AURORA_GPU_RECOVERY=1`, the test
+  documents should return to the rebuilt root window.
 
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers

@@ -111,6 +111,7 @@ mod media_pack;
 mod money_tracker;
 mod monitor;
 mod movement;
+mod native_windows;
 mod nearby_media;
 mod object_actions;
 mod object_menu;
@@ -542,6 +543,7 @@ pub struct App {
     /// The interface's shapes leave for the render thread, which
     /// tessellates them (aurora-render, ui_frame.rs).
     egui_hand_over: EguiHandOver,
+    native_windows: native_windows::NativeWindows,
     /// egui's textures kept on the CPU, for the renderer of a GPU recovery
     /// (egui_shadow.rs), and whether the next frame hands them all over.
     egui_shadow: egui_shadow::EguiShadow,
@@ -1734,6 +1736,7 @@ impl App {
             demo_people_states: false,
             ui_parts: Parts::default(),
             egui_hand_over: EguiHandOver::default(),
+            native_windows: native_windows::NativeWindows::default(),
             egui_shadow: Default::default(),
             egui_replay: false,
             last_frame: Instant::now(),
@@ -3217,6 +3220,7 @@ impl App {
     }
 
     fn back_to_login(&mut self, error: Option<String>) {
+        self.native_windows.retire_all();
         self.attention.title.set_account(None);
         self.parcel_music.enter(false);
         self.stream_url.clear();
@@ -6639,11 +6643,9 @@ impl App {
     /// frame and when the window's size changes, frames being rare while it
     /// is minimised.
     fn sync_minimized_mute(&mut self) {
-        let minimized = self
-            .gfx
-            .as_ref()
-            .and_then(|g| g.window.is_minimized())
-            .map(|minimized| effective_window_state(self.focused, minimized, self.vr_camera.is_some()).1);
+        let minimized = self.gfx.as_ref().and_then(|g| g.window.is_minimized()).map(|minimized| {
+            effective_window_state(self.focused, minimized, self.vr_camera.is_some()).1 && !self.native_windows.any_visible()
+        });
         if !self.minimized_mute.update(self.settings.audio.mute_when_minimized, minimized) {
             return;
         }
@@ -12333,6 +12335,9 @@ impl App {
             // gets no input events: what the first pass clicked must survive
             // the second, or a click that changed a row's size is lost.
             actions.merge(self.draw_ui(ui, &projector, &gfx.renderer));
+            if self.demo && self.in_world() {
+                self.native_windows.draw_embedded(ui.ctx(), &self.palette);
+            }
             self.studio_overlay(ui.ctx());
             actions.ui_scale_changed |= ui::options::scale_keyboard(ui.ctx(), &mut self.settings.ui_scale);
             if inventory_drop.is_empty() {
@@ -19902,9 +19907,9 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        // Cmd+Q asks like the close button (mac_quit.rs). Cmd+H stays Hide.
+        // Cmd+Q requests app-wide exit (mac_quit.rs). Cmd+H stays Hide.
         #[cfg(target_os = "macos")]
-        crate::mac_quit::route_quit_to_close();
+        crate::mac_quit::install();
         sync_auto_render_scale(&mut self.settings, window.scale_factor());
         let created = self.open_renderer(&window);
         let renderer = match created {
@@ -22639,12 +22644,19 @@ impl ApplicationHandler for App {
     /// closed connection and every exit ended in a segmentation fault (before
     /// the browsers' private profiles were cleaned up).
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.native_windows.renderer_lost();
         #[cfg(windows)]
         crate::slurl_handoff::release();
         self.gfx = None;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if let Some(activity) = self.native_windows.event(id, &event) {
+            if activity {
+                self.last_input = Instant::now();
+            }
+            return;
+        }
         // the window of a lost device, on screen until its successor has
         // presented: its redraws and sizes are not the new renderer's
         if self.retired_window.as_ref().is_some_and(|w| w.id() == id) && !matches!(event, WindowEvent::CloseRequested) {
@@ -23260,6 +23272,11 @@ impl ApplicationHandler for App {
 
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: winit::event::DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
+            // Raw device events can also arrive while a desktop floater
+            // owns the pointer. Its winit events already went to its GUI.
+            if self.native_windows.owns_focus() {
+                return;
+            }
             // a remote desktop's or a tablet's position: its motion (raw_mouse.rs)
             let Some(delta) = crate::raw_mouse::motion(delta) else {
                 return;
@@ -23280,6 +23297,21 @@ impl ApplicationHandler for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         crate::crash::pumped();
+        #[cfg(target_os = "macos")]
+        if crate::mac_quit::take_request() {
+            self.request_exit();
+            if let Some(gfx) = &self.gfx {
+                gfx.window.focus_window();
+                gfx.window.request_redraw();
+            }
+        }
+        if self.demo && self.in_world() && self.frame_count >= 120 {
+            self.native_windows.start_demo();
+        }
+        if let Some(gfx) = self.gfx.as_mut() {
+            self.native_windows
+                .pump(event_loop, &mut gfx.renderer, &gfx.window, &self.egui_ctx, &self.palette);
+        }
         self.sync_minimized_mute();
         if self.settings.window_fullscreen != self.fullscreen_applied {
             self.apply_fullscreen_setting();

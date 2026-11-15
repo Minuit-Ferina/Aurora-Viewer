@@ -1499,6 +1499,27 @@ fn title_button_sized(ui: &mut egui::Ui, p: &Palette, icon: &str, size: Vec2) ->
     resp
 }
 
+/// A title-bar action whose texture belongs to the active presentation.
+pub(crate) fn caption_button(ui: &mut egui::Ui, p: &Palette, texture: Option<&egui::TextureHandle>, label: &str) -> egui::Response {
+    let (_, response) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    if let Some(texture) = texture {
+        paint_caption_icon(ui, p, texture, &response);
+    }
+    response.on_hover_text(label)
+}
+
+fn paint_caption_icon(ui: &egui::Ui, p: &Palette, texture: &egui::TextureHandle, response: &egui::Response) {
+    let rect = egui::Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    let color = if response.hovered() { p.ink } else { p.muted };
+    ui.painter().image(
+        texture.id(),
+        rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        color,
+    );
+}
+
 fn paint_title_button(ui: &egui::Ui, p: &Palette, icon: &str, resp: &egui::Response) {
     let rect = resp.rect;
     let col = if resp.hovered() { p.ink } else { p.muted };

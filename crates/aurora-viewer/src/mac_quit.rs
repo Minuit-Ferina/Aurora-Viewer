@@ -1,23 +1,47 @@
-//! Cmd+Q on macOS asks before quitting, like the window's close button.
+//! AppKit's Quit command enters the viewer's app-wide exit workflow.
 //!
-//! winit's application menu sends `terminate:` for its Quit item (Cmd+Q):
-//! AppKit then ends the process with `ApplicationHandler::exiting` as the
-//! only notice, so the viewer neither logged out nor saved its settings and
-//! layout. The Legacy Viewer answers `applicationShouldTerminate:` with its
-//! own quit (handleQuit, indra/newview/llappdelegate-objc.mm), the same
-//! confirmation as closing the window. Here the item sends `performClose:`
-//! along the responder chain instead: the key window answers it, winit turns
-//! it into `WindowEvent::CloseRequested`, and the exit prompt follows
-//! (`App::request_exit`).
+//! The Legacy Viewer uses applicationShouldTerminate: (handleQuit,
+//! indra/newview/llappdelegate-objc.mm). The menu target here lets winit
+//! keep ownership of AppKit's application delegate.
 
-use objc2::{MainThreadMarker, sel};
+use std::cell::OnceCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use objc2::rc::Retained;
+use objc2::runtime::{AnyObject, NSObject};
+use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::NSApplication;
 
-/// Points the application menu's Quit item at the window's close. Called
-/// once the window exists, on the main thread.
-pub fn route_quit_to_close() {
+static REQUESTED: AtomicBool = AtomicBool::new(false);
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements and QuitTarget has
+    // no custom destruction. AppKit calls menu actions on the main thread.
+    #[unsafe(super = NSObject)]
+    #[name = "AuroraApplicationQuitTarget"]
+    #[thread_kind = MainThreadOnly]
+    struct QuitTarget;
+
+    impl QuitTarget {
+        #[unsafe(method(auroraRequestQuit:))]
+        fn request_quit(&self, _sender: &AnyObject) {
+            REQUESTED.store(true, Ordering::Relaxed);
+        }
+    }
+);
+
+thread_local! {
+    // NSMenuItem holds a non-owning reference to its target.
+    static TARGET: OnceCell<Retained<QuitTarget>> = const { OnceCell::new() };
+}
+
+pub fn take_request() -> bool {
+    REQUESTED.swap(false, Ordering::Relaxed)
+}
+
+pub fn install() {
     let Some(mtm) = MainThreadMarker::new() else {
-        log::warn!("macOS menu: not on the main thread, Quit left as is");
+        log::warn!("macOS menu: Quit setup must run on the main thread");
         return;
     };
     let Some(bar) = NSApplication::sharedApplication(mtm).mainMenu() else {
@@ -32,13 +56,17 @@ pub fn route_quit_to_close() {
                 continue;
             };
             if item.action() == Some(sel!(terminate:)) {
-                // SAFETY: on the main thread; no target sends the action
-                // along the responder chain, where every NSWindow answers
-                // performClose:.
-                unsafe {
-                    item.setTarget(None);
-                    item.setAction(Some(sel!(performClose:)));
-                }
+                TARGET.with(|target| {
+                    // SAFETY: QuitTarget inherits NSObject's init. The
+                    // retained object outlives the menu's use of its selector.
+                    let target = target.get_or_init(|| unsafe { msg_send![QuitTarget::alloc(mtm), init] });
+                    // SAFETY: the selector is implemented by the retained
+                    // target above with AppKit's one-argument action signature.
+                    unsafe {
+                        item.setTarget(Some(&**target));
+                        item.setAction(Some(sel!(auroraRequestQuit:)));
+                    }
+                });
                 return;
             }
         }

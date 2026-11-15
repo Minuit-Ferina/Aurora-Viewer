@@ -139,6 +139,8 @@ const OUTLINE: &[(&str, &[u8])] = svg_list!(
     "packages",
     "note",
     "minus",
+    "picture-in-picture-off",
+    "picture-in-picture-on",
     "package",
     "package-import",
     "paperclip",
@@ -869,6 +871,21 @@ fn decode_png(bytes: &[u8]) -> Option<egui::ColorImage> {
 }
 
 impl Icons {
+    /// A small per-context icon set for a native title bar. The root skin
+    /// remains registered with its own texture manager.
+    pub(crate) fn load_embedded(ctx: &egui::Context, names: &[&str]) -> Self {
+        let map = OUTLINE
+            .iter()
+            .chain(FILLED)
+            .filter(|(name, _)| names.contains(name))
+            .filter_map(|(name, bytes)| {
+                let image = rasterize_svg(bytes, RASTER_PX)?;
+                Some(((*name).to_owned(), ctx.load_texture(*name, image, egui::TextureOptions::LINEAR)))
+            })
+            .collect();
+        Self { map }
+    }
+
     /// Built-in icons, overridden/extended by PNG or SVG files in `override_dir`.
     pub fn load(ctx: &egui::Context, override_dir: Option<&std::path::Path>) -> Icons {
         let mut map: HashMap<String, egui::TextureHandle> = HashMap::new();

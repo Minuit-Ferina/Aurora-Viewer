@@ -1745,6 +1745,8 @@ impl FrameTarget {
 /// The passes of a frame and all they own. Lives on the render thread, or
 /// in the `Renderer` itself with AURORA_RENDER_THREAD=0.
 pub(crate) struct Backend {
+    native_ui: crate::native_ui::Surfaces,
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     /// Destroyed by hand in `Drop`, unless the device is lost.
@@ -1980,6 +1982,7 @@ impl Drop for Backend {
     /// to the process, which releases it with the driver's objects.
     fn drop(&mut self) {
         if self.lost.get() {
+            self.native_ui.abandon_lost_surfaces();
             log::warn!("GPU device lost: the window surface is left to the process");
             return;
         }
@@ -3977,6 +3980,8 @@ impl Backend {
         let timer = timestamps.then(|| GpuTimer::new(&device, &queue));
 
         let mut r = Backend {
+            native_ui: Default::default(),
+            adapter,
             device,
             queue,
             surface: std::mem::ManuallyDrop::new(surface),
@@ -6794,6 +6799,14 @@ impl Backend {
     /// A frame with no render targets: the interface over black, none of
     /// the passes that need the targets, its glass and blur left out. Its
     /// markers are taken out as the full frame takes them.
+    pub(crate) fn native_ui(&mut self, task: crate::native_ui::NativeUiTask) {
+        if self.lost.get() {
+            let _ = task.reply.try_send(crate::native_ui::NativeUiResult::Failed);
+        } else {
+            self.native_ui.run(&self.adapter, &self.device, &self.queue, task);
+        }
+    }
+
     fn interface_alone(&mut self, target: &wgpu::Texture, ui: Option<crate::ui_frame::UiFrame>) -> Vec<wgpu::CommandBuffer> {
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -7206,6 +7219,7 @@ impl Backend {
             Ok(mut fresh) if !fresh.remake => {
                 log::info!("renderer: made again, whole ({took} ms)");
                 fresh.egui.0 = self.egui.0.take();
+                fresh.native_ui = std::mem::take(&mut self.native_ui);
                 *self = fresh;
             }
             Ok(_) => {
