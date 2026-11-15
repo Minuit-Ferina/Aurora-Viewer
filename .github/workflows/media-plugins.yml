@@ -72,3 +72,23 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Offline demo on macOS
+        if: runner.os == 'macOS'
+        timeout-minutes: 12
+        env:
+          AURORA_DEMO: '1'
+          AURORA_DEMO_NATIVE_WINDOWS: '2'
+          AURORA_CAPTURE: ${{ runner.temp }}/macos-native-demo.png
+          AURORA_CAPTURE_FRAMES: '620'
+          AURORA_CAPTURE_EXIT: '1'
+        run: |
+          "Aurora Viewer.app/Contents/MacOS/aurora-viewer" --title 'Test native-detachable-windows macOS [AUTOMATION - DO NOT TOUCH]' --language en
+          test -s "$AURORA_CAPTURE"
+      - name: macOS demo capture
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-native-demo
+          path: ${{ runner.temp }}/macos-native-demo.png
+          if-no-files-found: error
+          retention-days: 14

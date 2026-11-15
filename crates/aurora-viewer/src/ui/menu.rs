@@ -242,8 +242,9 @@ fn native_window_change_id(ctx: &egui::Context) -> Id {
 /// before painting, including menus drawn before the window being moved or
 /// resized and menus with external state.
 pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
+    let id = native_window_change_id(ctx);
     let changed = ctx
-        .data(|d| d.get_temp::<u64>(native_window_change_id(ctx)))
+        .data(|d| d.get_temp::<u64>(id))
         .is_some_and(|frame| ctx.cumulative_frame_nr() <= frame);
     if !changed && !super::widgets::window_dragging(ctx) {
         return false;
@@ -255,8 +256,9 @@ pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
 /// Native move/resize events arrive between egui frames. Keep dismissal through
 /// the next frame and all its layout passes, including externally owned menus.
 pub(crate) fn window_geometry_changed(ctx: &egui::Context) {
+    let id = native_window_change_id(ctx);
     let through = ctx.cumulative_frame_nr() + 1;
-    ctx.data_mut(|d| d.insert_temp(native_window_change_id(ctx), through));
+    ctx.data_mut(|d| d.insert_temp(id, through));
     Popup::close_all(ctx);
 }
 
