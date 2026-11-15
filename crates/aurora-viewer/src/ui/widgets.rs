@@ -119,7 +119,13 @@ pub(crate) fn window_dragging(ctx: &egui::Context) -> bool {
 /// This adds the requested tolerance to LLDragHandle::handleHover's immediate
 /// movement (indra/llui/lldraghandle.cpp).
 fn window_click_tolerance(response: &egui::Response) {
-    let _ = response.interact(Sense::CLICK | Sense::DRAG);
+    // Area registers the move widget before dragging and returns the final
+    // bounds after layout. Change the sense on the registered rect so egui
+    // sees one widget, and keep the hit area at the displayed position.
+    if let Some(mut registered) = response.ctx.read_response(response.id) {
+        registered.interact_rect = response.interact_rect;
+        let _ = registered.interact(Sense::CLICK | Sense::DRAG);
+    }
 }
 
 /// Keep status suffixes at normal weight and slightly darker than the name.
