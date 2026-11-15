@@ -143,6 +143,10 @@ impl Host {
             egui::DragAndDrop::clear_payload(root_context);
         }
 
+        #[cfg(target_os = "linux")]
+        if let Some(cursor) = self.chrome.resize_cursor(&self.window) {
+            output.platform_output.cursor_icon = cursor;
+        }
         self.input
             .handle_platform_output_with_event_loop(&self.window, event_loop, output.platform_output);
         let mut close_requested = false;
@@ -519,6 +523,11 @@ impl NativeWindows {
             host.occluded = *occluded;
         }
 
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if host.chrome.event(&host.window, event) {
+            host.set_repaint(Duration::ZERO);
+            return Some(true);
+        }
         let repaint = host.input.on_window_event(&host.window, event).repaint;
         #[cfg(windows)]
         if matches!(event, WindowEvent::ModifiersChanged(_))

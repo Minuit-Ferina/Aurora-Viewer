@@ -1,10 +1,11 @@
 //! Compact title controls for desktop floaters.
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod client;
 #[cfg(windows)]
 mod win32;
 
 use aurora_i18n::tr;
-#[cfg(windows)]
 use egui::RichText;
 use winit::window::{Window, WindowAttributes};
 
@@ -13,6 +14,8 @@ use crate::ui::{icons, widgets};
 
 pub(super) const DETACH_ICON: &str = "picture-in-picture-on";
 const RETURN_ICON: &str = "picture-in-picture-off";
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+const EDGE: f64 = 5.0;
 
 pub(super) fn attributes(attrs: WindowAttributes) -> WindowAttributes {
     #[cfg(windows)]
@@ -20,12 +23,24 @@ pub(super) fn attributes(attrs: WindowAttributes) -> WindowAttributes {
         use winit::platform::windows::WindowAttributesExtWindows;
         attrs.with_decorations(false).with_undecorated_shadow(true)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        use winit::platform::macos::WindowAttributesExtMacOS;
+        attrs.with_titlebar_hidden(true)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        attrs.with_decorations(false)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     attrs
 }
 
 pub(super) struct Chrome {
     icons: icons::Icons,
+    custom: bool,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    client: client::Caption,
     #[cfg(windows)]
     caption: Option<win32::Caption>,
 }
@@ -51,7 +66,7 @@ impl Chrome {
         #[cfg(not(windows))]
         let custom = {
             let _ = window;
-            false
+            cfg!(any(target_os = "linux", target_os = "macos"))
         };
         #[cfg(windows)]
         if !custom {
@@ -65,16 +80,16 @@ impl Chrome {
         };
         Self {
             icons: icons::Icons::load_embedded(ctx, names),
+            custom,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            client: client::Caption::default(),
             #[cfg(windows)]
             caption,
         }
     }
 
     pub(super) fn show(&self, ui: &mut egui::Ui, palette: &Palette, window: &Window) -> Caption {
-        #[cfg(windows)]
-        let custom = self.caption.is_some();
-        #[cfg(not(windows))]
-        let custom = false;
+        let custom = self.custom;
         let mut action = None;
         // The panel's layout decides whether to draw a divider. Keep the
         // caption controls and hit area inset by the former stroke width.
@@ -133,16 +148,34 @@ impl Chrome {
     }
 
     pub(super) fn finish(&self, mut row: Caption, palette: &Palette, window: &Window, title: &str) {
+        if !self.custom {
+            return;
+        }
+        let controls_left = row.actions.available_rect_before_wrap().right();
+        let pixels_per_point = row.actions.ctx().pixels_per_point();
         #[cfg(windows)]
         if let Some(caption) = &self.caption {
-            let controls_left = row.actions.available_rect_before_wrap().right();
-            caption.update(window, row.actions.ctx().pixels_per_point(), controls_left, row.bottom);
-            row.actions.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.add(egui::Label::new(RichText::new(title).strong().color(palette.ink)).truncate());
-            });
+            caption.update(window, pixels_per_point, controls_left, row.bottom);
         }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        self.client.update(pixels_per_point, controls_left, row.bottom);
         #[cfg(not(windows))]
-        let _ = (&mut row.actions, row.bottom, palette, window, title);
+        let _ = window;
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        let _ = (pixels_per_point, controls_left, row.bottom);
+        row.actions.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.add(egui::Label::new(RichText::new(title).strong().color(palette.ink)).truncate());
+        });
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(super) fn event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
+        self.client.event(window, event)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn resize_cursor(&self, window: &Window) -> Option<egui::CursorIcon> {
+        self.client.resize_cursor(window)
     }
 
     fn button(&self, ui: &mut egui::Ui, palette: &Palette, icon: &str, label: &str) -> egui::Response {

@@ -6086,8 +6086,10 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   `AURORA_DEMO=1 AURORA_DEMO_NATIVE_WINDOWS=2 ./aurora-viewer --title "Test native-detachable-windows"`.
   For macOS, set the same variables and arguments when running
   `"./Aurora Viewer.app/Contents/MacOS/aurora-viewer"` from the extracted bundle.
-  Check the actual desktop windows with the root minimized. On Linux, run
-  on X11 and Wayland separately and move the windows using the window manager.
+  Check the actual desktop windows with the root minimized. On macOS and
+  on Linux, check that the compact caption moves the window, its buttons
+  minimize, resize or close it, and its edges can still resize it. Run the
+  Linux demo on X11 and Wayland separately.
 
 - In the offline demo, the window-and-arrow icon
   moves the current panel to the desktop. The inverse icon returns it to

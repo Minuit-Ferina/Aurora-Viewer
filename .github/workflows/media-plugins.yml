@@ -92,3 +92,6 @@ jobs:
           path: ${{ runner.temp }}/macos-native-demo.png
           if-no-files-found: error
           retention-days: 14
+      - name: Linux caption hit testing
+        if: runner.os == 'Linux'
+        run: cargo test --profile ci --workspace --locked linux_caption_resize_hits_edges_and_corners_at_display_scale
