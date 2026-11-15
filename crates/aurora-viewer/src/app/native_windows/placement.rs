@@ -22,8 +22,8 @@ struct Area {
 }
 
 impl Geometry {
-    pub(super) fn from_window(window: &Window) -> Option<Self> {
-        if window.is_maximized() || window.is_minimized() == Some(true) {
+    pub(super) fn from_window(window: &Window, maximized: bool) -> Option<Self> {
+        if maximized || window.is_minimized() == Some(true) {
             return None;
         }
         let monitor = window.current_monitor()?;

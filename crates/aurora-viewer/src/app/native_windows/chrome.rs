@@ -2,12 +2,14 @@
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod client;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(windows)]
 mod win32;
 
 use aurora_i18n::tr;
 use egui::RichText;
-use winit::window::{Window, WindowAttributes};
+use winit::window::{Window, WindowAttributes, WindowButtons};
 
 use crate::theme::Palette;
 use crate::ui::{icons, widgets};
@@ -18,6 +20,7 @@ const RETURN_ICON: &str = "picture-in-picture-off";
 const EDGE: f64 = 5.0;
 
 pub(super) fn attributes(attrs: WindowAttributes) -> WindowAttributes {
+    let attrs = attrs.with_enabled_buttons(WindowButtons::all() - WindowButtons::MINIMIZE);
     #[cfg(windows)]
     {
         use winit::platform::windows::WindowAttributesExtWindows;
@@ -74,7 +77,7 @@ impl Chrome {
             window.set_decorations(true);
         }
         let names: &[&str] = if custom {
-            &[RETURN_ICON, "x", "minus", "maximize", "minimize"]
+            &[RETURN_ICON, "x", "maximize", "minimize"]
         } else {
             &[RETURN_ICON]
         };
@@ -106,17 +109,17 @@ impl Chrome {
                         if self.button(ui, palette, "x", tr!("common-close")).clicked() {
                             action = Some(Action::Close);
                         }
-                        let maximized = window.is_maximized();
+                        let maximized = self.is_maximized(window);
                         let (icon, label) = if maximized {
                             ("minimize", tr!("native-windows-restore"))
                         } else {
                             ("maximize", tr!("native-windows-maximize"))
                         };
                         if self.button(ui, palette, icon, label).clicked() {
+                            #[cfg(target_os = "macos")]
+                            self.client.toggle_maximized(window);
+                            #[cfg(not(target_os = "macos"))]
                             window.set_maximized(!maximized);
-                        }
-                        if self.button(ui, palette, "minus", tr!("native-windows-minimize")).clicked() {
-                            window.set_minimized(true);
                         }
                     }
                     let back = self.button(ui, palette, RETURN_ICON, tr!("native-windows-return"));
@@ -178,7 +181,22 @@ impl Chrome {
         self.client.resize_cursor(window)
     }
 
+    pub(super) fn is_maximized(&self, window: &Window) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window;
+            self.client.is_maximized()
+        }
+        #[cfg(not(target_os = "macos"))]
+        window.is_maximized()
+    }
+
     fn button(&self, ui: &mut egui::Ui, palette: &Palette, icon: &str, label: &str) -> egui::Response {
         widgets::caption_button(ui, palette, self.icons.get(icon), label)
     }
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn raise_above_viewer<'a>(root: &Window, panels: impl Iterator<Item = &'a Window>) {
+    macos::raise_above_viewer(root, panels);
 }

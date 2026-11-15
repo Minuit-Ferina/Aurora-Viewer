@@ -13,6 +13,8 @@ pub(super) struct Caption {
     extent: Cell<(f64, f64)>,
     pointer: Option<PhysicalPosition<f64>>,
     last_press: Option<(Instant, PhysicalPosition<f64>)>,
+    #[cfg(target_os = "macos")]
+    zoom: super::macos::Zoom,
 }
 
 impl Caption {
@@ -41,6 +43,9 @@ impl Caption {
     fn press(&mut self, window: &Window) -> bool {
         let Some(point) = self.pointer else { return false };
         let previous = self.last_press.take();
+        #[cfg(target_os = "macos")]
+        let maximized = self.is_maximized();
+        #[cfg(target_os = "linux")]
         let maximized = window.is_maximized();
         let border = if maximized { 0.0 } else { (EDGE * window.scale_factor()).ceil() };
         #[cfg(target_os = "linux")]
@@ -60,11 +65,24 @@ impl Caption {
             now.duration_since(at) <= Duration::from_millis(350)
                 && (point.x - then.x).hypot(point.y - then.y) <= EDGE * window.scale_factor()
         }) {
+            #[cfg(target_os = "macos")]
+            self.toggle_maximized(window);
+            #[cfg(target_os = "linux")]
             window.set_maximized(!maximized);
             return true;
         }
         self.last_press = Some((now, point));
         window.drag_window().is_ok()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn is_maximized(&self) -> bool {
+        self.zoom.is_maximized()
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn toggle_maximized(&self, window: &Window) {
+        self.zoom.toggle(window);
     }
 
     #[cfg(target_os = "linux")]
