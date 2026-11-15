@@ -232,14 +232,18 @@ pub fn context_menu_at(ui: &Ui, id: Id, pos: egui::Pos2, p: &Palette, body: impl
     )
 }
 
-/// Moving or resizing any window dismisses menus at once, as the Legacy Viewer's
+fn native_window_change_id(ctx: &egui::Context) -> Id {
+    Id::unique(("menus_native_window_change", ctx.viewport_id()))
+}
+
+/// Moving or resizing a window dismisses menus in its viewport, as the Legacy Viewer's
 /// LLMenuHolderGL::handleMouseDown does before LLDragHandle/LLResizeBar take
 /// capture (indra/llui/llmenugl.cpp, lldraghandle.cpp, llresizebar.cpp). Check
 /// before painting, including menus drawn before the window being moved or
 /// resized and menus with external state.
 pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
     let changed = ctx
-        .data(|d| d.get_temp::<u64>(Id::unique("menus_native_window_change")))
+        .data(|d| d.get_temp::<u64>(native_window_change_id(ctx)))
         .is_some_and(|frame| ctx.cumulative_frame_nr() <= frame);
     if !changed && !super::widgets::window_dragging(ctx) {
         return false;
@@ -252,7 +256,7 @@ pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
 /// the next frame and all its layout passes, including externally owned menus.
 pub(crate) fn window_geometry_changed(ctx: &egui::Context) {
     let through = ctx.cumulative_frame_nr() + 1;
-    ctx.data_mut(|d| d.insert_temp(Id::unique("menus_native_window_change"), through));
+    ctx.data_mut(|d| d.insert_temp(native_window_change_id(ctx), through));
     Popup::close_all(ctx);
 }
 
@@ -1793,5 +1797,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn native_window_resize_does_not_dismiss_another_viewports_menus() {
+        let ctx = egui::Context::default();
+        let desktop = egui::ViewportId::from_hash_of("detached_menu");
+        let root = egui::ViewportId::ROOT;
+        let input = |viewport_id| egui::RawInput {
+            viewport_id,
+            viewports: [
+                (root, egui::ViewportInfo::default()),
+                (
+                    desktop,
+                    egui::ViewportInfo {
+                        parent: Some(root),
+                        ..Default::default()
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        for _ in 0..4 {
+            let _ = ctx.run_ui(input(root), |_| {});
+        }
+        window_geometry_changed(&ctx);
+        let _ = ctx.run_ui(input(desktop), |ui| assert!(!dismiss_on_window_change(ui.ctx())));
+        let _ = ctx.run_ui(input(root), |ui| assert!(dismiss_on_window_change(ui.ctx())));
     }
 }

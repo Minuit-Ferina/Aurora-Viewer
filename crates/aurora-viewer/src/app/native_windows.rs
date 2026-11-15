@@ -92,6 +92,7 @@ struct Host {
     occluded: bool,
     repaint: Option<Instant>,
     geometry_changed: Option<Instant>,
+    dismiss_menus: bool,
 }
 
 impl Host {
@@ -131,7 +132,13 @@ impl Host {
         if let Some(drop) = &drop {
             drop.add_events(root_context, &self.window, &mut raw);
         }
-        let mut output = root_context.run_ui(raw, |ui| presenter(ui, &self.chrome, &self.window));
+        let dismiss_menus = std::mem::take(&mut self.dismiss_menus);
+        let mut output = root_context.run_ui(raw, |ui| {
+            if dismiss_menus {
+                crate::ui::menu::window_geometry_changed(ui.ctx());
+            }
+            presenter(ui, &self.chrome, &self.window);
+        });
         if drop.is_some() {
             egui::DragAndDrop::clear_payload(root_context);
         }
@@ -506,6 +513,7 @@ impl NativeWindows {
             WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }
         ) {
             host.geometry_changed = Some(Instant::now());
+            host.dismiss_menus = true;
         }
         if let WindowEvent::Occluded(occluded) = event {
             host.occluded = *occluded;
@@ -831,6 +839,7 @@ impl NativeWindows {
             occluded: false,
             repaint: None,
             geometry_changed: None,
+            dismiss_menus: false,
         });
     }
 

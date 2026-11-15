@@ -62,7 +62,9 @@ impl Harness {
                 ..Default::default()
             },
             |_| {
-                change = self.editor.show(&self.ctx, &self.p, &self.rows, &mut self.world, &mut self.open);
+                change = self
+                    .editor
+                    .show(&self.ctx, &self.p, &self.rows, &mut self.world, &mut self.open, PanelHost::Embedded);
             },
         );
         (crate::ui::login::test_output(out), change)
