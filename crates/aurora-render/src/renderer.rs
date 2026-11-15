@@ -2858,6 +2858,17 @@ fn reflection_matrix(n: Vec3, d: f32) -> Mat4 {
     )
 }
 
+/// Every pipeline loading the object module must use the device's variant.
+fn scene_shader_source(features: wgpu::Features) -> String {
+    let source = format!(
+        "{}\n{}\n{}",
+        crate::common_shader_source(),
+        crate::water_shader_source(&["object.wgsl"], include_str!("shaders/object.wgsl")),
+        crate::water_shader_source(&["env.wgsl"], include_str!("shaders/env.wgsl"))
+    );
+    crate::blend_exact::scene_source(source, features)
+}
+
 /// Impostors (LLVOAvatar impostor rendering): pictures of far avatars in an
 /// atlas, drawn as cards in the scene.
 struct Impostors {
@@ -3076,15 +3087,9 @@ impl Impostors {
         samples: u32,
         ssr: bool,
     ) -> ImpostorPipelines {
-        let src = format!(
-            "{}\n{}\n{}",
-            crate::common_shader_source(),
-            crate::water_shader_source(&["object.wgsl"], include_str!("shaders/object.wgsl")),
-            crate::water_shader_source(&["env.wgsl"], include_str!("shaders/env.wgsl"))
-        );
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("impostors"),
-            source: wgpu::ShaderSource::Wgsl(src.into()),
+            source: wgpu::ShaderSource::Wgsl(scene_shader_source(device.features()).into()),
         });
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("impostors"),
@@ -4186,16 +4191,9 @@ impl Backend {
         surface_format: wgpu::TextureFormat,
         ssr: bool,
     ) -> Pipelines {
-        let src = format!(
-            "{}\n{}\n{}",
-            crate::common_shader_source(),
-            crate::water_shader_source(&["object.wgsl"], include_str!("shaders/object.wgsl")),
-            crate::water_shader_source(&["env.wgsl"], include_str!("shaders/env.wgsl"))
-        );
-        let src = crate::blend_exact::scene_source(src, device.features());
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("scene"),
-            source: wgpu::ShaderSource::Wgsl(src.into()),
+            source: wgpu::ShaderSource::Wgsl(scene_shader_source(device.features()).into()),
         });
         let scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("scene"),
@@ -11391,6 +11389,17 @@ impl Backend {
 mod tests {
     use super::*;
 
+    #[test]
+    fn scene_and_impostor_shader_validates_without_early_fragment_depth() {
+        let source = scene_shader_source(wgpu::Features::empty());
+        let module = naga::front::wgsl::parse_str(&source).expect("shared shader parses");
+        let mut capabilities = naga::valid::Capabilities::all();
+        capabilities.remove(naga::valid::Capabilities::EARLY_DEPTH_TEST);
+        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), capabilities)
+            .validate(&module)
+            .expect("impostor shader must also load on GPUs without early fragment depth");
+    }
+
     /// The mirror's blended faces: those it does not see left out, the rigged
     /// first in their own order, then the others back to front from the
     /// mirror's camera (#3479).
@@ -11935,15 +11944,7 @@ mod tests {
         .expect("GPU device");
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("scene"),
-            source: wgpu::ShaderSource::Wgsl(
-                format!(
-                    "{}\n{}\n{}",
-                    crate::common_shader_source(),
-                    crate::water_shader_source(&["object.wgsl"], include_str!("shaders/object.wgsl")),
-                    crate::water_shader_source(&["env.wgsl"], include_str!("shaders/env.wgsl"))
-                )
-                .into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(scene_shader_source(device.features()).into()),
         });
         // depth only, like the prepass of the multisampled depth
         let pipeline = |vs: &str| {
