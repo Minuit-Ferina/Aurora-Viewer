@@ -69,7 +69,12 @@ impl Chrome {
         #[cfg(not(windows))]
         let custom = false;
         let mut action = None;
-        let frame = widgets::overlay_frame(ui.ctx(), palette).inner_margin(egui::Margin::symmetric(8, 2));
+        // The client frame owns the divider. Carry the former stroke width
+        // in the inset to keep the caption controls and hit area in place.
+        let frame = widgets::overlay_frame(ui.ctx(), palette)
+            .inner_margin(egui::Margin::symmetric(9, 3))
+            .stroke(egui::Stroke::NONE)
+            .shadow(egui::Shadow::NONE);
         let row = frame.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.set_min_height(22.0);
