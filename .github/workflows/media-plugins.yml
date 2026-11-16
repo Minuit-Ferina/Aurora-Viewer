@@ -1,8 +1,7 @@
 name: Native-window test builds
 run-name: Native-window test builds - ${{ github.sha }}
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 permissions:
   contents: read
@@ -49,7 +48,8 @@ jobs:
       - name: Build
         run: cargo build --profile ci --locked -p aurora-viewer
       - name: Shared native window tests
-        run: cargo test --profile ci --workspace --locked app::native_windows::
+        run: |
+          cargo test --profile ci --workspace --locked app::native_windows::
       - name: Package Linux
         if: runner.os == 'Linux'
         shell: pwsh
