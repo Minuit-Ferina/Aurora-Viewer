@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-window-test-builds
+  group: native-window-macos-26-test-builds
   cancel-in-progress: true
 
 jobs:
@@ -19,12 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: Linux x64
-            runner: ubuntu-24.04
-            cache: linux-tests
-            archive: aurora-viewer-linux-x64.tar.gz
           - platform: macOS arm64
-            runner: macos-15
+            runner: macos-26
             cache: macos-tests
             archive: aurora-viewer-macos-arm64.zip
     env:
