@@ -126,8 +126,8 @@ struct Feedback {
     pass: u64,
     cursor: egui::CursorIcon,
 }
-fn feedback_id() -> egui::Id {
-    egui::Id::unique("inventory_move_drag_feedback")
+fn feedback_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::unique(("inventory_move_drag_feedback", ctx.viewport_id()))
 }
 
 /// How many entries a drag of inventory carries while one is in progress (a
@@ -147,7 +147,8 @@ pub(crate) fn carried_ids(ctx: &egui::Context) -> Option<Vec<Uuid>> {
 /// held over it this pass (an object's Contents tab).
 pub(crate) fn feedback(ctx: &egui::Context, cursor: egui::CursorIcon) {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(feedback_id(), Feedback { pass, cursor }));
+    let id = feedback_id(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, Feedback { pass, cursor }));
 }
 
 /// The cargo of `AURORA_DEMO_CONV_GIVE`: one item, or a selection of several.
@@ -175,9 +176,10 @@ pub(crate) fn give_target_on(ctx: &egui::Context, layer: egui::LayerId, zone: eg
     }
     let cargo = Cargo::carried(ctx)?;
     let pass = ctx.cumulative_pass_nr();
+    let id = feedback_id(ctx);
     ctx.data_mut(|d| {
         d.insert_temp(
-            feedback_id(),
+            id,
             Feedback {
                 pass,
                 cursor: egui::CursorIcon::Copy,
@@ -206,17 +208,15 @@ pub(super) fn target(
 ) {
     let Some(cargo) = Cargo::hover(ui, r) else { return };
     let pass = ui.ctx().cumulative_pass_nr();
-    if ui
-        .ctx()
-        .data(|d| d.get_temp::<Feedback>(feedback_id()).is_some_and(|f| f.pass == pass))
-    {
+    let id = feedback_id(ui.ctx());
+    if ui.ctx().data(|d| d.get_temp::<Feedback>(id).is_some_and(|f| f.pass == pass)) {
         return;
     }
     let plan = plan(ui.ctx(), inv, cargo.ids(), to, prefs, facts);
     let allowed = st.pending.is_none() && plan.as_ref().as_ref().is_ok_and(|p| !p.operations.is_empty());
     ui.ctx().data_mut(|d| {
         d.insert_temp(
-            feedback_id(),
+            id,
             Feedback {
                 pass,
                 cursor: if allowed {
@@ -252,8 +252,14 @@ pub(crate) fn cursor(ctx: &egui::Context) -> Option<egui::CursorIcon> {
     if !ctx.input(|i| i.pointer.primary_down()) {
         return None;
     }
+    hover_cursor(ctx)
+}
+
+/// A native drag already owns the held button, even on an unfocused target.
+pub(crate) fn hover_cursor(ctx: &egui::Context) -> Option<egui::CursorIcon> {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data(|d| d.get_temp::<Feedback>(feedback_id()))
+    let id = feedback_id(ctx);
+    ctx.data(|d| d.get_temp::<Feedback>(id))
         .filter(|f| f.pass == pass)
         .map(|f| f.cursor)
         .or_else(|| egui::DragAndDrop::has_payload_of_type::<SelectionDrag>(ctx).then_some(egui::CursorIcon::NotAllowed))

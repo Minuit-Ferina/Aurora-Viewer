@@ -190,6 +190,10 @@ impl Session {
         self.current.is_some()
     }
 
+    pub(super) fn target_window(&self) -> Option<WindowId> {
+        self.current.as_ref()?.target.as_ref().map(|target| target.window)
+    }
+
     pub(super) fn cancel(&mut self) {
         if let Some(transfer) = self.current.take() {
             self.reset = Some((transfer.source, transfer.origin));

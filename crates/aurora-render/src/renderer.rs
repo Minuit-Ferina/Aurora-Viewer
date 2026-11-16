@@ -6799,7 +6799,7 @@ impl Backend {
     /// markers are taken out as the full frame takes them.
     pub(crate) fn native_ui(&mut self, task: crate::native_ui::NativeUiTask) {
         if self.lost.get() {
-            let _ = task.reply.try_send(crate::native_ui::NativeUiResult::Failed);
+            (task.reply)(crate::native_ui::NativeUiResult::Failed);
         } else {
             self.native_ui.run(&self.adapter, &self.device, &self.queue, task);
         }

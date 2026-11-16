@@ -247,6 +247,48 @@ fn modifiers(ctrl: bool) -> egui::Modifiers {
 mod navigation_tests;
 
 #[test]
+fn native_hover_highlights_a_folder_before_the_verified_release() {
+    let mut f = Fixture::new();
+    let viewport = egui::ViewportId::from_hash_of("native-inventory-destination");
+    let p = crate::theme::Theme::default().palette();
+    let point = egui::pos2(98.0, 98.0);
+    let zone = egui::Rect::from_min_size(egui::pos2(54.0, 64.0), Vec2::new(170.0, 64.0));
+    for released in [false, false, true] {
+        let mut raw = egui::RawInput {
+            viewport_id: viewport,
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(400.0, 300.0))),
+            events: vec![egui::Event::PointerMoved(point)],
+            focused: false,
+            ..Default::default()
+        };
+        raw.viewports.entry(viewport).or_default().parent = Some(egui::ViewportId::ROOT);
+        if released {
+            raw.events.push(egui::Event::PointerButton {
+                pos: point,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        egui::DragAndDrop::set_payload(&f.ctx, InvDrag(id(100)));
+        let mut output = f.ctx.run_ui(raw, |ui| {
+            let response = ui.allocate_rect(zone, egui::Sense::hover());
+            assert!(!ui.input(|i| i.pointer.primary_down()));
+            drag::target(ui, &p, &response, &f.inv, id(20), &mut f.state, &f.prefs, &f.facts, &mut f.actions);
+            assert_eq!(drag::hover_cursor(ui.ctx()), Some(egui::CursorIcon::Move));
+        });
+        assert!(
+            output.shapes.iter().any(|shape| {
+                matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == zone && rect.stroke.color == p.violet_light)
+            })
+        );
+        output.textures_delta.clear();
+        assert_eq!(f.actions.len(), usize::from(released));
+    }
+    assert_eq!(f.moved(), vec![(id(100), id(20))]);
+}
+
+#[test]
 fn inventory_drag_ctrl_selection_moves_both_textures_once_without_changing_the_model_before_ack() {
     let mut f = Fixture::new();
     f.click(100, false);

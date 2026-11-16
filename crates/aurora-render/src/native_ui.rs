@@ -1,7 +1,6 @@
 //! UI-only swapchains on the existing device and queue.
 
 use std::collections::HashMap;
-use std::sync::mpsc::SyncSender;
 
 use crate::EguiFrame;
 
@@ -19,7 +18,7 @@ pub enum NativeUiCommand {
 pub struct NativeUiTask {
     pub id: NativeUiId,
     pub command: NativeUiCommand,
-    pub reply: SyncSender<NativeUiResult>,
+    pub reply: Box<dyn FnOnce(NativeUiResult) + Send>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,7 +87,7 @@ impl Surfaces {
                 NativeUiResult::Retired
             }
         };
-        let _ = task.reply.try_send(result);
+        (task.reply)(result);
     }
 
     pub(crate) fn abandon_lost_surfaces(&mut self) {

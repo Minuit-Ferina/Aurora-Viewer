@@ -22567,6 +22567,9 @@ impl ApplicationHandler for App {
                 .native_windows
                 .route_drag(event_loop, &self.egui_ctx, gfx.window.as_ref(), id, &event, self.exit_prompt.open)
         {
+            // The OS drag loop can dispatch window events without reaching
+            // about_to_wait. Paint the pending destination while hovering.
+            self.pump_native_windows(event_loop);
             return;
         }
         if let Some(activity) = self.native_windows.event(event_loop, id, &event, self.exit_prompt.open) {
@@ -23224,6 +23227,12 @@ impl ApplicationHandler for App {
             }
             let dy = if self.settings.invert_mouse { -delta.1 } else { delta.1 };
             self.camera_mouse_delta(delta.0 as f32, dy as f32);
+        }
+    }
+
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        if self.native_windows.drag_active() {
+            self.pump_native_windows(event_loop);
         }
     }
 

@@ -141,6 +141,7 @@ impl Host {
         }
         let dismiss_menus = std::mem::take(&mut self.dismiss_menus);
         let mut origin = None;
+        let mut drop_cursor = None;
         let mut output = root_context.run_ui(raw, |ui| {
             if dismiss_menus {
                 crate::ui::menu::window_geometry_changed(ui.ctx());
@@ -149,12 +150,14 @@ impl Host {
             if drop.is_some() {
                 crate::ui::inventory::drag::badge(ui.ctx(), palette);
                 crate::ui::places::drag::ghost(ui.ctx(), palette);
+                drop_cursor =
+                    crate::ui::inventory::task_drop::hover_cursor(ui.ctx()).or_else(|| crate::ui::inventory::drag::hover_cursor(ui.ctx()));
             } else if ui.ctx().dragged_id().is_some() {
                 origin = drag::Origin::read(ui.ctx());
             }
         });
         if drop.is_some() {
-            drag.feedback(event_loop, window_id, output.platform_output.cursor_icon);
+            drag.feedback(event_loop, window_id, drop_cursor.unwrap_or(output.platform_output.cursor_icon));
             egui::DragAndDrop::clear_payload(root_context);
         }
         if let Some(origin) = origin
@@ -612,10 +615,14 @@ impl NativeWindows {
     ) -> bool {
         let root_event = id == root.id();
         let can_target = !modal && (root_event || self.hosts.iter().any(|host| host.window.id() == id && host.visible()));
+        let previous_target = self.cross_window_drag.target_window();
         if self.cross_window_drag.event(event_loop, id, event, can_target) {
             root.request_redraw();
             for host in self.hosts.iter_mut().filter(|host| host.visible()) {
-                host.set_repaint(Duration::ZERO);
+                let window = host.window.id();
+                if window == id || previous_target == Some(window) {
+                    host.set_repaint(Duration::ZERO);
+                }
             }
             return true;
         }
@@ -712,14 +719,14 @@ impl NativeWindows {
             return None;
         }
         if let Some(host) = self.hosts.iter().find(|host| host.stage == Stage::Retiring) {
-            self.submit(renderer, host.id, NativeUiCommand::Retire);
+            self.submit(event_loop, renderer, host.id, NativeUiCommand::Retire);
             return None;
         }
         if let Some(host) = self.hosts.iter_mut().find(|host| host.stage == Stage::Opening) {
             if let Some(surface) = host.surface.take() {
                 let id = host.id;
                 let size = host.window.surface_size().into();
-                self.submit(renderer, id, NativeUiCommand::Open { surface, size });
+                self.submit(event_loop, renderer, id, NativeUiCommand::Open { surface, size });
             }
             return None;
         }
@@ -836,6 +843,7 @@ impl NativeWindows {
         }
         host.window.pre_present_notify();
         self.submit(
+            event_loop,
             renderer,
             id,
             NativeUiCommand::Draw {
@@ -1023,8 +1031,14 @@ impl NativeWindows {
         }
     }
 
-    fn submit(&mut self, renderer: &mut Renderer, id: NativeUiId, command: NativeUiCommand) {
+    fn submit(&mut self, event_loop: &dyn ActiveEventLoop, renderer: &mut Renderer, id: NativeUiId, command: NativeUiCommand) {
         let (reply, receiver) = sync_channel(1);
+        let proxy = event_loop.create_proxy();
+        let reply = Box::new(move |result| {
+            if reply.try_send(result).is_ok() {
+                proxy.wake_up();
+            }
+        });
         // One in-flight operation across these windows. No new egui pass
         // runs until its predecessor was consumed, including its deltas.
         if renderer.queue_native_ui(NativeUiTask { id, command, reply }) {
