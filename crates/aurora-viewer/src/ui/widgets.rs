@@ -3234,7 +3234,7 @@ pub fn picture(
     ui.painter().rect_filled(rect, ui.visuals().window_corner_radius, p.field);
     match tex {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             let aspect = w.max(1) as f32 / h.max(1) as f32;
             let fit = if aspect >= size.x / size.y {
                 Vec2::new(size.x, size.x / aspect)
@@ -3299,7 +3299,7 @@ fn square_crop(w: usize, h: usize) -> egui::Rect {
 /// A picture cropped square over `rect`, its corners the theme's (a
 /// group's insignia in the Conversations window).
 pub fn square_picture(ui: &egui::Ui, rect: egui::Rect, t: &egui::TextureHandle) {
-    let [w, h] = t.size();
+    let [w, h] = t.resolution();
     egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
         .uv(square_crop(w, h))
         .tint(PICTURE_TINT)
@@ -3320,7 +3320,7 @@ pub fn avatar_disc(ui: &egui::Ui, p: &Palette, rect: egui::Rect, pic: Option<&eg
     let radius = rect.width().min(rect.height()) * 0.5;
     match pic {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             let tint = if dim { PICTURE_TINT_DISABLED } else { PICTURE_TINT };
             egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
                 .uv(square_crop(w, h))
@@ -3344,7 +3344,7 @@ pub fn avatar_disc(ui: &egui::Ui, p: &Palette, rect: egui::Rect, pic: Option<&eg
 pub fn avatar_picture(ui: &egui::Ui, p: &Palette, rect: egui::Rect, pic: Option<&egui::TextureHandle>, name: &str, dim: bool) {
     match pic {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             let tint = if dim { PICTURE_TINT_DISABLED } else { PICTURE_TINT };
             ui.painter().image(t.id(), rect, square_crop(w, h), tint);
         }

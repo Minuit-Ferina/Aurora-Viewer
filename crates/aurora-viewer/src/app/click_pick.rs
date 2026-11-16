@@ -300,6 +300,33 @@ impl App {
 
     /// A mouse button of the window, pressed or released: handled now, or
     /// in its turn behind the click that waits for its depth.
+    pub(super) fn mouse_binding(&self, button: MouseButton) -> Option<Input> {
+        let code = u16::from(button as u8);
+        #[cfg(target_os = "linux")]
+        {
+            use wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+            let backend = self
+                .gfx
+                .as_ref()
+                .and_then(|g| g.window.display_handle().ok())
+                .map(|handle| handle.as_raw());
+            // Saved bindings use the backend button codes from winit 0.30.
+            match backend {
+                Some(RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_)) => return Input::mouse(button, code + 5),
+                Some(RawDisplayHandle::Wayland(_)) => {
+                    let button = match button {
+                        MouseButton::Button6 => MouseButton::Forward,
+                        MouseButton::Button7 => MouseButton::Back,
+                        button => button,
+                    };
+                    return Input::mouse(button, code + 0x110);
+                }
+                _ => {}
+            }
+        }
+        Input::mouse(button, code)
+    }
+
     pub(super) fn mouse_input(&mut self, button: MouseButton, pressed: bool, over_ui: bool) {
         if self.studio_mouse(button, pressed, over_ui) {
             return;
@@ -347,7 +374,7 @@ impl App {
             }
             MouseButton::Left => self.on_left_release(),
             other => {
-                if let Some(input) = Input::mouse(other) {
+                if let Some(input) = self.mouse_binding(other) {
                     // bindable buttons (push-to-talk on the wheel click...)
                     if !pressed || !over_ui {
                         self.on_input(input, pressed);

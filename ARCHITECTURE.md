@@ -1,5 +1,23 @@
 # Aurora Viewer architecture
 
+`app/desktop_text_import.rs` owns desktop TXT/LSL imports for one inventory
+session. Its `files.rs` stages bounded immutable snapshots on at most two
+workers. `native.rs` tracks each native drag, captures the folder UUID on
+drop, and matches the subsequent path response to that transfer and inventory
+session. `view.rs` maps the results to inventory item UUIDs and queued rows.
+`ui/inventory/text_import.rs` records clipped inventory targets and tests the
+top egui layer at the drag position. For an ambiguous drop, the folder's
+context menu lets the user select the exact destination.
+The inventory folder command captures its folder before opening the native
+picker. Both submit to the same queue. Typed acknowledgements in
+`aurora-net/inventory/text_import.rs` preserve the saved asset and script
+compilation result. `session/asset_imports.rs` shares creation capacity and
+permission correction with other document creators. It uploads against the
+acknowledged new item, reports the save and compilation result immediately,
+and verifies inventory metadata and permissions separately. The controller
+allows up to four concurrent readbacks. An unconfirmed readback is shown in
+the row tooltip.
+
 Inventory Delete carries a `DeleteRequest` with its originating window and
 selection through the Marketplace guard. `app/inventory.rs` binds that intent
 to the mutation's request before sending it, including synchronous demo replies.

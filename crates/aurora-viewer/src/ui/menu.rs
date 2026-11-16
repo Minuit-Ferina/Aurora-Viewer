@@ -527,7 +527,7 @@ fn row_lead_sensed(ui: &mut Ui, p: &Palette, lead: Lead, label: &str, enabled: b
             super::presence::paint_mark(painter, icon_rect.center(), ICON * 0.38, shape, color, face);
         }
         Lead::Picture(Some(t), _) => {
-            let size = t.size_vec2();
+            let size = t.resolution_vec2();
             let fit = egui::Rect::from_center_size(icon_rect.center(), size * (ICON / size.max_elem()));
             painter.image(
                 t.id(),

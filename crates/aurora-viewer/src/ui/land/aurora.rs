@@ -128,7 +128,7 @@ fn picture(ui: &mut egui::Ui, p: &Palette, s: &mut LandUi, v: &View, parcel: &Pa
         .flatten();
     match tex {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
                 .uv(cover_uv(w, h, rect.size()))
                 .tint(widgets::PICTURE_TINT)

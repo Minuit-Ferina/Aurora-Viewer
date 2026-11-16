@@ -89,7 +89,7 @@ pub fn motion(delta: (f64, f64)) -> Option<(f64, f64)> {
 /// Read each raw packet before winit does: winit's message hook runs on the
 /// main thread for each message taken from the queue, before its dispatch.
 #[cfg(windows)]
-pub fn install(builder: &mut winit::event_loop::EventLoopBuilder<()>) {
+pub fn install(builder: &mut winit::event_loop::EventLoopBuilder) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MSG, WM_INPUT};
     use winit::platform::windows::EventLoopBuilderExtWindows;
 

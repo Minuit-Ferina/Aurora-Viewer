@@ -1015,7 +1015,7 @@ fn visibility(
                 .flatten();
             match tex {
                 Some(t) => {
-                    let [w, h] = t.size();
+                    let [w, h] = t.resolution();
                     egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), size))
                         .uv(super::aurora::cover_uv(w, h, size))
                         .corner_radius(ui.visuals().window_corner_radius)

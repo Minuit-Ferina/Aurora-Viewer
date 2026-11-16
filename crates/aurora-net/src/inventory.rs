@@ -11,6 +11,7 @@ pub mod notecard;
 pub mod operations;
 pub mod orphans;
 pub mod rez;
+pub mod text_import;
 pub mod thumbnail;
 pub mod upload;
 

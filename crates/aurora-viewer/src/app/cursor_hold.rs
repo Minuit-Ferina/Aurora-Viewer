@@ -21,8 +21,16 @@ use winit::window::CursorGrabMode;
 /// ends there, and a release alone does nothing.
 pub(super) fn held_from_ui(event: &WindowEvent) -> bool {
     match event {
-        WindowEvent::CursorMoved { .. } | WindowEvent::MouseWheel { .. } => true,
-        WindowEvent::MouseInput { state, .. } => *state == ElementState::Pressed,
+        WindowEvent::PointerMoved {
+            source: winit::event::PointerSource::Mouse,
+            ..
+        }
+        | WindowEvent::MouseWheel { .. } => true,
+        WindowEvent::PointerButton {
+            state,
+            button: winit::event::ButtonSource::Mouse(_),
+            ..
+        } => *state == ElementState::Pressed,
         _ => false,
     }
 }
@@ -256,7 +264,7 @@ impl App {
         let Some(g) = &self.gfx else {
             return;
         };
-        let size = g.window.inner_size();
+        let size = g.window.surface_size();
         let center = (size.width as f32 / 2.0, size.height as f32 / 2.0);
         if (self.cursor_pos.0 - center.0).abs() > 0.5 || (self.cursor_pos.1 - center.1).abs() > 0.5 {
             self.move_cursor(center);
@@ -303,7 +311,7 @@ impl App {
         let Some(g) = &self.gfx else {
             return;
         };
-        let size = g.window.inner_size();
+        let size = g.window.surface_size();
         self.move_cursor((size.width as f32 / 2.0, size.height as f32 / 2.0));
     }
 
@@ -313,7 +321,7 @@ impl App {
         };
         let _ = g
             .window
-            .set_cursor_position(winit::dpi::PhysicalPosition::new(f64::from(x), f64::from(y)));
+            .set_cursor_position(winit::dpi::PhysicalPosition::new(f64::from(x), f64::from(y)).into());
         self.cursor_pos = (x, y);
     }
 }

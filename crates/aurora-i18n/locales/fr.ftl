@@ -14551,3 +14551,43 @@ joystick-layout-positional = Positionnelle
 
 joystick-layout-auto = Automatique
 joystick-layout-xinput = XInput
+
+
+# Desktop text import
+
+desktop-text-import-title = Importer des fichiers texte
+desktop-text-import-command = Importer des fichiers texte dans ce dossier…
+desktop-text-import-filter = Fichiers texte et scripts LSL
+desktop-text-import-choose = Dans le menu contextuel d’un dossier, choisissez « Utiliser ce dossier pour le dépôt ».
+desktop-text-import-cancel = Annuler les fichiers en attente
+desktop-text-import-dismiss = Effacer les résultats
+desktop-text-import-cancel-choice = Annuler
+desktop-text-import-queued = En attente
+desktop-text-import-reading = Lecture
+desktop-text-import-creating = Création de l’élément
+desktop-text-import-uploading = Enregistrement du texte
+desktop-text-import-saved = Enregistré
+desktop-text-import-compiled = Enregistré et compilé
+desktop-text-import-unchecked = Enregistré sans vérification de compilation
+desktop-text-import-compile-error = Enregistré avec des erreurs de compilation
+desktop-text-import-unverified = Élément ou permissions non vérifiés
+desktop-text-import-error-full = La file d’import est pleine. Réessayez avec moins de fichiers une fois les imports en cours terminés.
+desktop-text-import-error-name = Utilisez un nom d’inventaire valide de 254 octets UTF-8 maximum.
+desktop-text-import-error-extension = Choisissez un fichier .txt ou .lsl.
+desktop-text-import-error-read = Impossible de lire un fichier ordinaire.
+desktop-text-import-error-size = Le fichier dépasse la limite de taille de ce type d’élément.
+desktop-text-import-error-utf8 = Enregistrez le fichier en UTF-8 puis réessayez.
+desktop-text-import-error-nul = Le fichier contient un caractère NUL.
+desktop-text-import-error-marker = Le texte contient un marqueur réservé aux notecards.
+desktop-text-import-error-payload = Le texte en attente dépasse la limite de mémoire de l’import.
+desktop-text-import-error-destination = Le dossier de destination n’accepte pas l’import de texte.
+desktop-text-import-error-restricted = L’accès à l’inventaire ou au document est restreint.
+desktop-text-import-error-unavailable = La création est indisponible. Aucun élément n’a été demandé.
+desktop-text-import-error-upload = Élément créé. L’envoi du texte a échoué.
+desktop-text-import-error-unknown = Le résultat côté serveur est inconnu. Vérifiez le dossier avant de relancer l’import.
+desktop-text-import-error-cancelled = Annulé avant la création
+desktop-text-import-choose-folder = Utiliser ce dossier pour le dépôt
+desktop-text-import-compiling = Enregistrement et compilation
+desktop-text-import-error = Erreur
+desktop-text-import-error-transfer = Impossible de recevoir les fichiers locaux déposés. Sélectionnez-les avec « Importer des fichiers texte dans ce dossier… ».
+desktop-text-import-into = Importer dans { $folder }

@@ -6022,6 +6022,7 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_AVATAR_HEALTH=undeform\|refresh` | Me › Avatar health's Undeform avatar or Refresh attachments at frame 600 |
 | `AURORA_DEMO_RELOAD_AVATAR=other\|self` | "Reload avatar" of the right-click menu, on the other avatar or ours |
 | `AURORA_DEMO_INVENTORY=<mode>` | Synthetic inventory, animation playback previews, link type icons, lost inventory recovery, menus, layout notecards, filters, drag feedback, windows, keyboard, search selection and advanced search; `aurora…` modes show Aurora's window at each width |
+| `AURORA_DEMO_DESKTOP_TEXT_IMPORT=<mode>` | Stage generated TXT/LSL files and exercise desktop text import results offline |
 | `AURORA_DEMO_GESTURES=manager\|editor\|numpad\|chat-keys\|play\|replay\|once\|channel\|channel-replace\|completion\|completion-send\|list\|communicate\|communicate-open` | Gesture manager, editor, numeric and focused-chat shortcuts, playback, back-to-back replays, commands to worn scripts and replacements on a channel, completion, the chat bar's list of gestures and menu access |
 | `AURORA_DEMO_IMPORTS=<mode>` | Import window and synthetic assets; `launcher` / `settings` open empty tabs; `icon-bar` opens the quick import bar; `type-*` opens independent type windows |
 | `AURORA_DEMO_IMPORT_FILE=<path>` | Local asset to open in the demo flow |
@@ -6744,6 +6745,49 @@ failure. Grid validation and any paid upload are performed by the human.
   the windows. The build window keeps its width across its six sections,
   including Shape for the advanced settings; long lists scroll in the body,
   the actions stay visible. Modal confirmations keep the blurred background.
+- **`AURORA_DEMO_DESKTOP_TEXT_IMPORT=basic|mixed|duplicates|invalid|compile-error|verification-failed|upload-error|unknown-outcome|cancel|destination-changed|choose|ten`**:
+  From the task worktree with an existing `.scratch/` directory, run the
+  viewer offline with this variable and `AURORA_DEMO=1`. Aurora is the
+  default presentation. Prefix a scenario with `legacy-` for the Legacy
+  inventory. Fixtures go through the production reader and controller with
+  demo acknowledgements. Browse the Notecards folder to see created rows
+  and their status. The `choose` scenario waits until you right-click a
+  real folder and select **Use this folder for the drop**. Hover over a
+  status to read file or compiler errors.
+
+  The queue allows 100 unfinished entries and 32 MiB of retained content,
+  with two readers, one create/upload and up to four background inventory
+  readbacks. If the upload outcome is unknown, inspect or refresh the
+  destination before importing again. The `verification-failed` scenario
+  shows the normal saved and compiled statuses. Hover over the status to
+  see that the inventory item or its permissions could not be verified.
+
+  Native acceptance requires a human. Repeat with Windows Explorer,
+  macOS Finder, a Linux X11 file manager and a native Wayland file manager.
+  From the task worktree, set `AURORA_DEMO=1`, leave `AURORA_DEMO_DESKTOP_TEXT_IMPORT`
+  unset, and run `cargo run --locked -p aurora-viewer -- --title "Test desktop-text-import-native"`.
+
+  1. In both inventory presentations, drop a TXT, an LSL and a ten-file
+     mixed batch on a nested folder. Try the name, icon, caret, the Aurora
+     sidebar and a real folder's empty list background. Check the exact
+     destination at different display scales, with overlapping viewer
+     floaters, and after moving quickly just before release.
+  2. Drop on an aggregate list without a destination. Choose a
+     folder from its menu, then repeat and cancel. Drop onto an item, the world,
+     object Contents, Trash and Library and check that no import starts.
+     Open a real folder's **Import text files into this folder…** command
+     and check the mixed batch and folder again.
+  3. On the grid, use a disposable folder. Import a file whose name matches
+     an existing item. Open both entries, verify the old one, and compare
+     the new one with the file. Include Unicode, tabs, CRLF and a literal
+     serialized-looking notecard header. Compare both types' permissions
+     with their creation presets.
+  4. Import invalid LSL. Check the status and hover for diagnostics, then
+     reopen the saved source. Cancel queued rows in a larger batch and
+     check any item acknowledged before a failed upload.
+  5. Drag an inventory item between folders and an imported script into a
+     disposable object. Check the ordinary destination and naming behavior.
+
 - **`AURORA_DEMO_INVENTORY=link-icons|aurora-link-icons`**: adds original/link pairs
   for demo item types and all seventeen wearable subtypes, plus a folder link and
   a broken link. Expand the context-test folder and scroll through it: valid links

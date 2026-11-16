@@ -21,18 +21,22 @@ pub enum Input {
 
 impl Input {
     pub fn key(code: KeyCode) -> Input {
-        Input::Key(format!("{code:?}"))
+        Input::Key(match code {
+            KeyCode::MetaLeft => "SuperLeft".into(),
+            KeyCode::MetaRight => "SuperRight".into(),
+            code => format!("{code:?}"),
+        })
     }
 
     /// Mouse buttons that can be bound (left / right drive the camera and
     /// the context menu, like in Firestorm).
-    pub fn mouse(b: MouseButton) -> Option<Input> {
+    pub fn mouse(b: MouseButton, legacy_code: u16) -> Option<Input> {
         match b {
             MouseButton::Left | MouseButton::Right => None,
             MouseButton::Middle => Some(Input::Mouse(aurora_i18n::tr!("keybinds-middle").into())),
             MouseButton::Back => Some(Input::Mouse(aurora_i18n::tr!("keybinds-back").into())),
             MouseButton::Forward => Some(Input::Mouse(aurora_i18n::tr!("keybinds-forward").into())),
-            MouseButton::Other(n) => Some(Input::Mouse(format!("Other{n}"))),
+            _ => Some(Input::Mouse(format!("Other{legacy_code}"))),
         }
     }
 
@@ -46,8 +50,8 @@ impl Input {
                 | KeyCode::ControlRight
                 | KeyCode::AltLeft
                 | KeyCode::AltRight
-                | KeyCode::SuperLeft
-                | KeyCode::SuperRight
+                | KeyCode::MetaLeft
+                | KeyCode::MetaRight
         )
     }
 

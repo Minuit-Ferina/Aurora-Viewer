@@ -454,7 +454,7 @@ impl Emoji {
                 }
                 if let Some(t) = self.texture(ui.ctx(), g.chr) {
                     let mid_x = out.galley_pos.x + placed.pos.x + g.pos.x + g.advance_width / 2.0;
-                    let size = t.size_vec2() * (picture_side / t.size_vec2().max_elem());
+                    let size = t.resolution_vec2() * (picture_side / t.resolution_vec2().max_elem());
                     painter.image(
                         t.id(),
                         egui::Rect::from_center_size(egui::pos2(mid_x, mid_y), size),
@@ -481,7 +481,7 @@ impl Emoji {
             // keep the image's proportions: the 2D font's bitmaps are wider
             // than tall (136 × 128)
             let slot = rect.shrink(3.0);
-            let size = t.size_vec2();
+            let size = t.resolution_vec2();
             let ir = egui::Rect::from_center_size(slot.center(), size * (slot.width() / size.x).min(slot.height() / size.y));
             ui.painter().image(
                 t.id(),

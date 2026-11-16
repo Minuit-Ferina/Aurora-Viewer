@@ -517,7 +517,7 @@ fn card_ui(
     // an outfit of ours with no picture at all: the auto portrait at once
     let portrait = image.is_nil() && own_outfit(world, id);
     if let Some(t) = images.get(&image) {
-        let (image_rect, uv) = super::preview_rects(picture.shrink(2.0), t.size_vec2(), st.fill_previews);
+        let (image_rect, uv) = super::preview_rects(picture.shrink(2.0), t.resolution_vec2(), st.fill_previews);
         painter.image(t.id(), image_rect, uv, widgets::PICTURE_TINT);
     } else if let Some(t) = icons::global("hanger-2-filled") {
         let (center, side) = if portrait {
@@ -719,7 +719,7 @@ fn preview_panel(
         st.wanted_images.insert(image);
     }
     if let Some(t) = hd.and_then(|hd| images.get(&hd)).or_else(|| images.get(&image)) {
-        let (image_rect, uv) = super::preview_rects(picture.shrink(2.0), t.size_vec2(), st.fill_previews);
+        let (image_rect, uv) = super::preview_rects(picture.shrink(2.0), t.resolution_vec2(), st.fill_previews);
         ui.painter().image(t.id(), image_rect, uv, widgets::PICTURE_TINT);
     } else {
         if let Some(t) = icons::global("hanger-2-filled") {

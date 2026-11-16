@@ -728,7 +728,7 @@ fn paint_banner(ui: &egui::Ui, p: &Palette, rect: Rect, tex: Option<&egui::Textu
     let radius = ui.visuals().window_corner_radius;
     match tex {
         Some(t) => {
-            let [tw, th] = t.size();
+            let [tw, th] = t.resolution();
             let aspect = tw.max(1) as f32 / th.max(1) as f32;
             let want = rect.width() / rect.height();
             // cover: the banner shows the middle of the picture
@@ -1832,7 +1832,7 @@ fn pick_card(ui: &mut egui::Ui, env: &mut Env, w: &mut Window, pick: Uuid, width
     };
     match snapshot.and_then(|s| env.images.get(&s)) {
         Some(t) => {
-            let [tw, th] = t.size();
+            let [tw, th] = t.resolution();
             let aspect = tw.max(1) as f32 / th.max(1) as f32;
             let want = img.width() / img.height();
             let uv = if aspect > want {

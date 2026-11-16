@@ -14550,3 +14550,43 @@ joystick-layout-positional = Positional
 
 joystick-layout-auto = Automatic
 joystick-layout-xinput = XInput
+
+
+# Desktop text import
+
+desktop-text-import-title = Import text files
+desktop-text-import-command = Import text files into this folder…
+desktop-text-import-filter = Text files and LSL scripts
+desktop-text-import-choose = Choose “Use this folder for the drop” from an inventory folder’s context menu.
+desktop-text-import-cancel = Cancel pending
+desktop-text-import-dismiss = Dismiss
+desktop-text-import-cancel-choice = Cancel
+desktop-text-import-queued = Queued
+desktop-text-import-reading = Reading
+desktop-text-import-creating = Creating item
+desktop-text-import-uploading = Saving source
+desktop-text-import-saved = Saved
+desktop-text-import-compiled = Saved and compiled
+desktop-text-import-unchecked = Saved without compilation check
+desktop-text-import-compile-error = Saved with compilation errors
+desktop-text-import-unverified = Item or permissions unverified
+desktop-text-import-error-full = The import queue is full. Try a smaller batch after current imports finish.
+desktop-text-import-error-name = Use a valid inventory name of at most 254 UTF-8 bytes.
+desktop-text-import-error-extension = Choose a .txt or .lsl file.
+desktop-text-import-error-read = Could not read a regular file.
+desktop-text-import-error-size = The source exceeds the size limit for this item type.
+desktop-text-import-error-utf8 = Save the file as UTF-8 and try again.
+desktop-text-import-error-nul = The file contains a NUL character.
+desktop-text-import-error-marker = The text contains a reserved notecard marker.
+desktop-text-import-error-payload = The queued text exceeds the import memory limit.
+desktop-text-import-error-destination = The destination folder is unavailable for text import.
+desktop-text-import-error-restricted = Inventory or document access is restricted.
+desktop-text-import-error-unavailable = Creation is unavailable. No item was requested.
+desktop-text-import-error-upload = Item created. Source upload failed.
+desktop-text-import-error-unknown = The server outcome is unknown. Check the destination before importing again.
+desktop-text-import-error-cancelled = Cancelled before creation
+desktop-text-import-choose-folder = Use this folder for the drop
+desktop-text-import-compiling = Saving and compiling
+desktop-text-import-error = Error
+desktop-text-import-error-transfer = Could not receive local files from the drop. Use “Import text files into this folder…” to select them.
+desktop-text-import-into = Import into { $folder }

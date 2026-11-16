@@ -153,7 +153,7 @@ impl App {
     /// Closing from the notice: logged out and saved as usual. The render
     /// thread may never give the GPU back, and whatever waits for it at
     /// exit would keep the process alive: it ends at the latest 10 s later.
-    pub(super) fn close_while_gpu_stalled(&mut self, event_loop: &ActiveEventLoop) {
+    pub(super) fn close_while_gpu_stalled(&mut self, event_loop: &dyn ActiveEventLoop) {
         let _ = std::thread::Builder::new().name("aurora-exit-guard".into()).spawn(|| {
             std::thread::sleep(Duration::from_secs(10));
             log::warn!("the graphics card kept the viewer from closing: ended");

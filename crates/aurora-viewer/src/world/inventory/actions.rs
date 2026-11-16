@@ -302,6 +302,13 @@ pub fn renameable(inv: &Inventory, id: Uuid) -> bool {
 pub fn destination(inv: &Inventory, id: Uuid) -> bool {
     inv.folders.contains_key(&id) && mutable(inv, id) && !in_type(inv, id, 14) && !in_type(inv, id, 48)
 }
+/// A desktop document needs an owned, real folder rooted in My Inventory.
+pub fn text_import_destination(inv: &Inventory, id: Uuid) -> bool {
+    !inv.root.is_nil()
+        && destination(inv, id)
+        && under(inv, id, inv.root)
+        && inv.folders.get(&id).is_some_and(|f| !matches!(f.info.type_default, 16 | 47))
+}
 /// Where a link can be pasted: `destination` plus My Outfits and its
 /// folders, whose contents are links (LLFolderBridge::pasteLinkFromClipboard,
 /// indra/newview/llinventorybridge.cpp, originally LGPL 2.1).

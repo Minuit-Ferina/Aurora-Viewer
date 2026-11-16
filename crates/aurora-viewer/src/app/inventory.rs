@@ -317,6 +317,11 @@ impl App {
                 }
             }
             InvAction::Drop(change) => self.edit_inventory(change, true),
+            InvAction::ImportDesktopText(folder) => self.pick_desktop_text(folder),
+            InvAction::ChooseDesktopText(drop, folder) => self.choose_desktop_text(drop, folder),
+            InvAction::DiscardDesktopText(drop) => self.discard_desktop_text(drop),
+            InvAction::CancelDesktopText(batch) => self.cancel_desktop_text(batch),
+            InvAction::DismissDesktopText(batch) => self.dismiss_desktop_text(batch),
             InvAction::Create { parent, kind, name } => {
                 if rules::destination(&self.world.inventory, parent) {
                     if let aurora_net::inventory::operations::NewItem::Wearable(kind) = kind {

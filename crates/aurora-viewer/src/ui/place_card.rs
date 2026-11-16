@@ -253,7 +253,7 @@ pub fn picture(ui: &egui::Ui, p: &Palette, tex: Option<&egui::TextureHandle>, re
     let radius = ui.visuals().window_corner_radius;
     match tex {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
                 .uv(cover_uv(w as f32, h as f32, rect.size()))
                 .tint(widgets::PICTURE_TINT)

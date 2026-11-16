@@ -14468,3 +14468,43 @@ joystick-layout-positional = 位置に基づく
 
 joystick-layout-auto = 自動
 joystick-layout-xinput = XInput
+
+
+# Desktop text import
+
+desktop-text-import-title = テキストファイルのインポート
+desktop-text-import-command = このフォルダーにテキストファイルをインポート…
+desktop-text-import-filter = テキストファイルと LSL スクリプト
+desktop-text-import-choose = インベントリのフォルダーを右クリックし、「ドロップ先に指定」を選択してください。
+desktop-text-import-cancel = 待機中の項目をキャンセル
+desktop-text-import-dismiss = 結果を閉じる
+desktop-text-import-cancel-choice = キャンセル
+desktop-text-import-queued = 待機中
+desktop-text-import-reading = 読み込み中
+desktop-text-import-creating = アイテムを作成中
+desktop-text-import-uploading = ソースを保存中
+desktop-text-import-saved = 保存済み
+desktop-text-import-compiled = 保存・コンパイル済み
+desktop-text-import-unchecked = コンパイル確認なしで保存済み
+desktop-text-import-compile-error = 保存済み（コンパイルエラーあり）
+desktop-text-import-unverified = アイテムまたは権限を未確認
+desktop-text-import-error-full = インポートキューがいっぱいです。現在の処理が終わってからファイル数を減らして再試行してください。
+desktop-text-import-error-name = 254 UTF-8 バイト以内の有効なアイテム名を使用してください。
+desktop-text-import-error-extension = .txt または .lsl ファイルを選択してください。
+desktop-text-import-error-read = 通常ファイルとして読み込めませんでした。
+desktop-text-import-error-size = このアイテム種別のサイズ制限を超えています。
+desktop-text-import-error-utf8 = UTF-8 で保存して再試行してください。
+desktop-text-import-error-nul = ファイルに NUL 文字が含まれています。
+desktop-text-import-error-marker = テキストにノートカードの予約マーカーが含まれています。
+desktop-text-import-error-payload = 待機中のテキストがインポートのメモリ上限を超えています。
+desktop-text-import-error-destination = 保存先フォルダーにテキストをインポートできません。
+desktop-text-import-error-restricted = 持ち物または文書へのアクセスが制限されています。
+desktop-text-import-error-unavailable = 作成機能を利用できません。作成リクエストは送信されていません。
+desktop-text-import-error-upload = アイテムは作成されましたが、ソースのアップロードに失敗しました。
+desktop-text-import-error-unknown = サーバーでの処理結果が不明です。再インポートする前に保存先を確認してください。
+desktop-text-import-error-cancelled = 作成前にキャンセル済み
+desktop-text-import-choose-folder = ドロップ先に指定
+desktop-text-import-compiling = 保存とコンパイル中
+desktop-text-import-error = エラー
+desktop-text-import-error-transfer = ドロップされたローカルファイルを受け取れませんでした。「このフォルダーにテキストファイルをインポート…」からファイルを選択してください。
+desktop-text-import-into = { $folder } にインポート

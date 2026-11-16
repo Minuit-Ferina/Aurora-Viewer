@@ -781,7 +781,7 @@ impl GifPicker {
                             }) = self.tiles.get(&gif.thumb)
                                 && let Some((texture, wait)) = frames.at(now)
                             {
-                                let uv = cover_uv(texture.size_vec2(), rect.size());
+                                let uv = cover_uv(texture.resolution_vec2(), rect.size());
                                 ui.painter().image(texture.id(), rect, uv, crate::ui::widgets::PICTURE_TINT);
                                 if let Some(w) = wait {
                                     next_frame = Some(next_frame.map_or(w, |n| n.min(w)));

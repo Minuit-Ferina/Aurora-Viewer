@@ -138,17 +138,17 @@ impl Session<'_> {
         let Some(update) = parse_eq(event, self.agent_id()) else {
             return false;
         };
-        self.apply_generic_inventory_update(update);
+        self.apply_generic_inventory_update(event.sim, update);
         true
     }
 
-    pub(super) fn on_inventory_generic(&mut self, agent: Uuid, method: &[u8], parameter: &[u8]) {
+    pub(super) fn on_inventory_generic(&mut self, from: std::net::SocketAddr, agent: Uuid, method: &[u8], parameter: &[u8]) {
         if let Some(update) = parse(agent, method, parameter, self.agent_id()) {
-            self.apply_generic_inventory_update(update);
+            self.apply_generic_inventory_update(from, update);
         }
     }
 
-    fn apply_generic_inventory_update(&mut self, update: Result<Update, ()>) {
+    fn apply_generic_inventory_update(&mut self, from: std::net::SocketAddr, update: Result<Update, ()>) {
         let Ok(update) = update else {
             log::warn!("inventory generic update rejected: malformed or foreign recipient");
             return;
@@ -161,7 +161,7 @@ impl Session<'_> {
         let mut items = Vec::new();
         let mut created = Vec::new();
         for (callback, item) in update.items {
-            self.asset_created(callback, &item);
+            self.asset_created(from, callback, &item);
             let new = self.inventory_callbacks.remove(&callback).is_some_and(|(_, new)| new);
             self.accept_inventory_copy(callback, &item);
             if let Some((editor, notecard, open)) = self.notecard_copies.remove(&callback) {

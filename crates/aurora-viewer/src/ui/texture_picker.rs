@@ -528,7 +528,7 @@ impl TexturePicker {
                                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                                 widgets::PICTURE_TINT,
                             );
-                            let size = t.size();
+                            let size = t.resolution();
                             ui.label(RichText::new(format!("{} × {}", size[0], size[1])).size(11.0).color(p.muted));
                         } else if a == BLANK_TEXTURE {
                             // IMG_WHITE has known content while its metadata streams.

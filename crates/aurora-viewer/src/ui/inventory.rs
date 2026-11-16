@@ -60,6 +60,7 @@ mod smart_builder;
 pub(crate) mod smart_store;
 pub(crate) mod task_drop;
 pub(crate) mod task_selection;
+pub(crate) mod text_import;
 pub mod thumbnail;
 pub(crate) mod tree;
 pub(crate) mod view;
@@ -130,6 +131,11 @@ pub fn show_document(
 }
 
 pub enum InvAction {
+    ImportDesktopText(Uuid),
+    ChooseDesktopText(Uuid, Uuid),
+    DiscardDesktopText(Uuid),
+    CancelDesktopText(Uuid),
+    DismissDesktopText(Uuid),
     DefaultPermissions,
     ExportMenuNotecard {
         name: String,
@@ -488,6 +494,7 @@ struct TabFilters {
 
 #[derive(Default)]
 pub struct InventoryUi {
+    desktop_text_choice: Option<Uuid>,
     pub default_permissions_open: bool,
     context_folders: std::cell::RefCell<context_catalog::FolderCache>,
     pub marketplace_commands: std::collections::HashMap<Uuid, Vec<crate::ui::marketplace_listings::OptionState>>,
@@ -1197,6 +1204,9 @@ fn item_row(
             .map(|_| ui.painter().layout_no_wrap(shown.to_owned(), font_id, p.ink));
         // The same worn tag as Aurora's rows and Appearance, before the rights.
         let tag = worn.map(|worn| (p, worn, super::widgets::reserve_row_tag(ui, &mut label, worn, p), true));
+        if let Some(status) = text_import::item(ui.ctx(), *id) {
+            text_import::append(ui, p, &mut label, &status, st.selection.contains(id));
+        }
         let permissions = permissions::Permissions::inventory(inv, *id).map(|permissions| permissions.with_next_owner(st.show_next_owner));
         if let Some(permissions) = permissions {
             // Keep each item's rights next to its name: a very long sibling
@@ -1229,6 +1239,12 @@ fn item_response(
     actions: &mut Vec<InvAction>,
 ) -> egui::Response {
     let id = it.id;
+    text_import::record_row(ui, r.rect, inv, None);
+    let r = if let Some(status) = text_import::item(ui.ctx(), id).filter(|status| !status.detail.is_empty()) {
+        r.on_hover_text(status.detail)
+    } else {
+        r
+    };
     // One response handles clicks and dragging; a separate drag-source
     // interaction overlay used to consume secondary clicks on the label.
     drag::source(ui, &r, it.id, false, st);
@@ -1352,6 +1368,7 @@ fn folder_response(
     if let Some(lead) = lead {
         destination.rect = destination.rect.union(lead);
     }
+    text_import::record_row(ui, destination.rect, inv, Some(id));
     drag::target(ui, p, &destination, inv, id, state, prefs, facts, actions);
     drag::navigation::folder(ui, &destination, state.ui_id, id, open);
     state.hover.record(&r, id, None);
@@ -1403,6 +1420,7 @@ fn folder_window_contents(
 ) {
     controls::toolbar(ui, p, st, prefs);
     controls::search(ui, p, inv, st, prefs, aurora_i18n::tr!("ui-inventory-filter-inventory-folder"));
+    text_import::inline(ui, p, Some(root), actions);
     next_owner_control(ui, p, st);
     ui.add_space(3.0);
     let q = st.search.trim().to_lowercase();
@@ -1436,6 +1454,7 @@ fn folder_window_contents(
         }
         rows::scroll(ui, p, icons, inv, st, prefs, facts, actions, list_h, root, false);
     });
+    text_import::record(ui, zone.response.rect, inv, (!filtered).then_some(root), false);
     task_drop::target(ui, p, &zone.response, inv, root, actions);
     drag::target(ui, p, &zone.response, inv, root, st, prefs, facts, actions);
     status(ui, p, inv, st, prefs, facts, actions, filtered);
@@ -2099,6 +2118,7 @@ fn inventory_contents(
 ) {
     controls::toolbar(ui, p, st, prefs);
     controls::search(ui, p, inv, st, prefs, aurora_i18n::tr!("ui-inventory-filter-inventory"));
+    text_import::inline(ui, p, None, actions);
     ui.add_space(3.0);
     let mut tab_ids = vec![0];
     let mut labels = vec![(aurora_i18n::tr!("common-inventory"), true)];
@@ -2125,6 +2145,13 @@ fn inventory_contents(
         list(ui, p, icons, inv, st, prefs, facts, actions, list_h, root, filtered, true);
     });
     let target = list_destination(st, root);
+    text_import::record(
+        ui,
+        zone.response.rect,
+        inv,
+        (!filtered && !target.is_nil()).then_some(target),
+        false,
+    );
     task_drop::target(ui, p, &zone.response, inv, target, actions);
     drag::target(ui, p, &zone.response, inv, target, st, prefs, facts, actions);
     status(ui, p, inv, st, prefs, facts, actions, filtered);
@@ -2174,6 +2201,10 @@ pub fn show(
 ) -> Vec<InvAction> {
     let mut actions = Vec::new();
     clipboard::prepare(st);
+    st.desktop_text_choice = text_import::choice(ctx);
+    for window in &mut st.windows {
+        window.state.desktop_text_choice = st.desktop_text_choice;
+    }
     if !*open {
         st.pending_delete = None;
     }
