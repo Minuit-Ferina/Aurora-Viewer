@@ -1,4 +1,4 @@
-name: Desktop text import preview (macOS)
+name: Desktop text import preview (macOS arm64 cross-build)
 
 on:
   push:
@@ -10,34 +10,53 @@ permissions:
 jobs:
   package:
     if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 60
     env:
       CARGO_PROFILE_DEV_STRIP: debuginfo
+      CARGO_PROFILE_DEV_INCREMENTAL: 'false'
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          filter: blob:none
           persist-credentials: false
       - name: Select the feature revision
-        run: git checkout --detach "$(git rev-parse HEAD^)"
-      - name: Build the Dev viewer
-        run: cargo build --locked -p aurora-viewer
+        run: git checkout --detach 32c44bc03f10991c016c74376a6cef456f829280
+      - name: Build the Dev viewer for Apple Silicon
+        run: |
+          rustup target add aarch64-apple-darwin
+          cargo build --locked -p aurora-viewer --target aarch64-apple-darwin
+          version="$(sed -n 's/^cargo:rustc-env=AURORA_COMPILED_VERSION=//p' target/aarch64-apple-darwin/debug/build/aurora-version-*/output | sort -u)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]
+          printf 'PREVIEW_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
       - name: Create the application bundle
-        shell: pwsh
-        run: ./scripts/package-macos.ps1 -Exe target/debug/aurora-viewer -Out "Aurora Viewer.app"
-      - name: Sign ad hoc and package the build
+        run: |
+          # package.ps1 invokes the executable for its version. Use Cargo's
+          # resolved version on this Intel host, then install the arm64 binary.
+          mkdir -p preview-version
+          cat > preview-version/aurora-viewer <<'VERSION_SCRIPT'
+          #!/bin/sh
+          test "$1" = --version || exit 1
+          printf 'Aurora Viewer %s\n' "$PREVIEW_VERSION"
+          VERSION_SCRIPT
+          chmod +x preview-version/aurora-viewer
+          pwsh -NoProfile -File scripts/package-macos.ps1 -Exe preview-version/aurora-viewer -Out 'Aurora Viewer.app'
+          install -m 755 target/aarch64-apple-darwin/debug/aurora-viewer 'Aurora Viewer.app/Contents/MacOS/aurora-viewer'
+      - name: Verify the architecture and package the build
         run: |
           app="Aurora Viewer.app"
+          executable="$app/Contents/MacOS/aurora-viewer"
+          file "$executable"
+          test "$(lipo -archs "$executable")" = arm64
           codesign --force --sign - "$app"
           codesign --verify --strict --verbose=2 "$app"
-          file "$app/Contents/MacOS/aurora-viewer"
-          "$app/Contents/MacOS/aurora-viewer" --version
           name="Aurora-Text-Import-$(git rev-parse --short=9 HEAD)-macos-arm64"
           mkdir -p "$RUNNER_TEMP/import-preview" artifact
           ditto "$app" "$RUNNER_TEMP/import-preview/$app"
           hdiutil create -volname "Aurora Text Import" -srcfolder "$RUNNER_TEMP/import-preview" -format UDZO "artifact/$name.dmg"
+          hdiutil verify "artifact/$name.dmg"
           (cd artifact && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
