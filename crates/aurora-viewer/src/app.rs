@@ -12611,6 +12611,8 @@ impl App {
         if desktop_drop {
             self.native_windows
                 .root_drop_feedback(event_loop, gfx.window.id(), full.platform_output.cursor_icon);
+        } else if !self.exit_prompt.open {
+            self.native_windows.start_root_drag(event_loop, gfx.window.id(), &ctx);
         }
         gfx.egui_state
             .handle_platform_output_with_event_loop(gfx.window.as_ref(), event_loop, full.platform_output);

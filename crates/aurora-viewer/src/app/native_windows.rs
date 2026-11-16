@@ -157,6 +157,11 @@ impl Host {
             drag.feedback(event_loop, window_id, output.platform_output.cursor_icon);
             egui::DragAndDrop::clear_payload(root_context);
         }
+        if let Some(origin) = origin
+            && drag::starts_inside_source(event_loop)
+        {
+            drag.start(event_loop, window_id, root_context, origin);
+        }
         self.drag_origin = origin;
 
         #[cfg(target_os = "linux")]
@@ -582,6 +587,16 @@ impl NativeWindows {
         self.cross_window_drag.feedback(event_loop, window, cursor);
     }
 
+    pub(super) fn start_root_drag(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, ctx: &egui::Context) {
+        if ctx.dragged_id().is_some()
+            && self.any_visible()
+            && drag::starts_inside_source(event_loop)
+            && let Some(origin) = drag::Origin::read(ctx)
+        {
+            self.cross_window_drag.start(event_loop, window, ctx, origin);
+        }
+    }
+
     pub(super) fn drag_active(&self) -> bool {
         self.cross_window_drag.active()
     }
@@ -604,9 +619,9 @@ impl NativeWindows {
             }
             return true;
         }
-        // All panel-local gestures stay in egui. Check the native boundary
-        // before consulting egui's pointer state or its current payload.
-        if modal || self.cross_window_drag.active() {
+        // XWayland starts eligible drags in the source's egui pass. Other
+        // platforms take over only when the pointer reaches the boundary.
+        if modal || self.cross_window_drag.active() || drag::starts_inside_source(event_loop) {
             return false;
         }
         let position = match event {

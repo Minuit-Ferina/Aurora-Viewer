@@ -15,6 +15,21 @@ use winit::window::{Window, WindowId};
 use crate::ui::inventory::{drag::Cargo, task_drop::TaskDrag};
 use crate::ui::places::drag::PlaceDrag;
 
+// Claim XdndSelection while the pointer still belongs to the source. Mutter
+// can then pin XWayland's pointer focus to the drag origin across the border.
+pub(super) fn starts_inside_source(event_loop: &dyn ActiveEventLoop) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::ActiveEventLoopExtX11 as _;
+        event_loop.is_xwayland()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = event_loop;
+        false
+    }
+}
+
 enum Payload {
     Inventory(Cargo),
     Task(Arc<TaskDrag>),
