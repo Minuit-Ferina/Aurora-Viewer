@@ -154,10 +154,11 @@ impl Session {
             Err(err) => {
                 self.failed_source = Some(window);
                 cargo.present(ctx);
-                log::debug!("native drag could not start: {err}");
+                log::debug!("native drag could not start for {window:?}: {err}");
                 return false;
             }
         };
+        log::debug!("native drag started: source={window:?}, id={outgoing:?}");
         self.current = Some(Transfer {
             source: window,
             origin,
@@ -243,6 +244,7 @@ impl Session {
         }
         let allowed = matches!(cursor, egui::CursorIcon::Copy | egui::CursorIcon::Move | egui::CursorIcon::Grabbing);
         if allowed != target.allowed {
+            log::debug!("native drag feedback: window={window:?}, cursor={cursor:?}, allowed={allowed}");
             target.allowed = allowed;
             set_allowed(event_loop, target.incoming, allowed);
         }
@@ -263,7 +265,12 @@ impl Session {
         }
         let Some(transfer) = self.current.as_mut() else { return false };
         match event {
-            WindowEvent::DragEntered { id, position } if can_target && offers_token(event_loop, *id) => {
+            WindowEvent::DragEntered { id, position } => {
+                let offers_text = can_target && offers_token(event_loop, *id);
+                log::debug!("native drag entered: window={window:?}, id={id:?}, can_target={can_target}, text={offers_text}");
+                if !can_target || !offers_text {
+                    return false;
+                }
                 transfer.target = Some(Target {
                     window,
                     incoming: *id,
@@ -283,6 +290,7 @@ impl Session {
                 }
             }
             WindowEvent::DragDropped { id, .. } => {
+                log::debug!("native drag dropped: window={window:?}, id={id:?}, can_target={can_target}");
                 let Some(target) = transfer.target.as_mut().filter(|target| target.matches(window, *id)) else {
                     return false;
                 };
@@ -300,6 +308,7 @@ impl Session {
                 }
             }
             WindowEvent::DragLeft { id } => {
+                log::debug!("native drag left: window={window:?}, id={id:?}");
                 let Some(target) = transfer.target.as_ref().filter(|target| target.matches(window, *id)) else {
                     return false;
                 };
@@ -322,6 +331,7 @@ impl Session {
                 }
             }
             WindowEvent::OutgoingDragCanceled { id } if window == transfer.source && *id == transfer.outgoing => {
+                log::debug!("native drag canceled: source={window:?}, id={id:?}");
                 self.cancel();
             }
             WindowEvent::OutgoingDragDropped { id, .. } if window == transfer.source && *id == transfer.outgoing => {
