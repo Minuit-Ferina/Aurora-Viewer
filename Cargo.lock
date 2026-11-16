@@ -1675,7 +1675,7 @@ checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 
 [[package]]
 name = "drm"
@@ -7386,7 +7386,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cfg_aliases",
@@ -7412,7 +7412,7 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "android-activity",
  "bitflags 2.13.2",
@@ -7427,7 +7427,7 @@ dependencies = [
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "block2",
@@ -7449,7 +7449,7 @@ dependencies = [
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "block2",
  "dpi",
@@ -7467,7 +7467,7 @@ dependencies = [
 [[package]]
 name = "winit-core"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cursor-icon",
@@ -7481,7 +7481,7 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "dpi",
@@ -7497,7 +7497,7 @@ dependencies = [
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "block2",
@@ -7517,7 +7517,7 @@ dependencies = [
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "calloop",
@@ -7545,7 +7545,7 @@ dependencies = [
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "atomic-waker",
  "bitflags 2.13.2",
@@ -7567,7 +7567,7 @@ dependencies = [
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cursor-icon",
@@ -7585,7 +7585,7 @@ dependencies = [
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/Minuit-Ferina/winit?rev=c19b42cb904af7eb6d89b8a4ab70aad3050c0b34#c19b42cb904af7eb6d89b8a4ab70aad3050c0b34"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",

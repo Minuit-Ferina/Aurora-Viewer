@@ -93,4 +93,4 @@ wgpu-types = { git = "https://github.com/Aurora-Viewer/wgpu", rev = "3bad1916ef4
 
 # Keep Aurora and the pinned egui port on the same native window types.
 [patch."https://github.com/mockydevs/winit"]
-winit = { git = "https://github.com/Minuit-Ferina/winit", rev = "c19b42cb904af7eb6d89b8a4ab70aad3050c0b34" }
+winit = { git = "https://github.com/Minuit-Ferina/winit", rev = "1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5" }
