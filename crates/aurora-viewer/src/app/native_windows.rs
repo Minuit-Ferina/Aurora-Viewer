@@ -702,6 +702,8 @@ impl NativeWindows {
             }
             chrome.finish(caption, palette, window, &title);
         });
+        #[cfg(windows)]
+        self.cross_window_drag.restore_capture_cursor(host.window.id());
         self.root_input.child_pass_finished();
         host.return_when_unblocked |= deferred;
         if !matches!(panel, Panel::Demo(_)) {

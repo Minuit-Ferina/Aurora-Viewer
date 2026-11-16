@@ -12610,6 +12610,15 @@ impl App {
                 self.plate_hover,
             );
         }
+        #[cfg(windows)]
+        if desktop_drop.is_some() {
+            self.native_windows.root_drop_cursor(
+                gfx.window.id(),
+                event_loop,
+                full.platform_output.cursor_icon,
+                full.platform_output.cursor_image.as_ref(),
+            );
+        }
         gfx.egui_state
             .handle_platform_output_with_event_loop(&gfx.window, event_loop, full.platform_output);
         self.perf.ui_ms = t_ui.elapsed().as_secs_f32() * 1000.0;

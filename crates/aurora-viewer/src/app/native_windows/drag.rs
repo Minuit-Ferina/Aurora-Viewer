@@ -74,7 +74,9 @@ pub(super) struct Session {
 struct Transfer {
     source: WindowId,
     cargo: Arc<Payload>,
-    next: Option<(WindowId, PhysicalPosition<f64>, egui::Modifiers)>,
+    target: Option<(WindowId, PhysicalPosition<f64>, egui::Modifiers)>,
+    #[cfg(windows)]
+    capture_cursor: Option<win32::CapturedCursor>,
     released: bool,
 }
 
@@ -87,25 +89,41 @@ impl Session {
         if self
             .current
             .as_ref()
-            .is_some_and(|transfer| transfer.source == window || transfer.next.is_some_and(|(target, _, _)| target == window))
+            .is_some_and(|transfer| transfer.source == window || transfer.target.is_some_and(|(target, _, _)| target == window))
         {
             self.cancel();
         }
     }
 
+    #[cfg(windows)]
+    pub(super) fn restore_capture_cursor(&self, source: WindowId) {
+        if let Some(transfer) = &self.current
+            && transfer.source == source
+            && let Some(cursor) = &transfer.capture_cursor
+        {
+            cursor.apply();
+        }
+    }
+
     pub(super) fn frame(&mut self, window: WindowId) -> Option<Input> {
-        let transfer = self.current.as_mut()?;
-        let (target, point, modifiers) = transfer.next?;
+        let transfer = self.current.as_ref()?;
+        #[cfg(windows)]
+        if !transfer.released && transfer.capture_cursor.as_ref().is_some_and(|capture| !capture.has_capture()) {
+            self.cancel();
+            return None;
+        }
+        let (target, point, modifiers) = transfer.target?;
         if window != target {
             return None;
         }
+        // Keep feeding the destination until the capture moves or ends;
+        // egui's payload is scoped to each pass on the shared context.
         let input = Input {
             point,
             modifiers,
             cargo: Arc::clone(&transfer.cargo),
             released: transfer.released,
         };
-        transfer.next = None;
         if transfer.released {
             self.cancel();
         }
@@ -115,10 +133,30 @@ impl Session {
 
 #[cfg(windows)]
 impl super::NativeWindows {
+    /// The detached source still owns mouse capture while the viewer supplies
+    /// the drop decision. egui-winit has no native pointer sample in the viewer.
+    pub(in crate::app) fn root_drop_cursor(
+        &mut self,
+        root: WindowId,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        icon: egui::CursorIcon,
+        image: Option<&egui::CustomCursorImage>,
+    ) {
+        let Some(transfer) = &mut self.cross_window_drag.current else {
+            return;
+        };
+        if transfer.source != root
+            && transfer.target.is_some_and(|(window, _, _)| window == root)
+            && let Some(capture) = &mut transfer.capture_cursor
+        {
+            capture.update(event_loop, icon, image);
+        }
+    }
+
     pub(in crate::app) fn bridge_drag(
         &mut self,
         ctx: &egui::Context,
-        root: &Window,
+        root: &Arc<Window>,
         root_modifiers: egui::Modifiers,
         id: WindowId,
         event: &winit::event::WindowEvent,
@@ -142,6 +180,7 @@ impl super::NativeWindows {
         }
         let released = match event {
             WindowEvent::CursorMoved { .. } => false,
+            WindowEvent::ModifiersChanged(_) if self.cross_window_drag.current.is_some() => false,
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
                 state: ElementState::Released,
@@ -164,9 +203,21 @@ impl super::NativeWindows {
         if self.cross_window_drag.current.is_none() && !Payload::carried(ctx) {
             return;
         }
-        let modifiers = source.map_or(root_modifiers, |host| host.drag_modifiers);
+        let modifiers = match event {
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let state = modifiers.state();
+                egui::Modifiers {
+                    alt: state.alt_key(),
+                    ctrl: state.control_key(),
+                    shift: state.shift_key(),
+                    command: state.control_key(),
+                    ..egui::Modifiers::NONE
+                }
+            }
+            _ => source.map_or(root_modifiers, |host| host.drag_modifiers),
+        };
         let target = win32::under_pointer(
-            std::iter::once(root).chain(self.hosts.iter().filter(|host| host.visible()).map(|host| host.window.as_ref())),
+            std::iter::once(root.as_ref()).chain(self.hosts.iter().filter(|host| host.visible()).map(|host| host.window.as_ref())),
         );
         if self.cross_window_drag.current.is_none() && target.is_none_or(|(window, _)| window == id) {
             return;
@@ -176,7 +227,8 @@ impl super::NativeWindows {
             self.cross_window_drag.current = Some(Transfer {
                 source: id,
                 cargo: Arc::new(cargo),
-                next: None,
+                target: None,
+                capture_cursor: Some(win32::CapturedCursor::new(Arc::clone(source.map_or(root, |host| &host.window)))),
                 released: false,
             });
         }
@@ -184,7 +236,12 @@ impl super::NativeWindows {
             return;
         };
         transfer.released = released;
-        transfer.next = target.map(|(target, point)| (target, point, modifiers));
+        transfer.target = target.map(|(target, point)| (target, point, modifiers));
+        if (released || target.is_none_or(|(window, _)| window != root.id()))
+            && let Some(capture) = &mut transfer.capture_cursor
+        {
+            capture.reset();
+        }
         if let Some((target, _)) = target {
             if target == root.id() {
                 root.request_redraw();
@@ -202,9 +259,87 @@ mod win32 {
     use super::*;
     use windows_sys::Win32::{
         Foundation::{HWND, POINT},
+        UI::Input::KeyboardAndMouse::GetCapture,
         UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint},
     };
+    use winit::event_loop::ActiveEventLoop;
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use winit::window::{Cursor, CursorIcon, CustomCursor};
+
+    pub(super) struct CapturedCursor {
+        window: Arc<Window>,
+        selection: Option<(egui::CursorIcon, Option<egui::CustomCursorImage>, Cursor)>,
+    }
+
+    impl CapturedCursor {
+        pub(super) fn new(window: Arc<Window>) -> Self {
+            Self { window, selection: None }
+        }
+
+        pub(super) fn has_capture(&self) -> bool {
+            let Ok(handle) = self.window.window_handle() else { return false };
+            let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+                return false;
+            };
+            // SAFETY: on the event-loop thread. We compare the handles without dereferencing them.
+            unsafe { GetCapture() == handle.hwnd.get() as HWND }
+        }
+
+        pub(super) fn reset(&mut self) {
+            if self.selection.take().is_some() {
+                self.window.set_cursor(CursorIcon::Default);
+            }
+        }
+
+        pub(super) fn update(&mut self, event_loop: &ActiveEventLoop, icon: egui::CursorIcon, image: Option<&egui::CustomCursorImage>) {
+            if self.selection.as_ref().is_some_and(|(current, bitmap, _)| {
+                *current == icon
+                    && match (bitmap.as_ref(), image) {
+                        (Some(a), Some(b)) => Arc::ptr_eq(&a.rgba, &b.rgba) && a.size == b.size && a.hotspot == b.hotspot,
+                        (None, None) => true,
+                        _ => false,
+                    }
+            }) {
+                return;
+            }
+            let cursor = image
+                .and_then(|image| {
+                    CustomCursor::from_rgba(
+                        image.rgba.to_vec(),
+                        image.size[0],
+                        image.size[1],
+                        image.hotspot[0],
+                        image.hotspot[1],
+                    )
+                    .ok()
+                })
+                .map(|source| event_loop.create_custom_cursor(source).into())
+                .unwrap_or_else(|| {
+                    match icon {
+                        egui::CursorIcon::Copy => CursorIcon::Copy,
+                        egui::CursorIcon::Move => CursorIcon::Move,
+                        egui::CursorIcon::Grabbing => CursorIcon::Grabbing,
+                        egui::CursorIcon::NotAllowed => CursorIcon::NotAllowed,
+                        _ => CursorIcon::Default,
+                    }
+                    .into()
+                });
+            self.selection = Some((icon, image.cloned(), cursor));
+            self.apply();
+        }
+
+        pub(super) fn apply(&self) {
+            if let Some((_, _, cursor)) = &self.selection {
+                self.window.set_cursor(cursor.clone());
+            }
+        }
+    }
+
+    impl Drop for CapturedCursor {
+        fn drop(&mut self) {
+            self.reset();
+        }
+    }
 
     pub(super) fn under_pointer<'a>(windows: impl Iterator<Item = &'a Window>) -> Option<(WindowId, PhysicalPosition<f64>)> {
         let mut point = POINT::default();
@@ -240,6 +375,33 @@ mod tests {
     use crate::ui::inventory::InvDrag;
 
     #[test]
+    fn a_stationary_drag_stays_in_its_destination_until_release() {
+        let source = WindowId::from(10);
+        let destination = WindowId::from(20);
+        let point = PhysicalPosition::new(51.0, 67.0);
+        let mut session = Session {
+            current: Some(Transfer {
+                source,
+                cargo: Arc::new(Payload::Inventory(Cargo::Item(Arc::new(InvDrag(uuid::Uuid::from_u128(42)))))),
+                target: Some((destination, point, egui::Modifiers::NONE)),
+                #[cfg(windows)]
+                capture_cursor: None,
+                released: false,
+            }),
+        };
+        for _ in 0..3 {
+            assert!(session.frame(source).is_none());
+            let frame = session.frame(destination).expect("preview stays visible while held");
+            assert_eq!(frame.point, point);
+            assert!(!frame.released);
+        }
+        let transfer = session.current.as_mut().expect("active drag");
+        transfer.released = true;
+        assert!(session.frame(destination).expect("single drop").released);
+        assert!(session.frame(destination).is_none());
+    }
+
+    #[test]
     fn a_release_is_delivered_once_to_its_own_window() {
         let source = WindowId::from(10);
         let destination = WindowId::from(20);
@@ -247,7 +409,9 @@ mod tests {
             current: Some(Transfer {
                 source,
                 cargo: Arc::new(Payload::Inventory(Cargo::Item(Arc::new(InvDrag(uuid::Uuid::from_u128(42)))))),
-                next: Some((destination, PhysicalPosition::new(51.0, 67.0), egui::Modifiers::CTRL)),
+                target: Some((destination, PhysicalPosition::new(51.0, 67.0), egui::Modifiers::CTRL)),
+                #[cfg(windows)]
+                capture_cursor: None,
                 released: true,
             }),
         };
@@ -287,7 +451,9 @@ mod tests {
             current: Some(Transfer {
                 source,
                 cargo: Arc::new(Payload::Inventory(Cargo::Item(Arc::new(InvDrag(uuid::Uuid::from_u128(42)))))),
-                next: Some((destination, PhysicalPosition::new(0.0, 0.0), egui::Modifiers::NONE)),
+                target: Some((destination, PhysicalPosition::new(0.0, 0.0), egui::Modifiers::NONE)),
+                #[cfg(windows)]
+                capture_cursor: None,
                 released: true,
             }),
         };
