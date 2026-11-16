@@ -6071,9 +6071,11 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   Return All should keep the draft, while native Close and Ctrl/Cmd+W should
   close the selected test document. Minimize the main window and verify a
   child still responds. Detached panels offer Close, Maximize/Restore and
-  Return to viewer. On macOS, click the root after moving a detached panel
-  and check that it stays above the viewer at the same position. Activate
-  another app and check that the panel follows normal app ordering.
+  Return to viewer. On macOS, overlap a detached panel with the main viewer.
+  Click an exposed part of the viewer twice. The first click brings the
+  viewer forward and the second leaves the panel behind. Click a visible
+  part of the panel to bring it forward again. Repeat with Inventory and
+  use the viewer's Inventory action to bring the detached panel forward.
   Capture the actual desktop windows and include the
   test-title automation marker on unattended runs. Only synthetic documents
   participate in this fixture. Add `:preview` to the count to include the

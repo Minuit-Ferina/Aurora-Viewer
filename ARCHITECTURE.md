@@ -4142,8 +4142,8 @@ job and gives root frames priority. GPU recovery rehosts the logical panels in
 the root. The shared caption in app/native_windows/chrome uses native drag
 and resize hit testing and themed title controls. On macOS, the AppKit adapter
 in app/native_windows/chrome/macos.rs resizes within the current display's
-visible frame and orders panels relative to the viewer on the active Space,
-without changing their native style or desktop positions.
+visible frame without changing the native style. AppKit manages the stacking
+of the top-level windows. Explicit panel actions can focus a detached window.
 
 The conversation action dispatcher and viewer panel presenters borrow the
 canonical application models. Placement in app/native_windows/placement.rs
