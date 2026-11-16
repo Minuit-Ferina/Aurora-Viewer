@@ -1,0 +1,48 @@
+name: Desktop text import preview (macOS)
+
+on:
+  push:
+    branches: [codex/desktop-text-import-macos-preview]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_STRIP: debuginfo
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the feature revision
+        run: git checkout --detach "$(git rev-parse HEAD^)"
+      - name: Build the Dev viewer
+        run: cargo build --locked -p aurora-viewer
+      - name: Create the application bundle
+        shell: pwsh
+        run: ./scripts/package-macos.ps1 -Exe target/debug/aurora-viewer -Out "Aurora Viewer.app"
+      - name: Sign ad hoc and package the build
+        run: |
+          app="Aurora Viewer.app"
+          codesign --force --sign - "$app"
+          codesign --verify --strict --verbose=2 "$app"
+          file "$app/Contents/MacOS/aurora-viewer"
+          "$app/Contents/MacOS/aurora-viewer" --version
+          name="Aurora-Text-Import-$(git rev-parse --short=9 HEAD)-macos-arm64"
+          mkdir -p "$RUNNER_TEMP/import-preview" artifact
+          ditto "$app" "$RUNNER_TEMP/import-preview/$app"
+          hdiutil create -volname "Aurora Text Import" -srcfolder "$RUNNER_TEMP/import-preview" -format UDZO "artifact/$name.dmg"
+          (cd artifact && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-text-import-macos-arm64
+          path: artifact/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
