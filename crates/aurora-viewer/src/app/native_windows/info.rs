@@ -55,7 +55,7 @@ impl App {
             .reconcile(Panel::AvatarRenderSettings, visible && self.panels.avatar_render_settings);
     }
 
-    pub(super) fn paint_desktop_info(&mut self, event_loop: &ActiveEventLoop, panel: Panel) {
+    pub(super) fn paint_desktop_info(&mut self, event_loop: &dyn ActiveEventLoop, panel: Panel) {
         let ctx = self.egui_ctx.clone();
         let modal = self.exit_prompt.open;
         if panel == Panel::About {
@@ -79,7 +79,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

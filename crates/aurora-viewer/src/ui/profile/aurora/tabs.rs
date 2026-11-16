@@ -108,7 +108,7 @@ pub(super) fn publish_price(text: &str) -> Result<i32, String> {
 
 /// A picture covering `rect` (its middle shown), rounded as `radius`.
 fn cover(ui: &egui::Ui, tex: &egui::TextureHandle, rect: Rect, radius: egui::CornerRadius) {
-    let [tw, th] = tex.size();
+    let [tw, th] = tex.resolution();
     let aspect = tw.max(1) as f32 / th.max(1) as f32;
     let want = rect.width() / rect.height().max(1.0);
     let uv = if aspect > want {
@@ -144,7 +144,7 @@ fn snapshot(ui: &egui::Ui, env: &mut Env, id: Uuid, rect: Rect, radius: egui::Co
     ui.painter().rect_filled(rect, radius, env.p.raised.gamma_multiply(0.6));
     match env.images.get(&id).filter(|_| !id.is_nil()) {
         Some(t) => {
-            let fitted = contain_rect(rect, t.size());
+            let fitted = contain_rect(rect, t.resolution());
             egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), fitted.size())).paint_at(ui, fitted);
         }
         None => paint_icon(ui, icon, rect.center(), 26.0, env.p.muted_dim),

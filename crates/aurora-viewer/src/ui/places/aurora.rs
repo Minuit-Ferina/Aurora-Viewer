@@ -627,7 +627,7 @@ impl PlacesUi {
                     aurora_i18n::tr!("ui-places-clear-teleport-history"),
                     !world.tp_storage.items.is_empty(),
                 ) {
-                    self.confirm = Some(Confirm::Clear);
+                    self.ask_confirm(Confirm::Clear);
                 }
             }
             _ => {
@@ -946,12 +946,12 @@ impl PlacesUi {
             Key::Landmark(_) => None,
         };
         if let Some(entry) = visit {
-            self.confirm = Some(Confirm::History {
+            self.ask_confirm(Confirm::History {
                 global: entry.global,
                 title: entry.title.clone(),
             });
         } else if let Some(item) = place.item.and_then(|i| inv.items.get(&i)) {
-            self.confirm = Some(Confirm::Landmark {
+            self.ask_confirm(Confirm::Landmark {
                 asset: item.asset_id,
                 name: item.name.clone(),
             });

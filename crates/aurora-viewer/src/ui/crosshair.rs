@@ -178,7 +178,7 @@ pub fn draw(painter: &Painter, c: Pos2, s: &Settings, picture: Option<&TextureHa
     if s.shape == Shape::Image
         && let Some(tex) = picture
     {
-        let size = tex.size_vec2();
+        let size = tex.resolution_vec2();
         let scale = s.size / size.x.max(size.y).max(1.0);
         let rect = Rect::from_center_size(c, size * scale);
         let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));

@@ -31,7 +31,7 @@ struct Geometry {
 pub(super) struct Caption(Rc<Cell<Geometry>>);
 
 impl Caption {
-    pub(super) fn install(window: &Window) -> Option<Self> {
+    pub(super) fn install(window: &dyn Window) -> Option<Self> {
         let handle = window.window_handle().ok()?;
         let RawWindowHandle::Win32(handle) = handle.as_raw() else {
             return None;
@@ -50,7 +50,7 @@ impl Caption {
         Some(Self(geometry))
     }
 
-    pub(super) fn update(&self, window: &Window, pixels_per_point: f32, controls_left: f32, bottom: f32) {
+    pub(super) fn update(&self, window: &dyn Window, pixels_per_point: f32, controls_left: f32, bottom: f32) {
         self.0.set(Geometry {
             caption_right: (controls_left * pixels_per_point).floor() as i32,
             caption_bottom: (bottom * pixels_per_point).ceil() as i32,

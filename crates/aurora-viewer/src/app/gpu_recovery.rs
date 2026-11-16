@@ -11,38 +11,42 @@ pub(super) struct WindowPlan {
     pub position: Option<winit::dpi::PhysicalPosition<i32>>,
     /// Automated captures must not steal the user's keyboard focus.
     pub active: bool,
-    pub fullscreen: Option<winit::window::Fullscreen>,
+    pub fullscreen: Option<winit::monitor::Fullscreen>,
 }
 
 impl App {
-    pub(super) fn open_window(&mut self, event_loop: &ActiveEventLoop, plan: &WindowPlan) -> Result<Arc<Window>, winit::error::OsError> {
+    pub(super) fn open_window(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        plan: &WindowPlan,
+    ) -> Result<Arc<dyn Window>, winit::error::CreateWindowError> {
         let inputs = self.main_title_inputs();
         let title = self.attention.title.text(inputs).to_owned();
-        let mut attrs = crate::cli::with_desktop_id(Window::default_attributes())
+        let mut attrs = crate::cli::with_desktop_id(winit::window::WindowAttributes::default(), event_loop)
             .with_title(title.as_str())
             // Metal needs a visible layer to present its first drawable.
             // Other platforms keep the unpainted client area hidden.
             .with_visible(cfg!(target_os = "macos"))
             .with_active(plan.active)
-            .with_inner_size(plan.size)
-            .with_min_inner_size(winit::dpi::LogicalSize::new(800, 560))
+            .with_surface_size(plan.size)
+            .with_min_surface_size(winit::dpi::LogicalSize::new(800, 560))
             .with_fullscreen(plan.fullscreen.clone())
             // none yet at start (it is decoded in the background)
             .with_window_icon(self.window_icon.clone());
         if let Some(position) = plan.position {
             attrs = attrs.with_position(position);
         }
-        let window = Arc::new(event_loop.create_window(attrs)?);
+        let window = Arc::<dyn Window>::from(event_loop.create_window(attrs)?);
         self.attention.title.applied(window.id(), title);
-        crate::window_hold::install(&window);
+        crate::window_hold::install(window.as_ref());
         crate::slurl_handoff::window_ready(&window);
         Ok(window)
     }
 
     /// The renderer for `window`, the user's settings applied once the
     /// caller has settled them.
-    pub(super) fn open_renderer(&mut self, window: &Arc<Window>) -> Result<Renderer, aurora_render::RenderError> {
-        let size = window.inner_size();
+    pub(super) fn open_renderer(&mut self, window: &Arc<dyn Window>) -> Result<Renderer, aurora_render::RenderError> {
+        let size = window.surface_size();
         if std::env::var_os("AURORA_NOVSYNC").is_some() {
             self.settings.vsync = false;
         }
@@ -61,7 +65,14 @@ impl App {
         // the VR runtime only when VR is wanted from the start: `--vr` (the
         // restart the VR button offers) or Preferences › Camera › VR (#2309)
         self.vr_set_up = crate::cli::get().vr || self.settings.camera.vr_at_start;
-        let renderer = Renderer::new(window.clone(), size.width, size.height, self.settings.vsync, &gpu, self.vr_set_up)?;
+        let renderer = Renderer::new(
+            Arc::new(window.clone()),
+            size.width,
+            size.height,
+            self.settings.vsync,
+            &gpu,
+            self.vr_set_up,
+        )?;
         log::info!(
             "renderer ready: {} via {} ({} texture slots in {} pages at most, GPU timers: {})",
             renderer.info.name,
@@ -83,12 +94,12 @@ impl App {
         self.options_ui.gpu_notice = renderer.info.notice;
     }
 
-    pub(super) fn egui_state_for(&self, window: &Window, renderer: &Renderer) -> egui_winit::State {
+    pub(super) fn egui_state_for(&self, window: &dyn Window, renderer: &Renderer) -> egui_winit::State {
         let max_tex = renderer.device.limits().max_texture_dimension_2d as usize;
         egui_winit::State::new(
             self.egui_ctx.clone(),
             egui::ViewportId::ROOT,
-            window,
+            &window,
             Some(window.scale_factor() as f32),
             None,
             Some(max_tex),
@@ -192,13 +203,13 @@ impl App {
     /// the world kept, the scene reloaded on the new device. The old window
     /// stays on screen until the new one has presented (`retired_window`).
     /// False when no new renderer could be made: the caller closes as before.
-    pub(super) fn recover_from_gpu_loss(&mut self, event_loop: &ActiveEventLoop, safe: bool) -> bool {
+    pub(super) fn recover_from_gpu_loss(&mut self, event_loop: &dyn ActiveEventLoop, safe: bool) -> bool {
         let Some(old) = self.gfx.take() else {
             return false;
         };
         let started = Instant::now();
         let plan = WindowPlan {
-            size: old.window.inner_size().into(),
+            size: old.window.surface_size().into(),
             position: old.window.outer_position().ok(),
             active: old.window.has_focus(),
             fullscreen: old.window.fullscreen(),
@@ -231,8 +242,8 @@ impl App {
         renderer.apply_settings(self.settings.render_settings());
         self.adopt_gpu_scene(&mut renderer);
         self.note_gpus(&renderer);
-        self.screen_rate.poll(&window, Instant::now());
-        let egui_state = self.egui_state_for(&window, &renderer);
+        self.screen_rate.poll(window.as_ref(), Instant::now());
+        let egui_state = self.egui_state_for(window.as_ref(), &renderer);
         self.gfx = Some(Gfx {
             renderer,
             egui_state,

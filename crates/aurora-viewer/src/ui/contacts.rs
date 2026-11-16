@@ -210,6 +210,12 @@ pub struct ContactsUi {
     set_sel: Vec<Uuid>,
     set_anchor: Option<Uuid>,
     dialog: Option<Dialog>,
+    // People and Conversations share the contacts model. Keep the origin of
+    // each auxiliary window so either host can draw it without duplicating state.
+    from_people: bool,
+    dialog_from_people: bool,
+    picker_from_people: bool,
+    config_from_people: bool,
     /// "Add to contact set" of the friend menu: (set, avatars).
     add_to_set: Option<(String, Vec<Uuid>)>,
     /// The residents a new set asked from a menu gets once created.
@@ -237,6 +243,10 @@ pub struct ContactsUi {
 }
 
 impl ContactsUi {
+    pub(crate) fn set_people_origin(&mut self, from_people: bool) {
+        self.from_people = from_people;
+    }
+
     /// The selection of a demo scenario ([`demo_selection`]).
     pub fn demo_select(&mut self, friends: Vec<Uuid>, group: Option<Uuid>) {
         self.friends_sel = friends;
@@ -252,12 +262,14 @@ impl ContactsUi {
 
     /// "Add..." of the friend list: the resident picker.
     pub fn pick_new_friend(&mut self) {
+        self.picker_from_people = self.from_people;
         self.pick_for = Some(PickFor::Friend);
         self.picker.open(PICKER_ID, false);
     }
 
     /// "Become friends" of any menu (AddFriendWithMessage).
     pub fn ask_friendship(&mut self, to: Uuid) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::Friendship {
             to,
             message: String::new(),
@@ -266,12 +278,14 @@ impl ContactsUi {
 
     /// "Remove this friend" of any menu (RemoveFromFriends).
     pub fn ask_remove_friend(&mut self, id: Uuid) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::RemoveFriends(vec![id]));
     }
 
     /// Several friends, one confirmation (removeFriendsDialog).
     pub fn ask_remove_friends(&mut self, ids: Vec<Uuid>) {
         if !ids.is_empty() {
+            self.dialog_from_people = self.from_people;
             self.dialog = Some(Dialog::RemoveFriends(ids));
         }
     }
@@ -280,6 +294,7 @@ impl ContactsUi {
     /// refused with a warning while we reject teleport offers and requests
     /// ourselves (FSRejectTeleportOffersMode).
     pub fn ask_teleport_request(&mut self, to: Uuid, rejecting: bool) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(if rejecting {
             Dialog::RejectingTeleports
         } else {
@@ -303,22 +318,26 @@ impl ContactsUi {
             .chars()
             .take(LURE_MESSAGE_MAX)
             .collect();
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::OfferTeleport { to, message });
     }
 
     /// "Quit" of any group menu (GroupLeaveConfirmMember).
     pub fn ask_leave_group(&mut self, id: Uuid) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::LeaveGroup(id));
     }
 
     /// The right to modify our objects changed from a profile: asked first,
     /// as from the list (GrantModifyRights / RevokeModifyRights).
     pub fn ask_modify_rights(&mut self, friend: Uuid, rights: i32, grant: bool) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::ModifyRights { friend, rights, grant });
     }
 
     /// "Add..." of a contact set: the resident picker, several at once.
     pub fn pick_for_set(&mut self, set: &str) {
+        self.picker_from_people = self.from_people;
         self.pick_for = Some(PickFor::Set(set.to_owned()));
         self.picker.open(PICKER_ID, true);
     }
@@ -326,6 +345,7 @@ impl ContactsUi {
     /// Residents taken out of a set, confirmed first (RemoveContactSetMember).
     pub fn ask_remove_from_set(&mut self, set: &str, ids: Vec<Uuid>) {
         if !ids.is_empty() {
+            self.dialog_from_people = self.from_people;
             self.dialog = Some(Dialog::RemoveFromSet { set: set.to_owned(), ids });
         }
     }
@@ -339,6 +359,7 @@ impl ContactsUi {
     /// (AddNewContactSet), then these residents added to it.
     pub fn ask_new_set_for(&mut self, ids: Vec<Uuid>) {
         self.new_set_members = ids;
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::AddSet(aurora_i18n::tr!("ui-contacts-new-contact-set-2").into()));
     }
 
@@ -352,12 +373,14 @@ impl ContactsUi {
 
     /// Delete a contact set, confirmed first.
     pub fn ask_remove_set(&mut self, set: &str) {
+        self.dialog_from_people = self.from_people;
         self.dialog = Some(Dialog::RemoveSet(set.to_owned()));
     }
 
     /// FSFloaterContactSetConfiguration on `set`: name, color, sorting.
     pub fn configure_set(&mut self, set: &str) {
         self.rename = set.to_owned();
+        self.config_from_people = self.from_people;
         self.config = Some(set.to_owned());
     }
 }
@@ -397,12 +420,22 @@ pub fn apply_set_edit(world: &mut World, edit: SetEdit) {
 /// The confirmations and prompts, shown whether the contact list is open
 /// or not (they are also asked from the other right-click menus and from
 /// People), and the configuration window of a contact set.
-pub fn dialog_windows(ctx: &egui::Context, p: &Palette, world: &mut World, st: &mut ContactsUi) -> Vec<ContactsAction> {
-    importing::poll(world, st);
+pub fn dialog_windows(
+    ctx: &egui::Context,
+    p: &Palette,
+    world: &mut World,
+    st: &mut ContactsUi,
+    only_people: Option<bool>,
+) -> Vec<ContactsAction> {
+    let draws = |from_people| only_people.is_none_or(|people| people == from_people);
+    if only_people != Some(true) {
+        importing::poll(world, st);
+    }
     let mut actions = Vec::new();
     // the resident picker shared with About Land (LLFloaterAvatarPicker),
     // also opened by the friends tab of the People window
-    if let Some(ids) = st.picker.show(ctx, p, world)
+    if draws(st.picker_from_people)
+        && let Some(ids) = st.picker.show(ctx, p, world)
         && let Some(what) = st.pick_for.take()
     {
         picked(world, st, what, ids);
@@ -410,8 +443,12 @@ pub fn dialog_windows(ctx: &egui::Context, p: &Palette, world: &mut World, st: &
     if let Some((set, ids)) = st.add_to_set.take() {
         picked(world, st, PickFor::Set(set), ids);
     }
-    dialogs(ctx, p, world, st, &mut actions);
-    set_config_window(ctx, p, world, st);
+    if draws(st.dialog_from_people) {
+        dialogs(ctx, p, world, st, &mut actions);
+    }
+    if draws(st.config_from_people) {
+        set_config_window(ctx, p, world, st);
+    }
     actions
 }
 
@@ -737,6 +774,7 @@ fn picked(world: &mut World, st: &mut ContactsUi, what: PickFor, ids: Vec<Uuid>)
             // refuses friends (isItemsFreeOfFriends), the shared one does not
             match ids.iter().find(|id| **id != world.agent_id && !world.social.is_friend(id)) {
                 Some(to) => {
+                    st.dialog_from_people = st.from_people;
                     st.dialog = Some(Dialog::Friendship {
                         to: *to,
                         message: aurora_i18n::tr!("ui-contacts-would-you-like-to-be-my-friend").into(),
@@ -1027,6 +1065,7 @@ fn friend_table(
                                 clicked_right = true;
                                 let new = rights_after(r.given, bit, !on);
                                 if bit == rights::MODIFY_OBJECTS {
+                                    st.dialog_from_people = st.from_people;
                                     st.dialog = Some(Dialog::ModifyRights {
                                         friend: r.id,
                                         rights: new,
@@ -1126,6 +1165,7 @@ fn friend_menu(
     }
     menu::todo(ui, p, "current-location-filled", aurora_i18n::tr!("common-follow"));
     if menu::item(ui, p, "user-minus", aurora_i18n::tr!("common-remove-this-friend")) {
+        st.dialog_from_people = st.from_people;
         st.dialog = Some(Dialog::RemoveFriends(ids.clone()));
     }
     menu::separator(ui, p);
@@ -1337,6 +1377,7 @@ fn friend_buttons(ui: &mut egui::Ui, p: &Palette, world: &World, st: &mut Contac
         aurora_i18n::tr!("ui-contacts-remove-this-person-from-your-friends"),
         n >= 1,
     ) {
+        st.dialog_from_people = st.from_people;
         st.dialog = Some(Dialog::RemoveFriends(sel.clone()));
     }
     if side_button(
@@ -1625,6 +1666,7 @@ fn group_buttons(ui: &mut egui::Ui, p: &Palette, world: &mut World, st: &mut Con
         world.groups.toggle_favorite(sel);
     }
     if side_button(ui, p, aurora_i18n::tr!("common-quit"), "", real) {
+        st.dialog_from_people = st.from_people;
         st.dialog = Some(Dialog::LeaveGroup(sel));
     }
     ui.add_space(6.0);
@@ -1779,10 +1821,10 @@ fn sets_tab(
                 .clicked()
                     && mutable
                 {
-                    st.rename = choice.clone();
-                    st.config = Some(choice.clone());
+                    st.configure_set(&choice);
                 }
                 if icon_button(ui, p, "plus", aurora_i18n::tr!("ui-contacts-add-a-new-contact-set"), true).clicked() {
+                    st.dialog_from_people = st.from_people;
                     st.dialog = Some(Dialog::AddSet(aurora_i18n::tr!("ui-contacts-new-contact-set-2").into()));
                 }
                 if icon_button(
@@ -1795,6 +1837,7 @@ fn sets_tab(
                 .clicked()
                     && mutable
                 {
+                    st.dialog_from_people = st.from_people;
                     st.dialog = Some(Dialog::RemoveSet(choice.clone()));
                 }
             });
@@ -1924,6 +1967,7 @@ fn set_buttons(
         aurora_i18n::tr!("ui-contacts-add-a-resident-to-the-selected-contact-set"),
         mutable,
     ) {
+        st.picker_from_people = st.from_people;
         st.pick_for = Some(PickFor::Set(choice.to_owned()));
         st.picker.open(PICKER_ID, true);
     }
@@ -1948,6 +1992,7 @@ fn set_buttons(
         aurora_i18n::tr!("ui-contacts-remove-this-resident-from-the-selected-contact-set"),
         mutable && has_sel,
     ) {
+        st.dialog_from_people = st.from_people;
         st.dialog = Some(Dialog::RemoveFromSet {
             set: choice.to_owned(),
             ids: sel.clone(),
@@ -1999,6 +2044,7 @@ fn set_buttons(
             .filter(|a| *a != contact_sets::DN_REMOVED)
             .unwrap_or_default()
             .to_owned();
+        st.dialog_from_people = st.from_people;
         st.dialog = Some(Dialog::SetAlias { ids: sel.clone(), alias });
     }
     let any_alias = sel.iter().any(|id| world.contact_sets.pseudonym(id).is_some());

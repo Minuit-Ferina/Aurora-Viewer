@@ -424,7 +424,7 @@ pub fn show(
                                                     mesh.add_triangle(0, 2, 3);
                                                     ui.painter().add(egui::Shape::mesh(mesh));
                                                     if let Some(texture) = account.agent.and_then(|agent| form.portraits.get(&agent)) {
-                                                        let size = texture.size_vec2();
+                                                        let size = texture.resolution_vec2();
                                                         let fitted =
                                                             size * (portrait_rect.width() / size.x).min(portrait_rect.height() / size.y);
                                                         ui.painter().image(
@@ -472,7 +472,7 @@ pub fn show(
                                                     if let Some(texture) =
                                                         account.last_place.as_ref().and_then(|place| form.places.get(place))
                                                     {
-                                                        let size = texture.size_vec2();
+                                                        let size = texture.resolution_vec2();
                                                         let ratio = place_rect.width() / place_rect.height();
                                                         let source = size.x / size.y;
                                                         let uv_size = if source > ratio {

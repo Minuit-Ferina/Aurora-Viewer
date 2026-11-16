@@ -4162,7 +4162,8 @@ and positioning on other platforms follow their window manager.
 | `GroupTitles` and `Bumps` | Shared rows, filter or selection, actions, and region privacy checks. |
 | `WorldMap` | Both styles use the same tiles, camera, actions and RLVa checks. The minimap remains attached to the world. |
 | `RegionTracker` and `AvatarRenderSettings` | Shared tracker and display-exception state. The resident picker opens in the editor's viewport and the tracker opens the shared World Map. |
-| People | The map, detail sheets and shared contact dialogs need to follow the People window's host. |
+| `People` | Both styles share the radar, map, detail sheets and contacts model. People-owned contacts dialogs follow the panel. The standalone minimap remains in the viewer. |
+| `Places` | Both styles share favorites, landmarks, the teleport history, inline place profiles and confirmations. The Windows drag bridge routes place payloads to the existing destination checks. Desktop drags across windows on macOS and Linux remain to be verified and supported. |
 | Area Search | Object actions use viewer-level confirmations and secondary windows that need a route to the initiating host. |
 | World, login, loading, HUDs and world overlays | Root window. |
 | Menus, tooltips and modal dialogs | Follow the panel or application that owns them. |

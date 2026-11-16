@@ -415,7 +415,7 @@ impl KeptState {
 }
 
 impl App {
-    pub(super) fn crash_state(&mut self, renderer: &aurora_render::Renderer, window: &winit::window::Window) {
+    pub(super) fn crash_state(&mut self, renderer: &aurora_render::Renderer, window: &dyn winit::window::Window) {
         let now = Instant::now();
         if self.crash_kept.done() {
             return;
@@ -446,12 +446,12 @@ impl App {
     fn crash_state_now(
         &self,
         renderer: &aurora_render::Renderer,
-        window: &winit::window::Window,
+        window: &dyn winit::window::Window,
         now: Instant,
         live: Live,
     ) -> crate::crash::State {
         let video = renderer.video_memory.read(&renderer.device);
-        let size = window.inner_size();
+        let size = window.surface_size();
         let mut state = crate::crash::State {
             screen: match self.screen {
                 Screen::Login => "login",

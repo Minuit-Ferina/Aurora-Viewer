@@ -200,7 +200,7 @@ struct Gfx {
     /// then, `Renderer::new`).
     renderer: Renderer,
     egui_state: egui_winit::State,
-    window: Arc<Window>,
+    window: Arc<dyn Window>,
     /// Revealed only once the renderer has presented its first image.
     shown: bool,
     maximize_on_show: bool,
@@ -224,8 +224,8 @@ impl WindowedGeometry {
         }
     }
 
-    fn from_window(window: &Window) -> Self {
-        let size = window.inner_size();
+    fn from_window(window: &dyn Window) -> Self {
+        let size = window.surface_size();
         let scale = window.scale_factor();
         Self {
             width: (size.width as f64 / scale).round() as u32,
@@ -235,13 +235,13 @@ impl WindowedGeometry {
         }
     }
 
-    fn apply(self, window: &Window) {
+    fn apply(self, window: &dyn Window) {
         window.set_fullscreen(None);
         window.set_maximized(false);
         if let Some((x, y)) = self.position {
-            window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+            window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y).into());
         }
-        let _ = window.request_inner_size(winit::dpi::LogicalSize::new(self.width, self.height));
+        let _ = window.request_surface_size(winit::dpi::LogicalSize::new(self.width, self.height).into());
         window.set_maximized(self.maximized);
     }
 
@@ -407,14 +407,14 @@ pub struct App {
     fullscreen_applied: bool,
     /// The window of a lost GPU device, kept on screen until the new one has
     /// presented its first image (gpu_recovery.rs).
-    retired_window: Option<Arc<Window>>,
+    retired_window: Option<Arc<dyn Window>>,
     /// When the GPU device was lost lately (gpu_recovery.rs `loss_step`).
     gpu_losses: std::collections::VecDeque<Instant>,
     egui_ctx: egui::Context,
     logo: Option<egui::TextureHandle>,
     logo_rx: Option<crossbeam_channel::Receiver<LogoData>>,
     /// The window's icon, kept for a window a GPU recovery opens.
-    window_icon: Option<winit::window::Icon>,
+    window_icon: Option<winit::icon::Icon>,
     world: World,
     bridge_runtime: crate::world::bridge::Bridge,
     native_anchor: crate::movement::movelock::Controller,
@@ -5022,7 +5022,12 @@ impl App {
             Action::NearbyChat => self.chat_ui.toggle_nearby_chat(&self.egui_ctx, &mut self.panels.chat),
             Action::Conversations => ui::widgets::toggle_floater(&self.egui_ctx, "conversations", &mut self.panels.chat),
             Action::People => {
-                ui::widgets::toggle_floater(&self.egui_ctx, "people", &mut self.panels.people);
+                let panel = native_windows::Panel::People;
+                if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "people", &mut self.panels.people);
+                }
                 self.panels.people_tab = 0;
             }
             Action::Friends => self.people_tab_shortcut(ui::people::TAB_FRIENDS),
@@ -6756,7 +6761,7 @@ impl App {
     }
 
     /// Log out, save the window, layout, inventory cache and settings, exit.
-    fn shutdown(&mut self, event_loop: &ActiveEventLoop) {
+    fn shutdown(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.instances.leave();
         // closed while the graphics card still holds a frame, from its
         // notice or not: reported, and the next start offers the safe
@@ -6795,7 +6800,7 @@ impl App {
             self.settings.window_maximized = g.window.is_maximized();
             // when maximized, keep the restored size / position recorded below
             if !self.settings.window_maximized && !g.window.is_minimized().unwrap_or(false) {
-                let s = g.window.inner_size();
+                let s = g.window.surface_size();
                 let sf = g.window.scale_factor();
                 self.settings.window_width = (s.width as f64 / sf) as u32;
                 self.settings.window_height = (s.height as f64 / sf) as u32;
@@ -6865,7 +6870,7 @@ impl App {
         if g.window.fullscreen().is_some() || g.window.is_maximized() || g.window.is_minimized().unwrap_or(false) {
             return;
         }
-        let s = g.window.inner_size();
+        let s = g.window.surface_size();
         if s.width == 0 || s.height == 0 {
             return;
         }
@@ -6904,18 +6909,18 @@ impl App {
                     ..WindowedGeometry::from_settings(&self.settings)
                 }
             } else {
-                WindowedGeometry::from_window(&window)
+                WindowedGeometry::from_window(window.as_ref())
             };
             restore.save(&mut self.settings);
             self.fullscreen_restore = Some(restore);
-            window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(window.current_monitor())));
+            window.set_fullscreen(Some(winit::monitor::Fullscreen::Borderless(window.current_monitor())));
         } else {
             let restore = self
                 .fullscreen_restore
                 .take()
                 .unwrap_or_else(|| WindowedGeometry::from_settings(&self.settings));
             restore.save(&mut self.settings);
-            restore.apply(&window);
+            restore.apply(window.as_ref());
         }
         self.geom_changed = None;
         self.settings.save();
@@ -8526,13 +8531,12 @@ impl App {
     /// The headset has no viewer UI yet. Restrict keyboard actions so an
     /// accidental shortcut cannot open an invisible window or enter text.
     fn vr_keyboard_input(&mut self, key: &winit::event::KeyEvent) {
-        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
         let PhysicalKey::Code(code) = key.physical_key else {
             return;
         };
         let code = crate::keybinds::binding_code(code, &key.logical_key);
         let input = Input::key(code);
-        let gesture = crate::gestures::keys::from_key(code, &key.key_without_modifiers());
+        let gesture = crate::gestures::keys::from_key(code, &key.key_without_modifiers);
         if key.state == ElementState::Released {
             self.down.remove(&input);
             self.check_temp_run();
@@ -9289,15 +9293,15 @@ impl App {
         let coarse = self
             .ui_images
             .get(&image)
-            .is_some_and(|t| ui_copy_needs_refine(t.size(), target_w, target_h))
+            .is_some_and(|t| ui_copy_needs_refine(t.resolution(), target_w, target_h))
             || self
                 .avatar_pic_images
                 .get(&image)
-                .is_some_and(|t| ui_copy_needs_refine(t.size(), target_w, target_h));
+                .is_some_and(|t| ui_copy_needs_refine(t.resolution(), target_w, target_h));
         if coarse {
             let sizes = [
-                self.ui_images.get(&image).map(egui::TextureHandle::size),
-                self.avatar_pic_images.get(&image).map(egui::TextureHandle::size),
+                self.ui_images.get(&image).map(egui::TextureHandle::resolution),
+                self.avatar_pic_images.get(&image).map(egui::TextureHandle::resolution),
             ];
             match ui_follow_step(self.ui_coarse.get(&image).copied(), sizes, Instant::now()) {
                 Some(follow) => self.ui_coarse.insert(image, follow),
@@ -9326,8 +9330,8 @@ impl App {
                 return false;
             }
             let sizes = [
-                images.get(id).map(egui::TextureHandle::size),
-                pics.get(id).map(egui::TextureHandle::size),
+                images.get(id).map(egui::TextureHandle::resolution),
+                pics.get(id).map(egui::TextureHandle::resolution),
             ];
             match ui_follow_step(Some(*follow), sizes, now) {
                 Some(next) => {
@@ -9346,12 +9350,12 @@ impl App {
             let (pics, images) = (&self.avatar_pic_images, &self.ui_images);
             let have = images
                 .get(&image)
-                .map(egui::TextureHandle::size)
+                .map(egui::TextureHandle::resolution)
                 .filter(|size| ui_copy_needs_refine(*size, target_w, target_h))
                 .into_iter()
                 .chain(
                     pics.get(&image)
-                        .map(egui::TextureHandle::size)
+                        .map(egui::TextureHandle::resolution)
                         .filter(|size| ui_copy_needs_refine(*size, target_w, target_h)),
                 )
                 .min_by_key(|size| size[0].saturating_mul(size[1]));
@@ -9363,15 +9367,15 @@ impl App {
                 Some((w, h, rgba))
                     if (images
                         .get(&image)
-                        .is_some_and(|t| ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h))
+                        .is_some_and(|t| ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h))
                         || pics
                             .get(&image)
-                            .is_some_and(|t| ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)))
+                            .is_some_and(|t| ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)))
                         && rgba.len() == (w * h * 4) as usize =>
                 {
                     let ci = || egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
                     if let Some(t) = self.ui_images.get_mut(&image)
-                        && ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)
+                        && ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)
                     {
                         t.set(ci(), egui::TextureOptions::LINEAR);
                         if let Some(mask) = crate::world::rlva::effects::AlphaMask::from_rgba(w, h, &rgba) {
@@ -9380,7 +9384,7 @@ impl App {
                     }
                     let mut picture_updated = false;
                     if let Some(t) = self.avatar_pic_images.get_mut(&image)
-                        && ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)
+                        && ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)
                     {
                         t.set(ci(), egui::TextureOptions::LINEAR);
                         picture_updated = true;
@@ -9729,7 +9733,7 @@ impl App {
         self.world.map.overlays.retain(|h, _| regions.contains_key(h));
     }
 
-    fn frame(&mut self, event_loop: &ActiveEventLoop) {
+    fn frame(&mut self, event_loop: &dyn ActiveEventLoop) {
         // the input this frame reads came with the events just handled: its
         // time to the screen starts here (Performance › latency, pacing.rs)
         if let Some(g) = &mut self.gfx {
@@ -9962,7 +9966,7 @@ impl App {
         {
             self.logo = Some(self.egui_ctx.load_texture("logo", l.ui, egui::TextureOptions::LINEAR));
             if let Some((rgba, w, h)) = l.icon
-                && let Ok(icon) = winit::window::Icon::from_rgba(rgba, w, h)
+                && let Ok(icon) = winit::icon::RgbaIcon::new(rgba, w, h).map(winit::icon::Icon::from)
             {
                 if let Some(g) = &self.gfx {
                     g.window.set_window_icon(Some(icon.clone()));
@@ -10974,7 +10978,7 @@ impl App {
                 },
             );
             self.frame_profile.lap(Lap::Complexity);
-            let hud_size = gfx.window.inner_size();
+            let hud_size = gfx.window.surface_size();
             self.world.hud_area = self.hud_area([hud_size.width, hud_size.height]);
             self.world.hud_aspect = match (self.snapshots.capturing, self.world.hud_area) {
                 // the HUD laid out for the photo's proportions
@@ -12017,11 +12021,10 @@ impl App {
             self.system_fonts_pending = !ui::fonts::apply(&self.egui_ctx, &ui_font(&self.settings));
         }
         ui::fonts::preview::release_unused(&self.egui_ctx);
-        let mut raw = gfx.egui_state.take_egui_input(&gfx.window);
-        let desktop_drop = self.native_windows.take_root_drop(gfx.window.id());
-        if let Some(drop) = &desktop_drop {
-            drop.add_events(&self.egui_ctx, &gfx.window, &mut raw);
-        }
+        let mut raw = gfx.egui_state.take_egui_input(gfx.window.as_ref());
+        let desktop_drop = self
+            .native_windows
+            .add_root_drag_input(&self.egui_ctx, gfx.window.as_ref(), &mut raw);
         raw.events.extend(self.alt_text.drain(..).map(egui::Event::Text));
         self.demo_script_input(&mut raw);
         // Synthetic preedit uses the ordinary focused Conversations editor.
@@ -12417,7 +12420,7 @@ impl App {
         ) {
             let position = winit::dpi::PhysicalPosition::new(anchor.x * ctx.pixels_per_point(), anchor.y * ctx.pixels_per_point());
             if (self.cursor_pos.0 - position.x).abs() > 0.5 || (self.cursor_pos.1 - position.y).abs() > 0.5 {
-                if gfx.window.set_cursor_position(position).is_ok() {
+                if gfx.window.set_cursor_position(position.into()).is_ok() {
                     self.cursor_pos = (position.x, position.y);
                 } else {
                     self.numeric_drag.cancel();
@@ -12605,14 +12608,18 @@ impl App {
                 self.plate_hover,
             );
         }
+        if desktop_drop {
+            self.native_windows
+                .root_drop_feedback(event_loop, gfx.window.id(), full.platform_output.cursor_icon);
+        }
         gfx.egui_state
-            .handle_platform_output_with_event_loop(&gfx.window, event_loop, full.platform_output);
+            .handle_platform_output_with_event_loop(gfx.window.as_ref(), event_loop, full.platform_output);
         self.perf.ui_ms = t_ui.elapsed().as_secs_f32() * 1000.0;
         self.frame_profile.lap(Lap::Hover);
         let textures = std::mem::take(&mut full.textures_delta);
         self.egui_shadow.note(&textures);
         let mut textures = self.native_windows.root_textures(textures);
-        if desktop_drop.is_some() {
+        if desktop_drop {
             egui::DragAndDrop::clear_payload(&self.egui_ctx);
         }
         if std::mem::take(&mut self.egui_replay) {
@@ -12850,7 +12857,7 @@ impl App {
             // On Windows, maximizing can show even a hidden window. Defer
             // it until its client area already contains a rendered image;
             // shown once, with the focus (window_show.rs)
-            crate::window_show::show(&gfx.window, gfx.maximize_on_show);
+            crate::window_show::show(gfx.window.as_ref(), gfx.maximize_on_show);
             log::info!("startup window shown after the first presented frame");
             // a recovery's old window goes once its successor is on screen;
             // hidden first, as a render thread left behind in the driver
@@ -12859,7 +12866,7 @@ impl App {
                 old.set_visible(false);
             }
             crate::splash::shown();
-            crate::crash::watch_window(&gfx.window);
+            crate::crash::watch_window(gfx.window.as_ref());
             crate::crash::demo_freeze();
             crate::crash::demo_thread_death();
         }
@@ -12890,7 +12897,7 @@ impl App {
         // frame limiter; vsync already paces at the rate of the screen the
         // window is on now (it may have moved, the screen may have changed
         // its mode)
-        self.screen_rate.poll(&gfx.window, Instant::now());
+        self.screen_rate.poll(gfx.window.as_ref(), Instant::now());
         let monitor_hz = self.screen_rate.hz();
         let timed = self.capture.is_some() || self.frame_profile.enabled();
         let app_focused = self.focused || self.native_windows.owns_focus();
@@ -13545,7 +13552,7 @@ impl App {
         self.crash_frame();
         self.end_deep_profile(&gfx.renderer);
         self.monitor_frame(&gfx.renderer);
-        self.crash_state(&gfx.renderer, &gfx.window);
+        self.crash_state(&gfx.renderer, gfx.window.as_ref());
         self.gpu_stall_frame(&gfx.renderer);
         self.gfx = Some(gfx);
         if let Some(safe) = self.gpu_stall.recover.take() {
@@ -15100,7 +15107,7 @@ impl App {
         self.egui_ctx.copy_text(aurora_version::version().to_owned());
     }
 
-    fn handle_actions(&mut self, mut a: UiActions, event_loop: &ActiveEventLoop) {
+    fn handle_actions(&mut self, mut a: UiActions, event_loop: &dyn ActiveEventLoop) {
         if let Some(action) = a.exit {
             self.confirm_exit(action);
             return;
@@ -15451,6 +15458,16 @@ impl App {
                 kind => self.open_env_editor_snapshot(kind),
             },
             BarAction::TeleportHistory => self.toggle_teleport_history(),
+            BarAction::ShowPeople(tab) => self.show_people_tab(tab),
+            BarAction::TogglePeopleTab(tab) => self.people_tab_shortcut(tab),
+            BarAction::TogglePlaces => {
+                let panel = native_windows::Panel::Places;
+                if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "places", &mut self.panels.places);
+                }
+            }
             BarAction::CreateLandmark => self.open_create_landmark(None),
             BarAction::PhotoToDisk => self.photo_to_disk(),
             BarAction::PhotoRoll => self.photo_reel_show_newest(),
@@ -15711,6 +15728,7 @@ impl App {
     fn open_places_favorites(&mut self) {
         self.places_ui.tab = 0;
         ui::widgets::open_floater(&self.egui_ctx, "places", &mut self.panels.places);
+        self.native_windows.reveal(native_windows::Panel::Places);
     }
 
     /// A click in the favourites of the islands.
@@ -16340,8 +16358,7 @@ impl App {
                     list_in_profile,
                 } => self.world.groups.set_flags(group, accept_notices, list_in_profile),
                 GroupAction::ShowInPeople(name) => {
-                    self.panels.people = true;
-                    self.panels.people_tab = 2;
+                    self.show_people_tab(ui::people::TAB_GROUPS);
                     self.people_ui.filter = name;
                 }
                 GroupAction::LoadLand { group, ledger } => {
@@ -16377,7 +16394,12 @@ impl App {
     /// history floater: a minimized Places expands, a shown one hides on
     /// any tab, else it opens on the history.
     fn toggle_teleport_history(&mut self) {
-        if self.panels.places {
+        let panel = native_windows::Panel::Places;
+        if self.native_windows.is_native(panel) {
+            self.world.place_details.close_panel();
+            self.places_ui.open_tab(ui::places::TAB_HISTORY);
+            self.native_windows.reveal(panel);
+        } else if self.panels.places {
             ui::widgets::toggle_floater(&self.egui_ctx, "places", &mut self.panels.places);
         } else {
             self.world.place_details.close_panel();
@@ -17090,23 +17112,7 @@ impl App {
                 let held = self.photo_held(&ctx, &p);
                 // what belongs to the world first: the HUD attachments, the bars and
                 // every window cover the name tags, the floating texts and the beacon
-                let voice_levels = if self.demo {
-                    static VOICE_MODE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-                    let mut levels = crate::demo::voice_levels(
-                        ctx.input(|i| i.time),
-                        self.world.agent_id,
-                        self.settings.audio.voice_enabled,
-                        self.talking(),
-                        self.voice.mic_level,
-                        VOICE_MODE.get_or_init(|| std::env::var("AURORA_DEMO_VOICE").ok()).as_deref(),
-                    );
-                    crate::demo::tags::voice(&mut levels, ctx.input(|i| i.time));
-                    crate::demo::people::voice(&mut levels, ctx.input(|i| i.time));
-                    crate::demo::voice_controls::voice(&mut levels, ctx.input(|i| i.time));
-                    levels
-                } else {
-                    self.voice.levels(self.world.agent_id)
-                };
+                let voice_levels = self.ui_voice_levels(&ctx);
                 // who gets the voice row of the avatar menus
                 let me = self.world.agent_id;
                 self.world.calls.voice_peers.clear();
@@ -18425,7 +18431,14 @@ impl App {
                     log::warn!("cannot open the transcripts folder: {e}");
                 }
                 // their confirmations, also asked from the other menus
-                contact_actions.extend(ui::contacts::dialog_windows(&ctx, &p, &mut self.world, &mut self.contacts_ui));
+                let only_people = self.native_windows.is_native(native_windows::Panel::People).then_some(false);
+                contact_actions.extend(ui::contacts::dialog_windows(
+                    &ctx,
+                    &p,
+                    &mut self.world,
+                    &mut self.contacts_ui,
+                    only_people,
+                ));
                 // residents added to a conversation: a conversation with one
                 // resident that became a conference closes (FSFloaterIM::
                 // addP2PSessionParticipants)
@@ -18464,6 +18477,12 @@ impl App {
                     now: self.radar_clock.elapsed().as_secs_f64(),
                     pics: &self.avatar_pics,
                 };
+                let panel = native_windows::Panel::People;
+                let mut desktop = ui::widgets::DesktopPanels {
+                    live: self.native_windows.is_native(panel).then_some(()).into_iter().collect(),
+                    requested: Vec::new(),
+                };
+                self.contacts_ui.set_people_origin(true);
                 let people = ui::people::people_window(
                     &ctx,
                     &p,
@@ -18478,7 +18497,12 @@ impl App {
                     },
                     &mut people_map,
                     !self.settings.classic_people && !(self.demo && crate::demo::people::legacy()),
+                    ui::widgets::PanelHost::Viewer(&mut desktop),
                 );
+                self.contacts_ui.set_people_origin(false);
+                if !desktop.requested.is_empty() {
+                    self.native_windows.detach(panel, aurora_i18n::tr!("common-people").to_owned());
+                }
                 if self.settings.radar.alert_sounds != people_before.0.alert_sounds {
                     self.settings.audio.ui.set_radar_sounds(self.settings.radar.alert_sounds);
                 }
@@ -18486,7 +18510,10 @@ impl App {
                     self.settings.save();
                 }
                 // (and those of Conversations › Contacts, the same tab)
-                self.apply_people_actions(people.into_iter().chain(contacts_people), &mut a);
+                self.contacts_ui.set_people_origin(true);
+                self.apply_people_actions(people, &mut a);
+                self.contacts_ui.set_people_origin(false);
+                self.apply_people_actions(contacts_people, &mut a);
                 t = self.ui_parts.lap(Part::UiPeople, t);
                 self.poll_inventory_animation_stats();
                 self.show_imports(&ctx, &p);
@@ -19302,6 +19329,11 @@ impl App {
                     sort: self.settings.places_sort,
                     favorites: &favorites_order,
                 });
+                let panel = native_windows::Panel::Places;
+                let mut desktop = ui::widgets::DesktopPanels {
+                    live: self.native_windows.is_native(panel).then_some(()).into_iter().collect(),
+                    requested: Vec::new(),
+                };
                 let places_acts = self.places_ui.show(
                     &ctx,
                     &mut c,
@@ -19309,8 +19341,12 @@ impl App {
                     self.settings.landmarks_by_date,
                     self.settings.confirm_teleports,
                     places_env.as_ref(),
+                    ui::widgets::PanelHost::Viewer(&mut desktop),
                 );
                 self.panels.places = open;
+                if !desktop.requested.is_empty() {
+                    self.native_windows.detach(panel, aurora_i18n::tr!("common-places").to_owned());
+                }
                 for pa in window_acts {
                     match pa {
                         // FSFloaterPlaceDetails::onTeleportButtonClicked: no
@@ -19325,47 +19361,7 @@ impl App {
                         ui::place_details::PlaceAction::Close(serial) => self.world.place_details.close_window(serial),
                     }
                 }
-                for pa in places_acts {
-                    use ui::places::PlacesAction;
-                    match pa {
-                        PlacesAction::Teleport(g) => self.teleport_saved_place(g),
-                        PlacesAction::TeleportLandmark(asset) => a.landmark = Some(asset),
-                        PlacesAction::CreateLandmark(dest) => self.open_create_landmark(dest),
-                        PlacesAction::ShowOnMap(g) => {
-                            self.world.map.show_location(g.x, g.y, g.z as f32);
-                            self.panels.world_map = true;
-                        }
-                        PlacesAction::OpenProfile(source) => {
-                            self.world
-                                .place_details
-                                .open_panel(source, &self.world.map, &mut self.world.landmarks, Instant::now())
-                        }
-                        PlacesAction::CloseProfile => self.world.place_details.close_panel(),
-                        PlacesAction::RemoveHistory(i) => self.world.tp_storage.remove(i),
-                        PlacesAction::ClearHistory => {
-                            // order matters: the back / forward list first
-                            self.world.tp_history.purge();
-                            self.world.tp_storage.clear();
-                        }
-                        PlacesAction::SortByDate(on) => {
-                            self.settings.landmarks_by_date = on;
-                            self.settings.save();
-                        }
-                        PlacesAction::StopConfirmingTeleports => self.stop_confirming_teleports(),
-                        PlacesAction::Edit(change) => self.apply_inventory_action(ui::inventory::InvAction::Edit(change)),
-                        PlacesAction::ExpectFavorite => self.world.favorites.expect_added(),
-                        PlacesAction::MoveFavorite(item, rank) => self.world.favorites.rearrange(&self.world.inventory, item, rank),
-                        PlacesAction::OpenWindow(source) => {
-                            let w = &mut self.world;
-                            let serial = w.place_details.open_window(source, &w.map, &mut w.landmarks, Instant::now());
-                            self.place_ui.raise(serial);
-                        }
-                        PlacesAction::Sort(by) => {
-                            self.settings.places_sort = by;
-                            self.settings.save();
-                        }
-                    }
-                }
+                self.apply_places_actions(places_acts, &mut a);
                 // "Search"
                 let search_home = self.panels.search.then(|| self.search_home()).flatten();
                 let search_session = self.search_session();
@@ -19433,21 +19429,7 @@ impl App {
                     &mut open,
                 ));
                 self.panels.minimap = open;
-                for ma in mini {
-                    match ma {
-                        ui::minimap::MiniMapAction::Teleport { x, y, z } => self.world.map.track_location(x, y, z, true),
-                        ui::minimap::MiniMapAction::Track { x, y, z } => self.world.map.track_location(x, y, z, false),
-                        ui::minimap::MiniMapAction::StopTracking => self.world.map.clear_track(),
-                        ui::minimap::MiniMapAction::OpenWorldMap => self.panels.world_map = true,
-                        ui::minimap::MiniMapAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
-                        ui::minimap::MiniMapAction::AboutLand(gx, gy) => {
-                            ui::land::LandUi::select_at_global(&mut self.world, gx, gy);
-                            self.panels.about_land = true;
-                        }
-                        ui::minimap::MiniMapAction::Colors(k) => self.settings.colors = k,
-                        ui::minimap::MiniMapAction::Close => self.panels.minimap = false,
-                    }
-                }
+                self.apply_minimap_actions(mini);
                 let mut open = self.panels.world_map && !self.world.rlva.has("showworldmap");
                 let panel = native_windows::Panel::WorldMap;
                 let mut desktop = ui::widgets::DesktopPanels {
@@ -19769,8 +19751,17 @@ impl UiActions {
     }
 }
 
+impl App {
+    /// Dispose of the clipboard and windows before closing the Wayland connection.
+    pub(crate) fn release_window(&mut self) {
+        self.native_windows.renderer_lost();
+        self.gfx = None;
+        self.retired_window = None;
+    }
+}
+
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.gfx.is_some() {
             return;
         }
@@ -19789,7 +19780,10 @@ impl ApplicationHandler for App {
         // last position, only if it is still on a connected screen
         if let (Some(x), Some(y), false) = (self.settings.window_x, self.settings.window_y, capture) {
             let on = event_loop.available_monitors().find(|m| {
-                let (p, s) = (m.position(), m.size());
+                let (Some(p), Some(mode)) = (m.position(), m.current_video_mode()) else {
+                    return false;
+                };
+                let s = mode.size();
                 // the title bar (top-left corner area) must be reachable
                 x + 40 >= p.x && x + 40 < p.x + s.width as i32 && y + 10 >= p.y && y + 10 < p.y + s.height as i32
             });
@@ -19800,17 +19794,21 @@ impl ApplicationHandler for App {
         }
         // a "normal" size covering the whole screen is a maximized window
         // recorded as normal (older versions): restore to 80 % of the screen
-        if let (Some(m), false) = (&monitor, capture) {
+        if let (Some(m), false) = (&monitor, capture)
+            && let Some(mode) = m.current_video_mode()
+        {
             let sf = m.scale_factor();
-            let (mw, mh) = (m.size().width as f64 / sf, m.size().height as f64 / sf);
+            let size = mode.size();
+            let (mw, mh) = (size.width as f64 / sf, size.height as f64 / sf);
             if w as f64 >= mw * 0.95 && h as f64 >= mh * 0.9 {
                 w = (mw * 0.8) as u32;
                 h = (mh * 0.8) as u32;
-                let p = m.position();
-                pos = Some((
-                    p.x + ((m.size().width as f64 - w as f64 * sf) / 2.0) as i32,
-                    p.y + ((m.size().height as f64 - h as f64 * sf) / 2.0) as i32,
-                ));
+                pos = m.position().map(|p| {
+                    (
+                        p.x + ((size.width as f64 - w as f64 * sf) / 2.0) as i32,
+                        p.y + ((size.height as f64 - h as f64 * sf) / 2.0) as i32,
+                    )
+                });
             }
         }
         let plan = gpu_recovery::WindowPlan {
@@ -19819,7 +19817,7 @@ impl ApplicationHandler for App {
             // Automated captures must not steal the user's keyboard focus.
             active: !capture,
             fullscreen: (!capture && forced_window_size().is_none() && self.settings.window_fullscreen)
-                .then(|| winit::window::Fullscreen::Borderless(monitor.clone())),
+                .then(|| winit::monitor::Fullscreen::Borderless(monitor.clone())),
         };
         self.fullscreen_applied = plan.fullscreen.is_some();
         let window = match self.open_window(event_loop, &plan) {
@@ -19896,8 +19894,8 @@ impl ApplicationHandler for App {
         // the card in demo, without changing a setting)
         self.login_form.camera_limits_restored = std::mem::take(&mut self.settings.camera_limits_restored)
             || (self.demo && std::env::var_os("AURORA_DEMO_CAMERA_LIMITS").is_some());
-        self.screen_rate.poll(&window, Instant::now());
-        let egui_state = self.egui_state_for(&window, &renderer);
+        self.screen_rate.poll(window.as_ref(), Instant::now());
+        let egui_state = self.egui_state_for(window.as_ref(), &renderer);
         self.gfx = Some(Gfx {
             window,
             shown: false,
@@ -22561,40 +22559,15 @@ impl ApplicationHandler for App {
         }
     }
 
-    /// The window, its renderer and egui-winit's state go while the event
-    /// loop still lives: `run_app` drops the loop, and with it the Wayland
-    /// connection, before `main` drops the app. On Wayland the clipboard of
-    /// egui-winit (smithay-clipboard) keeps a worker thread on that
-    /// connection; dropped after it, the worker destroyed its objects on a
-    /// closed connection and every exit ended in a segmentation fault (before
-    /// the browsers' private profiles were cleaned up).
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.native_windows.renderer_lost();
-        #[cfg(windows)]
-        crate::slurl_handoff::release();
-        self.gfx = None;
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        #[cfg(windows)]
-        if !self.exit_prompt.open
-            && let Some(gfx) = &self.gfx
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if let Some(gfx) = &self.gfx
+            && self
+                .native_windows
+                .route_drag(event_loop, &self.egui_ctx, gfx.window.as_ref(), id, &event, self.exit_prompt.open)
         {
-            self.native_windows.bridge_drag(
-                &self.egui_ctx,
-                &gfx.window,
-                egui::Modifiers {
-                    alt: self.alt,
-                    ctrl: self.ctrl,
-                    shift: self.shift,
-                    command: self.ctrl,
-                    ..egui::Modifiers::NONE
-                },
-                id,
-                &event,
-            );
+            return;
         }
-        if let Some(activity) = self.native_windows.event(id, &event, self.exit_prompt.open) {
+        if let Some(activity) = self.native_windows.event(event_loop, id, &event, self.exit_prompt.open) {
             if activity {
                 self.last_input = Instant::now();
             }
@@ -22751,7 +22724,7 @@ impl ApplicationHandler for App {
                 repaint: true,
             }
         } else {
-            let mut response = g.egui_state.on_window_event(&g.window, &event);
+            let mut response = g.egui_state.on_window_event(g.window.as_ref(), event_loop, &event);
             if matches!(event, WindowEvent::KeyboardInput { .. })
                 && let Some(keyboard) = self.native_windows.root_keyboard()
             {
@@ -22763,7 +22736,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 self.request_exit();
             }
-            WindowEvent::Resized(s) => {
+            WindowEvent::SurfaceResized(s) => {
                 ui::menu::window_geometry_changed(&self.egui_ctx);
                 if sync_auto_render_scale(&mut self.settings, g.window.scale_factor()) {
                     g.renderer.apply_settings(self.settings.render_settings());
@@ -22791,7 +22764,7 @@ impl ApplicationHandler for App {
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
                 self.alt = m.state().alt_key();
-                self.command = cfg!(target_os = "macos") && m.state().super_key();
+                self.command = cfg!(target_os = "macos") && m.state().meta_key();
                 if !self.ctrl || self.alt {
                     self.build.reset_selection_wheel();
                 }
@@ -22996,8 +22969,7 @@ impl ApplicationHandler for App {
                     }
                     // Releases always go through so keys never get stuck.
                     let typing = gui_wants_keyboard || gui_popup_open;
-                    use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-                    let gesture_key = crate::gestures::keys::from_key(code, &ke.key_without_modifiers());
+                    let gesture_key = crate::gestures::keys::from_key(code, &ke.key_without_modifiers);
                     if !pressed && let Some(key) = gesture_key {
                         self.gesture_state.manager.release(Some(key));
                     }
@@ -23132,11 +23104,21 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved {
+                position,
+                source: winit::event::PointerSource::Mouse,
+                ..
+            } => {
                 self.cursor_pos = (position.x as f32, position.y as f32);
                 self.recenter_mouselook_cursor();
             }
-            WindowEvent::MouseInput { state, button, .. } => {
+            WindowEvent::PointerButton {
+                state,
+                button: winit::event::ButtonSource::Mouse(button),
+                position,
+                ..
+            } => {
+                self.cursor_pos = (position.x as f32, position.y as f32);
                 self.last_input = Instant::now();
                 // (AURORA_DEMO_BUSY_PAUSE: a click ends the demo's busy card,
                 // as the focus does a real one; busy_pause.rs)
@@ -23154,7 +23136,7 @@ impl ApplicationHandler for App {
                 // shortcut being captured: middle / side buttons bind, left / right cancel
                 if self.options_ui.capture.is_some() {
                     if pressed {
-                        self.finish_capture(Input::mouse(*button));
+                        self.finish_capture(self.mouse_binding(*button));
                     }
                     return;
                 }
@@ -23176,6 +23158,7 @@ impl ApplicationHandler for App {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => *y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
+                    _ => return,
                 };
                 if self.studio_scroll(steps) {
                     return;
@@ -23217,11 +23200,11 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn device_event(&mut self, _el: &ActiveEventLoop, _id: winit::event::DeviceId, event: DeviceEvent) {
-        if let DeviceEvent::MouseMotion { delta } = event {
+    fn device_event(&mut self, _el: &dyn ActiveEventLoop, _id: Option<winit::event::DeviceId>, event: DeviceEvent) {
+        if let DeviceEvent::PointerMotion { delta } = event {
             // Raw device events can also arrive while a desktop floater
             // owns the pointer. Its winit events already went to its GUI.
-            if self.native_windows.owns_focus() {
+            if self.native_windows.owns_focus() || self.native_windows.drag_active() {
                 return;
             }
             // a remote desktop's or a tablet's position: its motion (raw_mouse.rs)
@@ -23242,7 +23225,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         crate::crash::pumped();
         #[cfg(target_os = "macos")]
         if crate::mac_quit::take_request() {

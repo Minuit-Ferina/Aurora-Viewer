@@ -695,7 +695,7 @@ fn contents(
     if let (Some(photo), Some(texture)) = (l.photo, picture) {
         let mut mesh = Mesh::with_texture(texture.id());
         let tint = ink(crate::ui::widgets::PICTURE_TINT);
-        Outline::circle(photo.center + origin, photo.radius, ppp).picture(&mut mesh, cover(texture.size()), tint);
+        Outline::circle(photo.center + origin, photo.radius, ppp).picture(&mut mesh, cover(texture.resolution()), tint);
         painter.add(Shape::mesh(mesh));
     }
     // the placeholder's disc, then the rings, discs and bars that lie over

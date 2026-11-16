@@ -410,8 +410,12 @@ pub fn people_window(
     map: &mut dyn FnMut(&mut egui::Ui, Vec2),
     // Aurora's look (`Settings::classic_people` off)
     aurora: bool,
+    mut host: widgets::PanelHost<'_, ()>,
 ) -> Vec<PeopleAction> {
     let mut actions = Vec::new();
+    if !host.draws(()) {
+        return actions;
+    }
     if world.rlva.has("shownearby") && panels.people_tab == TAB_NEARBY {
         nearby::close_sheet(st);
     }
@@ -430,13 +434,15 @@ pub fn people_window(
     if aurora {
         st.tab_shown(panels.people_tab);
     }
-    nearby::fit_window(ctx, st);
+    if host.window_width().is_none() {
+        nearby::fit_window(ctx, st);
+    }
     let mut floater = Floater::new(WINDOW, aurora_i18n::tr!("common-people"), pos, size).help(help);
     if aurora {
         // the mock-up's tabs right under the title
         floater = floater.compact_header();
     }
-    floater.show(ctx, p, &mut open, |ui| {
+    host.show((), floater, ctx, p, &mut open, |ui| {
         if aurora {
             panels.people_tab = aurora_tabs(ui, p, world, radar, panels.people_tab);
             let mut c = Ctx {

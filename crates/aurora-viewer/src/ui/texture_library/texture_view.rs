@@ -415,7 +415,7 @@ pub(super) fn picture(
     ui.allocate_ui_with_layout(available, egui::Layout::top_down(egui::Align::Center), |ui| {
         ui.set_min_size(available);
         if let Some(image) = image {
-            let source = dimensions.map_or(image.size_vec2(), |(w, h)| Vec2::new(w as f32, h as f32));
+            let source = dimensions.map_or(image.resolution_vec2(), |(w, h)| Vec2::new(w as f32, h as f32));
             let size = image_size(*display, source, available, ui.ctx().pixels_per_point());
             let mut draw = |ui: &mut egui::Ui| {
                 let (canvas, _) = ui.allocate_exact_size(if display.actual_size { size } else { available }, egui::Sense::hover());

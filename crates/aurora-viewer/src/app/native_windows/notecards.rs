@@ -25,7 +25,7 @@ impl App {
         });
     }
 
-    pub(super) fn paint_desktop_notecard(&mut self, event_loop: &ActiveEventLoop, key: NotecardKey) {
+    pub(super) fn paint_desktop_notecard(&mut self, event_loop: &dyn ActiveEventLoop, key: NotecardKey) {
         let ctx = self.egui_ctx.clone();
         let modal = self.exit_prompt.open;
         let view_before = self.settings.inventory.notecard_view;
@@ -42,7 +42,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

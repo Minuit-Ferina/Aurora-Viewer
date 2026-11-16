@@ -185,7 +185,15 @@ fn place_portal_drags_start_from_every_favorites_and_places_view_and_leave_reord
                             sort: Default::default(),
                             favorites: &[favorite],
                         };
-                        let actions = places.show(&ctx, &mut c, &mut true, false, false, (mode >= 5 && mode != 11).then_some(&env));
+                        let actions = places.show(
+                            &ctx,
+                            &mut c,
+                            &mut true,
+                            false,
+                            false,
+                            (mode >= 5 && mode != 11).then_some(&env),
+                            widgets::PanelHost::Embedded,
+                        );
                         if reorder_expected.get() {
                             reordered.set(actions.iter().any(|a| matches!(a, PlacesAction::MoveFavorite(..))));
                         } else {

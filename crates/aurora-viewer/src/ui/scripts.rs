@@ -169,7 +169,7 @@ impl Editor {
 
 pub(crate) struct EditorHost<'a> {
     pub placement: super::widgets::PanelHost<'a, ScriptTarget>,
-    pub parent: Option<&'a std::sync::Arc<winit::window::Window>>,
+    pub parent: Option<&'a std::sync::Arc<dyn winit::window::Window>>,
     pub close: Option<ScriptTarget>,
 }
 
@@ -722,7 +722,7 @@ impl Editors {
             if e.closed || !host.placement.draws(e.target) {
                 continue;
             }
-            e.tools.file_parent = host.parent.map_or_else(std::sync::Weak::new, std::sync::Arc::downgrade);
+            e.tools.file_parent = host.parent.map(std::sync::Arc::downgrade);
             let id = format!("script_editor_{}_{}", e.target.object, e.target.item);
             e.recompile_allowed = settings.preprocessor && settings.recompile;
             if e.processor_settings != *settings {

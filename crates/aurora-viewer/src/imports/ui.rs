@@ -604,7 +604,7 @@ fn texture(
             ui.spinner();
         }
     } else if let Some(texture) = preview {
-        let size = texture.size_vec2();
+        let size = texture.resolution_vec2();
         let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 170.0), egui::Sense::drag());
         let painter = ui.painter().with_clip_rect(rect);
         for y in 0..(rect.height() / 16.0).ceil() as i32 {

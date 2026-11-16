@@ -21,7 +21,7 @@ impl App {
         });
     }
 
-    pub(super) fn paint_desktop_inventory(&mut self, event_loop: &ActiveEventLoop, id: Option<Uuid>) {
+    pub(super) fn paint_desktop_inventory(&mut self, event_loop: &dyn ActiveEventLoop, id: Option<Uuid>) {
         let classic = self.classic_inventory_window();
         let ctx = self.egui_ctx.clone();
         let before = self.settings.inventory.clone();
@@ -33,7 +33,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

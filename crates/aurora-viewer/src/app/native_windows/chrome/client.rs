@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ButtonSource, ElementState, MouseButton, PointerSource, WindowEvent};
 use winit::window::Window;
 
 use super::EDGE;
@@ -25,22 +25,30 @@ impl Caption {
         ));
     }
 
-    pub(super) fn event(&mut self, window: &Window, event: &WindowEvent) -> bool {
+    pub(super) fn event(&mut self, window: &dyn Window, event: &WindowEvent) -> bool {
         match *event {
-            WindowEvent::CursorMoved { position, .. } => self.pointer = Some(position),
-            WindowEvent::CursorLeft { .. } => self.pointer = None,
-            WindowEvent::Moved(_) | WindowEvent::Focused(false) => self.last_press = None,
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
+            WindowEvent::PointerMoved {
+                position,
+                source: PointerSource::Mouse,
                 ..
-            } => return self.press(window),
+            } => self.pointer = Some(position),
+            WindowEvent::PointerLeft { .. } => self.pointer = None,
+            WindowEvent::Moved(_) | WindowEvent::Focused(false) => self.last_press = None,
+            WindowEvent::PointerButton {
+                state: ElementState::Pressed,
+                button: ButtonSource::Mouse(MouseButton::Left),
+                position,
+                ..
+            } => {
+                self.pointer = Some(position);
+                return self.press(window);
+            }
             _ => {}
         }
         false
     }
 
-    fn press(&mut self, window: &Window) -> bool {
+    fn press(&mut self, window: &dyn Window) -> bool {
         let Some(point) = self.pointer else { return false };
         let previous = self.last_press.take();
         #[cfg(target_os = "macos")]
@@ -50,7 +58,7 @@ impl Caption {
         let border = if maximized { 0.0 } else { (EDGE * window.scale_factor()).ceil() };
         #[cfg(target_os = "linux")]
         if window.is_resizable()
-            && let Some(direction) = resize_direction(point, window.inner_size(), border)
+            && let Some(direction) = resize_direction(point, window.surface_size(), border)
         {
             return window.drag_resize_window(direction).is_ok();
         }
@@ -81,12 +89,12 @@ impl Caption {
     }
 
     #[cfg(target_os = "macos")]
-    pub(super) fn toggle_maximized(&self, window: &Window) {
+    pub(super) fn toggle_maximized(&self, window: &dyn Window) {
         self.zoom.toggle(window);
     }
 
     #[cfg(target_os = "linux")]
-    pub(super) fn resize_cursor(&self, window: &Window) -> Option<egui::CursorIcon> {
+    pub(super) fn resize_cursor(&self, window: &dyn Window) -> Option<egui::CursorIcon> {
         use egui::CursorIcon;
         use winit::window::ResizeDirection;
         let point = self.pointer?;
@@ -94,7 +102,7 @@ impl Caption {
             return None;
         }
         let border = (EDGE * window.scale_factor()).ceil();
-        Some(match resize_direction(point, window.inner_size(), border)? {
+        Some(match resize_direction(point, window.surface_size(), border)? {
             ResizeDirection::North => CursorIcon::ResizeNorth,
             ResizeDirection::South => CursorIcon::ResizeSouth,
             ResizeDirection::East => CursorIcon::ResizeEast,

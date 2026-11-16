@@ -6096,6 +6096,13 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   on Linux, check that the compact caption moves the window, its buttons
   maximize, restore or close it, and its edges can still resize it. Run the
   Linux demo on X11 and Wayland separately.
+  For People, use `AURORA_DEMO_PEOPLE=sheet` or `legacy`. Detach People,
+  use the radar and a resident's detail sheet, open a contact confirmation,
+  then return the panel and check the selected tab and filter. For Places,
+  use `AURORA_DEMO_PLACES=favorites:wide` or `history:classic`; check the
+  selected tab, inline profile, map action and confirmation in both hosts.
+  Under Windows, drag a landmark or history entry from the detached Places
+  window to the viewer and check that the existing drop preview takes over.
 
 - In the offline demo, the window-and-arrow icon
   moves the current panel to the desktop. The inverse icon returns it to

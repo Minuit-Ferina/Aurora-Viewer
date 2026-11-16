@@ -222,7 +222,7 @@ pub fn note(state: State) {
 }
 
 /// The window to test, once it exists.
-pub fn watch_window(window: &winit::window::Window) {
+pub fn watch_window(window: &dyn winit::window::Window) {
     #[cfg(windows)]
     {
         use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};

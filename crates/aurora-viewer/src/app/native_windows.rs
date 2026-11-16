@@ -12,7 +12,9 @@ mod info;
 mod input;
 mod inventory;
 mod notecards;
+mod people;
 mod placement;
+mod places;
 mod scripts;
 mod worldmap;
 
@@ -68,6 +70,8 @@ pub(super) enum Panel {
     About,
     GridStatus,
     WorldMap,
+    People,
+    Places,
     Bumps,
     GroupTitles,
     RegionTracker,
@@ -80,11 +84,10 @@ struct Host {
     close_requested: bool,
     rehost_blocked: bool,
     return_when_unblocked: bool,
-    window: Arc<Window>,
+    window: Arc<dyn Window>,
     textures: NativeTextures,
     input: egui_winit::State,
-    #[cfg(windows)]
-    drag_modifiers: egui::Modifiers,
+    drag_origin: Option<drag::Origin>,
     handover: EguiHandOver,
     chrome: chrome::Chrome,
     stage: Stage,
@@ -115,46 +118,59 @@ impl Host {
     /// whether to send its finished frame to the render worker.
     fn paint(
         &mut self,
-        event_loop: &ActiveEventLoop,
-        root: &Window,
+        event_loop: &dyn ActiveEventLoop,
+        root: &dyn Window,
         root_context: &egui::Context,
         textures: &mut TextureHandoff<'_>,
-        drop: Option<drag::Input>,
-        mut presenter: impl FnMut(&mut egui::Ui, &chrome::Chrome, &Window),
+        drag: &mut drag::Session,
+        palette: &Palette,
+        mut presenter: impl FnMut(&mut egui::Ui, &chrome::Chrome, &dyn Window),
     ) -> Painted {
         self.repaint = None;
         let viewport = self.viewport();
-        let mut raw = self.input.take_egui_input(&self.window);
+        let mut raw = self.input.take_egui_input(self.window.as_ref());
+        let window_id = self.window.id();
+        let drop = drag.frame(window_id);
+        drag.reset_pointer(window_id, &mut raw);
         egui_winit::update_viewport_info(raw.viewports.entry(egui::ViewportId::ROOT).or_default(), root_context, root, false);
         let info = raw.viewports.entry(viewport).or_default();
-        egui_winit::update_viewport_info(info, root_context, &self.window, false);
+        egui_winit::update_viewport_info(info, root_context, self.window.as_ref(), false);
         info.parent = Some(egui::ViewportId::ROOT);
         if let Some(drop) = &drop {
-            drop.add_events(root_context, &self.window, &mut raw);
+            drop.add_events(root_context, self.window.as_ref(), &mut raw);
         }
         let dismiss_menus = std::mem::take(&mut self.dismiss_menus);
+        let mut origin = None;
         let mut output = root_context.run_ui(raw, |ui| {
             if dismiss_menus {
                 crate::ui::menu::window_geometry_changed(ui.ctx());
             }
-            presenter(ui, &self.chrome, &self.window);
+            presenter(ui, &self.chrome, self.window.as_ref());
+            if drop.is_some() {
+                crate::ui::inventory::drag::badge(ui.ctx(), palette);
+                crate::ui::places::drag::ghost(ui.ctx(), palette);
+            } else if ui.ctx().dragged_id().is_some() {
+                origin = drag::Origin::read(ui.ctx());
+            }
         });
         if drop.is_some() {
+            drag.feedback(event_loop, window_id, output.platform_output.cursor_icon);
             egui::DragAndDrop::clear_payload(root_context);
         }
+        self.drag_origin = origin;
 
         #[cfg(target_os = "linux")]
-        if let Some(cursor) = self.chrome.resize_cursor(&self.window) {
+        if let Some(cursor) = self.chrome.resize_cursor(self.window.as_ref()) {
             output.platform_output.cursor_icon = cursor;
         }
         self.input
-            .handle_platform_output_with_event_loop(&self.window, event_loop, output.platform_output);
+            .handle_platform_output_with_event_loop(self.window.as_ref(), event_loop, output.platform_output);
         let mut close_requested = false;
         if let Some(view) = output.viewport_output.remove(&viewport) {
             self.set_repaint(view.repaint_delay);
             let mut viewport_info = egui::ViewportInfo::default();
             let mut actions = Vec::new();
-            egui_winit::process_viewport_commands(root_context, &mut viewport_info, view.commands, &self.window, &mut actions);
+            egui_winit::process_viewport_commands(root_context, &mut viewport_info, view.commands, self.window.as_ref(), &mut actions);
             close_requested = viewport_info.close_requested();
         }
         let delta = output.textures_delta;
@@ -487,7 +503,7 @@ impl NativeWindows {
         }
     }
 
-    pub(super) fn event(&mut self, id: WindowId, event: &WindowEvent, app_modal: bool) -> Option<bool> {
+    pub(super) fn event(&mut self, event_loop: &dyn ActiveEventLoop, id: WindowId, event: &WindowEvent, app_modal: bool) -> Option<bool> {
         let host = self.hosts.iter_mut().find(|host| host.window.id() == id)?;
         if host.stage != Stage::Live {
             return Some(false);
@@ -497,11 +513,11 @@ impl NativeWindows {
                 event,
                 WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput { .. }
-                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::PointerButton { .. }
                     | WindowEvent::MouseWheel { .. }
                     | WindowEvent::Ime(_)
-                    | WindowEvent::Touch(_)
-                    | WindowEvent::DroppedFile(_)
+                    | WindowEvent::DragEntered { .. }
+                    | WindowEvent::DragDropped { .. }
             )
         {
             host.input.egui_input_mut().events.clear();
@@ -514,7 +530,7 @@ impl NativeWindows {
         }
         if matches!(
             event,
-            WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }
+            WindowEvent::Moved(_) | WindowEvent::SurfaceResized(_) | WindowEvent::ScaleFactorChanged { .. }
         ) {
             host.geometry_changed = Some(Instant::now());
             host.dismiss_menus = true;
@@ -524,25 +540,20 @@ impl NativeWindows {
         }
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
-        if host.chrome.event(&host.window, event) {
+        if host.chrome.event(host.window.as_ref(), event) {
             host.set_repaint(Duration::ZERO);
             return Some(true);
         }
-        let repaint = host.input.on_window_event(&host.window, event).repaint;
-        #[cfg(windows)]
-        if matches!(event, WindowEvent::ModifiersChanged(_))
-            && let Some(egui::Event::ModifiersChanged(modifiers)) = host.input.egui_input().events.last()
-        {
-            host.drag_modifiers = *modifiers;
-        }
+        let repaint = host.input.on_window_event(host.window.as_ref(), event_loop, event).repaint;
+
         if repaint || matches!(event, WindowEvent::RedrawRequested | WindowEvent::Occluded(false)) {
             host.set_repaint(Duration::ZERO);
         }
         Some(matches!(
             event,
             WindowEvent::KeyboardInput { is_synthetic: false, .. }
-                | WindowEvent::CursorMoved { .. }
-                | WindowEvent::MouseInput { .. }
+                | WindowEvent::PointerMoved { .. }
+                | WindowEvent::PointerButton { .. }
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::Ime(_)
         ))
@@ -556,8 +567,79 @@ impl NativeWindows {
         self.hosts.iter().any(|host| host.stage == Stage::Live && host.window.has_focus())
     }
 
-    pub(super) fn take_root_drop(&mut self, window: WindowId) -> Option<drag::Input> {
-        self.cross_window_drag.frame(window)
+    pub(super) fn add_root_drag_input(&mut self, ctx: &egui::Context, window: &dyn Window, raw: &mut egui::RawInput) -> bool {
+        let input = self.cross_window_drag.frame(window.id());
+        self.cross_window_drag.reset_pointer(window.id(), raw);
+        if let Some(input) = input {
+            input.add_events(ctx, window, raw);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn root_drop_feedback(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, cursor: egui::CursorIcon) {
+        self.cross_window_drag.feedback(event_loop, window, cursor);
+    }
+
+    pub(super) fn drag_active(&self) -> bool {
+        self.cross_window_drag.active()
+    }
+
+    pub(super) fn route_drag(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        ctx: &egui::Context,
+        root: &dyn Window,
+        id: WindowId,
+        event: &WindowEvent,
+        modal: bool,
+    ) -> bool {
+        let root_event = id == root.id();
+        let can_target = !modal && (root_event || self.hosts.iter().any(|host| host.window.id() == id && host.visible()));
+        if self.cross_window_drag.event(event_loop, id, event, can_target) {
+            root.request_redraw();
+            for host in self.hosts.iter_mut().filter(|host| host.visible()) {
+                host.set_repaint(Duration::ZERO);
+            }
+            return true;
+        }
+        // All panel-local gestures stay in egui. Check the native boundary
+        // before consulting egui's pointer state or its current payload.
+        if modal || self.cross_window_drag.active() {
+            return false;
+        }
+        let position = match event {
+            WindowEvent::PointerLeft { .. } => None,
+            WindowEvent::PointerMoved {
+                source: winit::event::PointerSource::Mouse,
+                position,
+                ..
+            } => Some(*position),
+            _ => return false,
+        };
+        let outside = |window: &dyn Window| {
+            position.is_none_or(|point| {
+                let size = window.surface_size();
+                point.x < 0.0 || point.y < 0.0 || point.x >= f64::from(size.width) || point.y >= f64::from(size.height)
+            })
+        };
+        let origin = if root_event {
+            if !outside(root) || !self.any_visible() {
+                return false;
+            }
+            drag::Origin::read(ctx)
+        } else {
+            self.hosts
+                .iter()
+                .find(|host| host.window.id() == id && host.visible())
+                .filter(|host| outside(host.window.as_ref()))
+                .and_then(|host| host.drag_origin)
+        };
+        if let Some(origin) = origin {
+            return self.cross_window_drag.start(event_loop, id, ctx, origin);
+        }
+        false
     }
 
     pub(super) fn retire_all(&mut self) {
@@ -586,7 +668,12 @@ impl NativeWindows {
     }
 
     /// Advance the bounded surface queue and choose the next panel to paint.
-    pub(super) fn next(&mut self, event_loop: &ActiveEventLoop, renderer: &mut Renderer, root_context: &egui::Context) -> Option<Panel> {
+    pub(super) fn next(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        renderer: &mut Renderer,
+        root_context: &egui::Context,
+    ) -> Option<Panel> {
         self.take_reply();
         for host in &mut self.hosts {
             let desired = match host.panel {
@@ -616,7 +703,7 @@ impl NativeWindows {
         if let Some(host) = self.hosts.iter_mut().find(|host| host.stage == Stage::Opening) {
             if let Some(surface) = host.surface.take() {
                 let id = host.id;
-                let size = host.window.inner_size().into();
+                let size = host.window.surface_size().into();
                 self.submit(renderer, id, NativeUiCommand::Open { surface, size });
             }
             return None;
@@ -648,7 +735,7 @@ impl NativeWindows {
         &mut self,
         view: View<'_>,
         panel: Panel,
-        mut presenter: impl FnMut(&mut egui::Ui, bool, &Arc<Window>, &mut egui::Ui) -> bool,
+        mut presenter: impl FnMut(&mut egui::Ui, bool, &Arc<dyn Window>, &mut egui::Ui) -> bool,
     ) {
         let View {
             event_loop,
@@ -662,7 +749,7 @@ impl NativeWindows {
             return;
         };
         let id = host.id;
-        let size = host.window.inner_size().into();
+        let size = host.window.surface_size().into();
         let mut close = std::mem::take(&mut host.close_requested);
         let mut rehost = false;
         let mut deferred = false;
@@ -676,28 +763,35 @@ impl NativeWindows {
             shadow,
             root: &mut self.root_textures,
         };
-        let drop = self.cross_window_drag.frame(host.window.id());
-        let mut painted = host.paint(event_loop, root, context, &mut textures, drop, |ui, chrome, window| {
-            let mut caption = chrome.show(ui, palette, window);
-            rehost |= caption.action.is_some_and(|action| {
-                close |= action == chrome::Action::Close;
-                deferred |= action == chrome::Action::Return && blocked;
-                action == chrome::Action::Return && !blocked
-            });
-            if !rehost {
-                match panel {
-                    Panel::Demo(index) => {
-                        let document = &mut self.documents[index];
-                        close |= ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::W));
-                        if !close {
-                            present_document(ui, palette, index, document);
+        let mut painted = host.paint(
+            event_loop,
+            root,
+            context,
+            &mut textures,
+            &mut self.cross_window_drag,
+            palette,
+            |ui, chrome, window| {
+                let mut caption = chrome.show(ui, palette, window);
+                rehost |= caption.action.is_some_and(|action| {
+                    close |= action == chrome::Action::Close;
+                    deferred |= action == chrome::Action::Return && blocked;
+                    action == chrome::Action::Return && !blocked
+                });
+                if !rehost {
+                    match panel {
+                        Panel::Demo(index) => {
+                            let document = &mut self.documents[index];
+                            close |= ui.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::W));
+                            if !close {
+                                present_document(ui, palette, index, document);
+                            }
                         }
+                        _ => close = presenter(ui, close, &owner, &mut caption.actions),
                     }
-                    _ => close = presenter(ui, close, &owner, &mut caption.actions),
                 }
-            }
-            chrome.finish(caption, palette, window, &title);
-        });
+                chrome.finish(caption, palette, window, &title);
+            },
+        );
         self.root_input.child_pass_finished();
         host.return_when_unblocked |= deferred;
         if !matches!(panel, Panel::Demo(_)) {
@@ -736,7 +830,7 @@ impl NativeWindows {
         );
     }
 
-    fn open(&mut self, event_loop: &ActiveEventLoop, renderer: &Renderer, root_context: &egui::Context, panel: Panel) {
+    fn open(&mut self, event_loop: &dyn ActiveEventLoop, renderer: &Renderer, root_context: &egui::Context, panel: Panel) {
         let (title, size, minimum) = match panel {
             Panel::Demo(index) => (
                 format!("{} — {}", document_title(index), crate::cli::window_title()),
@@ -762,6 +856,16 @@ impl NativeWindows {
                 self.detached[&panel].clone(),
                 LogicalSize::new(620.0, 420.0),
                 LogicalSize::new(460.0, 260.0),
+            ),
+            Panel::Places => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(620.0, 620.0),
+                LogicalSize::new(320.0, 360.0),
+            ),
+            Panel::People => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(580.0, 620.0),
+                LogicalSize::new(320.0, 280.0),
             ),
             Panel::WorldMap => (
                 self.detached[&panel].clone(),
@@ -789,22 +893,22 @@ impl NativeWindows {
         } else {
             title
         };
-        let mut attrs = chrome::attributes(Window::default_attributes())
+        let mut attrs = chrome::attributes(winit::window::WindowAttributes::default())
             .with_title(os_title)
-            .with_inner_size(size)
-            .with_min_inner_size(minimum)
+            .with_surface_size(size)
+            .with_min_surface_size(minimum)
             .with_active(false)
             .with_visible(false);
         if let Some(saved) = saved
             && let Some((position, size)) = saved.restore(event_loop)
         {
-            attrs = attrs.with_position(position).with_inner_size(size);
+            attrs = attrs.with_position(position).with_surface_size(size);
         }
         let result = event_loop
             .create_window(attrs)
             .map_err(|error| error.to_string())
             .and_then(|window| {
-                let window = Arc::new(window);
+                let window = Arc::<dyn Window>::from(window);
                 let surface = renderer
                     .create_native_ui_surface(window.clone())
                     .map_err(|error| error.to_string())?;
@@ -824,12 +928,12 @@ impl NativeWindows {
         let input = egui_winit::State::new(
             root_context.clone(),
             viewport(panel),
-            window.as_ref(),
+            &window,
             Some(window.scale_factor() as f32),
             window.theme(),
             Some(renderer.device.limits().max_texture_dimension_2d as usize),
         );
-        let chrome = chrome::Chrome::new(root_context, &window);
+        let chrome = chrome::Chrome::new(root_context, window.as_ref());
         self.hosts.push(Host {
             id,
             panel,
@@ -839,8 +943,7 @@ impl NativeWindows {
             window,
             textures: NativeTextures::default(),
             input,
-            #[cfg(windows)]
-            drag_modifiers: egui::Modifiers::NONE,
+            drag_origin: None,
             handover: EguiHandOver::default(),
             chrome,
             stage: Stage::Opening,
@@ -919,9 +1022,9 @@ impl NativeWindows {
 }
 
 pub(super) struct View<'a> {
-    pub event_loop: &'a ActiveEventLoop,
+    pub event_loop: &'a dyn ActiveEventLoop,
     pub renderer: &'a mut Renderer,
-    pub root: &'a Window,
+    pub root: &'a dyn Window,
     pub context: &'a egui::Context,
     pub palette: &'a Palette,
     pub shadow: &'a mut EguiShadow,
@@ -936,6 +1039,8 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
         Panel::About => "about",
         Panel::GridStatus => "grid-status",
         Panel::WorldMap => "world-map",
+        Panel::People => "people",
+        Panel::Places => "places",
         Panel::Bumps => "bumps",
         Panel::GroupTitles => "group-titles",
         Panel::RegionTracker => "region-tracker",
@@ -947,7 +1052,7 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
 
 fn remember_placement(placements: &mut BTreeMap<Panel, placement::Geometry>, ctx: &egui::Context, host: &mut Host) {
     host.geometry_changed = None;
-    if let Some(geometry) = placement::Geometry::from_window(&host.window, host.chrome.is_maximized(&host.window)) {
+    if let Some(geometry) = placement::Geometry::from_window(host.window.as_ref(), host.chrome.is_maximized(host.window.as_ref())) {
         placements.insert(host.panel, geometry);
         if let Some(key) = placement_key(host.panel) {
             ctx.data_mut(|data| data.insert_persisted(key, geometry));
