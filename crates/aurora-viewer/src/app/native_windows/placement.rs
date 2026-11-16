@@ -1,6 +1,8 @@
 //! Desktop placement is independent of the embedded floater layout.
 
-use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+#[cfg(windows)]
+use winit::dpi::PhysicalSize;
+use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event_loop::ActiveEventLoop;
 use winit::monitor::MonitorHandle;
 use winit::window::Window;
@@ -22,18 +24,18 @@ struct Area {
 }
 
 impl Geometry {
-    pub(super) fn from_window(window: &Window, maximized: bool) -> Option<Self> {
+    pub(super) fn from_window(window: &dyn Window, maximized: bool) -> Option<Self> {
         if maximized || window.is_minimized() == Some(true) {
             return None;
         }
         let monitor = window.current_monitor()?;
-        let area = Area::of(&monitor);
+        let area = Area::of(&monitor)?;
         let position = window.outer_position().ok()?;
-        let size = window.inner_size();
+        let size = window.surface_size();
         if size.width == 0 || size.height == 0 {
             return None;
         }
-        let origin = monitor.position();
+        let origin = monitor.position()?;
         Some(Self {
             monitor: [origin.x, origin.y],
             offset: [position.x.saturating_sub(area.left), position.y.saturating_sub(area.top)]
@@ -42,16 +44,13 @@ impl Geometry {
         })
     }
 
-    pub(super) fn restore(self, event_loop: &ActiveEventLoop) -> Option<(PhysicalPosition<i32>, LogicalSize<f64>)> {
+    pub(super) fn restore(self, event_loop: &dyn ActiveEventLoop) -> Option<(PhysicalPosition<i32>, LogicalSize<f64>)> {
         let monitor = event_loop
             .available_monitors()
-            .find(|monitor| {
-                let p = monitor.position();
-                [p.x, p.y] == self.monitor
-            })
+            .find(|monitor| monitor.position().is_some_and(|p| [p.x, p.y] == self.monitor))
             .or_else(|| event_loop.primary_monitor())
             .or_else(|| event_loop.available_monitors().next())?;
-        Some(self.fit(Area::of(&monitor)))
+        Some(self.fit(Area::of(&monitor)?))
     }
 
     fn fit(self, area: Area) -> (PhysicalPosition<i32>, LogicalSize<f64>) {
@@ -75,40 +74,39 @@ impl Geometry {
 }
 
 impl Area {
-    fn of(monitor: &MonitorHandle) -> Self {
+    fn of(monitor: &MonitorHandle) -> Option<Self> {
         #[cfg(windows)]
         if let Some((position, size)) = windows_work_area(monitor) {
-            return Self {
+            return Some(Self {
                 left: position.x,
                 top: position.y,
                 width: size.width,
                 height: size.height,
                 scale: monitor.scale_factor(),
-            };
+            });
         }
-        let position = monitor.position();
-        let size = monitor.size();
-        Self {
+        let position = monitor.position()?;
+        let size = monitor.current_video_mode()?.size();
+        Some(Self {
             left: position.x,
             top: position.y,
             width: size.width,
             height: size.height,
             scale: monitor.scale_factor(),
-        }
+        })
     }
 }
 
 #[cfg(windows)]
 fn windows_work_area(monitor: &MonitorHandle) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
     use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
-    use winit::platform::windows::MonitorHandleExtWindows;
 
     let mut info = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
     // SAFETY: This handle is from winit and the correctly sized structure is local.
-    if unsafe { GetMonitorInfoW(monitor.hmonitor() as _, &mut info) } == 0 {
+    if unsafe { GetMonitorInfoW(monitor.native_id() as usize as _, &mut info) } == 0 {
         return None;
     }
     let work = info.rcWork;

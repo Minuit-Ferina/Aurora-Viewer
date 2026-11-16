@@ -63,13 +63,17 @@ impl ScreenRate {
 
     /// Follow the window: at most once per `PERIOD`, the screen it is on and
     /// the rate of that screen's current mode. Changes go to the log.
-    pub fn poll(&mut self, window: &Window, now: Instant) {
+    pub fn poll(&mut self, window: &dyn Window, now: Instant) {
         if !due(self.checked, now) {
             return;
         }
         self.checked = Some(now);
         let monitor = window.current_monitor();
-        let hz = rate_hz(monitor.as_ref().and_then(|m| m.refresh_rate_millihertz()));
+        let hz = rate_hz(
+            monitor
+                .as_ref()
+                .and_then(|m| m.current_video_mode()?.refresh_rate_millihertz().map(std::num::NonZeroU32::get)),
+        );
         if monitor != self.monitor || hz != self.hz {
             let name = monitor.as_ref().and_then(|m| m.name()).unwrap_or_else(|| "unknown".into());
             log::info!("screen under the window: {name}, {hz:.0} Hz");

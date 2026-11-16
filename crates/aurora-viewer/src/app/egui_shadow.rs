@@ -111,7 +111,7 @@ impl EguiShadow {
     pub fn bytes(&self) -> usize {
         self.images
             .values()
-            .map(|d| d.full.image.size()[0] * d.full.image.size()[1] * 4)
+            .map(|d| d.full.image.resolution()[0] * d.full.image.resolution()[1] * 4)
             .sum()
     }
 }
@@ -131,12 +131,12 @@ fn visit_textures(shape: &Shape, visit: &mut impl FnMut(TextureId)) {
 fn patch(whole: &mut ImageDelta, part: &ImageData, pos: [usize; 2]) {
     let (ImageData::Color(dst), ImageData::Color(src)) = (&mut whole.image, part);
     let dst = std::sync::Arc::make_mut(dst);
-    let [w, h] = dst.size;
-    let [pw, ph] = src.size;
+    let [w, h] = dst.resolution();
+    let [pw, ph] = src.resolution();
     for row in 0..ph.min(h.saturating_sub(pos[1])) {
         let width = pw.min(w.saturating_sub(pos[0]));
         let at = (pos[1] + row) * w + pos[0];
-        dst.pixels[at..at + width].copy_from_slice(&src.pixels[row * pw..row * pw + width]);
+        dst.pixels_mut()[at..at + width].copy_from_slice(&src.pixels()[row * pw..row * pw + width]);
     }
 }
 
@@ -158,7 +158,7 @@ mod tests {
 
     fn pixels(d: &ImageDelta) -> Vec<Color32> {
         let ImageData::Color(c) = &d.image;
-        c.pixels.clone()
+        c.pixels().to_vec()
     }
 
     #[test]

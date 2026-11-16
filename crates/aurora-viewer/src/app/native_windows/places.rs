@@ -55,7 +55,7 @@ impl App {
         self.native_windows.reconcile(Panel::Places, visible && self.panels.places);
     }
 
-    pub(super) fn paint_desktop_places(&mut self, event_loop: &ActiveEventLoop) {
+    pub(super) fn paint_desktop_places(&mut self, event_loop: &dyn ActiveEventLoop) {
         let ctx = self.egui_ctx.clone();
         let modal = self.exit_prompt.open;
         let classic = self.settings.classic_places || self.places_ui.demo_classic;
@@ -72,7 +72,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

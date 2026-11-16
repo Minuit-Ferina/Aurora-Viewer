@@ -16,7 +16,7 @@ impl App {
         });
     }
 
-    pub(super) fn paint_desktop_script(&mut self, event_loop: &ActiveEventLoop, target: ScriptTarget) {
+    pub(super) fn paint_desktop_script(&mut self, event_loop: &dyn ActiveEventLoop, target: ScriptTarget) {
         self.refresh_script_presenters();
         let arm_before = self.color_pipette();
         let ctx = self.egui_ctx.clone();
@@ -29,7 +29,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

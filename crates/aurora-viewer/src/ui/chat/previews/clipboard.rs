@@ -104,9 +104,9 @@ mod native {
     /// Explorer paste still has its source. Re-copying reuses the same file;
     /// the viewer's normal cache clearing owns their lifetime.
     fn prepare(root: &Path, image: &ColorImage) -> Result<(PathBuf, Vec<u8>), String> {
-        let rgba: Vec<u8> = image.pixels.iter().flat_map(|pixel| pixel.to_srgba_unmultiplied()).collect();
+        let rgba: Vec<u8> = image.pixels().iter().flat_map(|pixel| pixel.to_srgba_unmultiplied()).collect();
         let mut hash = std::collections::hash_map::DefaultHasher::new();
-        image.size.hash(&mut hash);
+        image.resolution().hash(&mut hash);
         rgba.hash(&mut hash);
         let path = root.join(format!("Aurora-image-{:016x}.png", hash.finish()));
         std::fs::create_dir_all(root).map_err(|error| error.to_string())?;

@@ -44,7 +44,7 @@ pub(super) fn read(path: &Path, convert_tabs: bool) -> Result<String, String> {
     Ok(source)
 }
 
-pub(super) fn open(convert_tabs: bool, parent: Option<Arc<winit::window::Window>>) -> Job {
+pub(super) fn open(convert_tabs: bool, parent: Option<Arc<dyn winit::window::Window>>) -> Job {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         // LLFilePicker's script filter: LSL and SLua (*.lsl; *.lua; *.luau)
@@ -69,7 +69,7 @@ fn extension(lua: bool) -> &'static str {
     if lua { "luau" } else { "lsl" }
 }
 
-pub(super) fn save(name: String, source: String, lua: bool, parent: Option<Arc<winit::window::Window>>) -> Job {
+pub(super) fn save(name: String, source: String, lua: bool, parent: Option<Arc<dyn winit::window::Window>>) -> Job {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let done = match dialog(parent.as_deref())
@@ -88,7 +88,7 @@ pub(super) fn save(name: String, source: String, lua: bool, parent: Option<Arc<w
     Job(rx, true)
 }
 
-fn dialog(parent: Option<&winit::window::Window>) -> rfd::FileDialog {
+fn dialog(parent: Option<&dyn winit::window::Window>) -> rfd::FileDialog {
     let dialog = rfd::FileDialog::new();
     if let Some(parent) = parent {
         dialog.set_parent(parent)

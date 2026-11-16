@@ -18,7 +18,7 @@
 use winit::window::Window;
 
 /// Show the startup window, maximized when `maximized`.
-pub fn show(window: &Window, maximized: bool) {
+pub fn show(window: &dyn Window, maximized: bool) {
     #[cfg(windows)]
     imp::show_native(window, maximized);
     // winit's own state: visible first (a maximize on a window it thinks
@@ -46,7 +46,7 @@ mod imp {
         if maximized { SW_SHOWMAXIMIZED } else { SW_SHOW }
     }
 
-    pub fn show_native(window: &winit::window::Window, maximized: bool) {
+    pub fn show_native(window: &dyn winit::window::Window, maximized: bool) {
         let Ok(handle) = window.window_handle() else {
             return;
         };

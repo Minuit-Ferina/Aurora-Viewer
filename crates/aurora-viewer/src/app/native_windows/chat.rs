@@ -173,7 +173,7 @@ impl App {
         }
     }
 
-    pub(in crate::app) fn pump_native_windows(&mut self, event_loop: &ActiveEventLoop) {
+    pub(in crate::app) fn pump_native_windows(&mut self, event_loop: &dyn ActiveEventLoop) {
         let panel = Panel::Conversations;
         let allowed = self.in_world() && !ui::widgets::chat_windows_hidden(&self.egui_ctx);
         self.native_windows.reconcile(panel, allowed && self.panels.chat);
@@ -243,7 +243,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

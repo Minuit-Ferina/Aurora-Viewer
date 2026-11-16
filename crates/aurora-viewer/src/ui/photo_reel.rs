@@ -64,7 +64,7 @@ pub fn cover_uv(size: Vec2, want: f32) -> Rect {
 pub fn picture(painter: &egui::Painter, p: &Palette, rect: Rect, radius: egui::CornerRadius, tex: Option<&egui::TextureHandle>) {
     painter.rect_filled(rect, radius, p.field);
     if let Some(t) = tex {
-        let uv = cover_uv(t.size_vec2(), rect.width() / rect.height().max(1.0));
+        let uv = cover_uv(t.resolution_vec2(), rect.width() / rect.height().max(1.0));
         // the corners of the frame kept: the picture drawn as a textured
         // rounded rectangle
         painter.add(egui::epaint::RectShape::filled(rect, radius, widgets::PICTURE_TINT).with_texture(t.id(), uv));
@@ -105,7 +105,7 @@ pub fn print(painter: &egui::Painter, p: &Palette, pic: Rect, edge: f32, angle: 
     painter.add(RectShape::filled(paper, radius, p.ink).with_angle(angle));
     painter.add(RectShape::filled(pic, radius, p.field).with_angle(angle));
     if let Some(t) = tex {
-        let uv = cover_uv(t.size_vec2(), pic.width() / pic.height().max(1.0));
+        let uv = cover_uv(t.resolution_vec2(), pic.width() / pic.height().max(1.0));
         painter.add(
             RectShape::filled(pic, radius, widgets::PICTURE_TINT)
                 .with_texture(t.id(), uv)

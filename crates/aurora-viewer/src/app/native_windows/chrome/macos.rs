@@ -8,7 +8,7 @@ use objc2_core_foundation::CGRect;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::Window;
 
-fn ns_window(window: &Window) -> Option<Retained<NSWindow>> {
+fn ns_window(window: &dyn Window) -> Option<Retained<NSWindow>> {
     MainThreadMarker::new()?;
     let handle = window.window_handle().ok()?;
     let RawWindowHandle::AppKit(raw) = handle.as_raw() else {
@@ -32,7 +32,7 @@ impl Zoom {
         self.restore_frame.get().is_some()
     }
 
-    pub(super) fn toggle(&self, window: &Window) {
+    pub(super) fn toggle(&self, window: &dyn Window) {
         let Some(window) = ns_window(window) else { return };
         if let Some(frame) = self.restore_frame.take() {
             window.setFrame_display(frame, true);

@@ -1233,7 +1233,7 @@ fn rasterize_objects(world: &World, center: (f64, f64), size: usize, tpm: f32, o
         let n = size as i64;
         for y in (ty - neg).max(0)..(ty + pos).min(n) {
             for x in (tx - neg).max(0)..(tx + pos).min(n) {
-                img.pixels[(y * n + x) as usize] = col;
+                img.pixels_mut()[(y * n + x) as usize] = col;
             }
         }
     }
@@ -1253,7 +1253,7 @@ fn rasterize_parcels(world: &World, center: (f64, f64), size: usize, tpm: f32, f
     };
     let mut put = |x: i64, y: i64, c: [u8; 4]| {
         if x >= 0 && y >= 0 && x < n && y < n {
-            img.pixels[(y * n + x) as usize] = Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+            img.pixels_mut()[(y * n + x) as usize] = Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
         }
     };
     let half_m = size as f64 / tpm as f64 * 0.5;

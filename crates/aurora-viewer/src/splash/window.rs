@@ -10,7 +10,7 @@ use crate::ui::widgets;
 use egui::{RichText, Vec2};
 use std::io::{BufRead, Write};
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
@@ -33,7 +33,8 @@ enum Input {
 }
 
 pub fn run() -> anyhow::Result<()> {
-    let event_loop = EventLoop::<Input>::with_user_event().build()?;
+    use winit::event_loop::run_on_demand::EventLoopExtRunOnDemand;
+    let mut event_loop = EventLoop::new()?;
     let proxy = event_loop.create_proxy();
     let demo = std::env::var_os("AURORA_DEMO").is_some();
     // `AURORA_DEMO_SPLASH=<step>`: that step shown whatever the viewer says
@@ -48,7 +49,8 @@ pub fn run() -> anyhow::Result<()> {
         .and_then(|s| s.trim().parse::<f32>().ok())
         .filter(|s| s.is_finite() && *s > 0.0)
         .map(|s| Duration::from_secs_f32(s.min(600.0)));
-    spawn_reader(proxy)?;
+    let (sender, messages) = mpsc::channel();
+    spawn_reader(sender, proxy)?;
     let context = egui::Context::default();
     let theme = crate::theme::Theme::default();
     theme.apply(&context, 1.0);
@@ -58,6 +60,7 @@ pub fn run() -> anyhow::Result<()> {
     crate::ui::fonts::apply(&context, "");
     let mut app = Splash {
         context,
+        messages,
         palette: theme.palette(),
         painter: Default::default(),
         surface: None,
@@ -77,7 +80,7 @@ pub fn run() -> anyhow::Result<()> {
         next_repaint: Some(Instant::now()),
         error: None,
     };
-    event_loop.run_app(&mut app)?;
+    event_loop.run_app_on_demand(&mut app)?;
     if let Some(error) = app.error {
         anyhow::bail!(error);
     }
@@ -85,28 +88,31 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 /// Reads the viewer's lines; its end (the viewer gone) closes the splash.
-fn spawn_reader(proxy: EventLoopProxy<Input>) -> std::io::Result<()> {
+fn spawn_reader(sender: mpsc::Sender<Input>, proxy: EventLoopProxy) -> std::io::Result<()> {
     std::thread::Builder::new().name("aurora-splash-input".into()).spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
-            if let Some(message) = Message::parse(&line)
-                && proxy.send_event(Input::Message(message)).is_err()
-            {
-                return;
+            if let Some(message) = Message::parse(&line) {
+                if sender.send(Input::Message(message)).is_err() {
+                    return;
+                }
+                proxy.wake_up();
             }
         }
-        let _ = proxy.send_event(Input::Closed);
+        let _ = sender.send(Input::Closed);
+        proxy.wake_up();
     })?;
     Ok(())
 }
 
 struct Splash {
+    messages: mpsc::Receiver<Input>,
     context: egui::Context,
     palette: Palette,
     painter: crate::crash::software::Painter,
-    surface: Option<softbuffer::Surface<OwnedDisplayHandle, Arc<Window>>>,
-    window: Option<Arc<Window>>,
+    surface: Option<softbuffer::Surface<OwnedDisplayHandle, Arc<dyn Window>>>,
+    window: Option<Arc<dyn Window>>,
     input: Option<egui_winit::State>,
     /// The card under the content, painted once for a size.
     background: Option<([usize; 2], Vec<u32>)>,
@@ -129,7 +135,7 @@ struct Splash {
 impl Splash {
     /// Closes now, or once `AURORA_DEMO_SPLASH_HOLD` has passed (a held
     /// splash shows first, for its capture).
-    fn close(&mut self, event_loop: &ActiveEventLoop) {
+    fn close(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.closing = true;
         if self.hold.is_none() {
             self.capture();
@@ -144,7 +150,7 @@ impl Splash {
         let (Some(window), false) = (&self.window, self.last_pixels.is_empty()) else {
             return;
         };
-        let size = window.inner_size();
+        let size = window.surface_size();
         let rgba: Vec<u8> = self
             .last_pixels
             .iter()
@@ -192,9 +198,9 @@ impl Splash {
         });
     }
 
-    fn render(&mut self, event_loop: &ActiveEventLoop) -> anyhow::Result<()> {
+    fn render(&mut self, event_loop: &dyn ActiveEventLoop) -> anyhow::Result<()> {
         let window = self.window.clone().ok_or_else(|| anyhow::anyhow!("no splash window"))?;
-        let size = window.inner_size();
+        let size = window.surface_size();
         let (Some(width), Some(height)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return Ok(());
         };
@@ -202,7 +208,7 @@ impl Splash {
             .input
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("no splash input"))?
-            .take_egui_input(&window);
+            .take_egui_input(window.as_ref());
         let context = self.context.clone();
         let output = context.run_ui(raw, |ui| self.content(ui));
         let ppp = output.pixels_per_point;
@@ -301,9 +307,9 @@ fn background(p: &Palette, ctx: &egui::Context, rect: egui::Rect) -> Vec<egui::e
 }
 
 /// Centred on the screen the viewer will most likely open on.
-fn centred(event_loop: &ActiveEventLoop) -> Option<winit::dpi::PhysicalPosition<i32>> {
+fn centred(event_loop: &dyn ActiveEventLoop) -> Option<winit::dpi::PhysicalPosition<i32>> {
     let monitor = event_loop.primary_monitor().or_else(|| event_loop.available_monitors().next())?;
-    let (pos, size, scale) = (monitor.position(), monitor.size(), monitor.scale_factor());
+    let (pos, size, scale) = (monitor.position()?, monitor.current_video_mode()?.size(), monitor.scale_factor());
     let (w, h) = ((SIZE.x as f64 * scale) as i32, (SIZE.y as f64 * scale) as i32);
     Some(winit::dpi::PhysicalPosition::new(
         pos.x + (size.width as i32 - w) / 2,
@@ -311,30 +317,32 @@ fn centred(event_loop: &ActiveEventLoop) -> Option<winit::dpi::PhysicalPosition<
     ))
 }
 
-impl ApplicationHandler<Input> for Splash {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl ApplicationHandler for Splash {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.window.is_some() {
             return;
         }
         let setup = || -> anyhow::Result<_> {
-            let mut attrs = crate::cli::with_desktop_id(Window::default_attributes())
+            let mut attrs = crate::cli::with_desktop_id(winit::window::WindowAttributes::default(), event_loop)
                 .with_title(crate::cli::window_title())
                 .with_decorations(false)
                 .with_resizable(false)
                 .with_visible(false)
-                .with_inner_size(winit::dpi::LogicalSize::new(SIZE.x, SIZE.y));
+                .with_surface_size(winit::dpi::LogicalSize::new(SIZE.x, SIZE.y));
             if let Some(at) = centred(event_loop) {
                 attrs = attrs.with_position(at);
             }
             #[cfg(windows)]
             {
-                use winit::platform::windows::{CornerPreference, WindowAttributesExtWindows};
+                use winit::platform::windows::{CornerPreference, WindowAttributesWindows};
                 // almost square corners and the shadow of a window
-                attrs = attrs
-                    .with_corner_preference(CornerPreference::RoundSmall)
-                    .with_undecorated_shadow(true);
+                attrs = attrs.with_platform_attributes(Box::new(
+                    WindowAttributesWindows::default()
+                        .with_corner_preference(CornerPreference::RoundSmall)
+                        .with_undecorated_shadow(true),
+                ));
             }
-            let window = Arc::new(event_loop.create_window(attrs)?);
+            let window = Arc::<dyn Window>::from(event_loop.create_window(attrs)?);
             let display = softbuffer::Context::new(event_loop.owned_display_handle()).map_err(|e| anyhow::anyhow!("{e}"))?;
             let surface = softbuffer::Surface::new(&display, window.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
             let input = egui_winit::State::new(
@@ -361,25 +369,27 @@ impl ApplicationHandler<Input> for Splash {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, input: Input) {
-        match input {
-            Input::Message(Message::Step(step)) => {
-                if !self.forced && step != self.step {
-                    self.step = step;
-                    self.next_repaint = Some(Instant::now());
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Ok(input) = self.messages.try_recv() {
+            match input {
+                Input::Message(Message::Step(step)) => {
+                    if !self.forced && step != self.step {
+                        self.step = step;
+                        self.next_repaint = Some(Instant::now());
+                    }
                 }
-            }
-            Input::Message(Message::Version(version)) => {
-                if version != self.version {
-                    self.version = version;
-                    self.next_repaint = Some(Instant::now());
+                Input::Message(Message::Version(version)) => {
+                    if version != self.version {
+                        self.version = version;
+                        self.next_repaint = Some(Instant::now());
+                    }
                 }
+                Input::Message(Message::Done) | Input::Closed => self.close(event_loop),
             }
-            Input::Message(Message::Done) | Input::Closed => self.close(event_loop),
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             // nothing to cancel: the viewer goes on starting behind it
             WindowEvent::CloseRequested => {}
@@ -391,13 +401,13 @@ impl ApplicationHandler<Input> for Splash {
             }
             event => {
                 if let (Some(input), Some(window)) = (&mut self.input, &self.window) {
-                    let _ = input.on_window_event(window, &event);
+                    let _ = input.on_window_event(window.as_ref(), event_loop, &event);
                 }
             }
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         // asked to close and held long enough (`AURORA_DEMO_SPLASH_HOLD`)
         let leave = self.closing.then(|| self.opened + self.hold.unwrap_or_default());
         if leave.is_some_and(|t| Instant::now() >= t) && self.shown {

@@ -994,11 +994,11 @@ mod tests {
         assert!(triangles[1] >= 12 && triangles[1] < triangles[0]);
         assert_eq!(triangles[2], 2342);
         let thumbs = material_thumbnails(&source);
-        assert!(
-            thumbs
-                .iter()
-                .all(|thumb| thumb.as_ref().is_some_and(|(key, image)| *key == map.key && image.size == [1, 1]))
-        );
+        assert!(thumbs.iter().all(|thumb| {
+            thumb
+                .as_ref()
+                .is_some_and(|(key, image)| *key == map.key && image.resolution() == [1, 1])
+        }));
     }
 
     #[test]

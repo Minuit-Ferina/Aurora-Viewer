@@ -371,7 +371,7 @@ impl Pictures {
         self.map
             .values()
             .map(|s| match s {
-                Slot::Ready(t, _) => t.size()[0] * t.size()[1] * 4,
+                Slot::Ready(t, _) => t.resolution()[0] * t.resolution()[1] * 4,
                 _ => 0,
             })
             .sum()

@@ -123,7 +123,7 @@ fn tile(ui: &mut egui::Ui, p: &Palette, v: &View, world: &World, pics: &Pictures
     let radius = ui.visuals().window_corner_radius;
     let uv = match pics.map {
         Some(t) => {
-            let [w, h] = t.size();
+            let [w, h] = t.resolution();
             let uv = sheet::cover_uv(w, h, rect.size());
             egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
                 .uv(uv)

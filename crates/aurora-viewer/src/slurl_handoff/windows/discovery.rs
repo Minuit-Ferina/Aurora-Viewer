@@ -16,7 +16,7 @@ static PUBLISHED: Mutex<Option<Published>> = Mutex::new(None);
 struct Published {
     registration: Registration,
     // Keep the HWND alive until its properties have been removed.
-    _window: Arc<Window>,
+    _window: Arc<dyn Window>,
 }
 
 #[derive(Clone)]
@@ -112,7 +112,7 @@ impl Drop for Registration {
     }
 }
 
-pub(super) fn publish(window: &Arc<Window>) {
+pub(super) fn publish(window: &Arc<dyn Window>) {
     let Ok(handle) = window.window_handle() else { return };
     let RawWindowHandle::Win32(handle) = handle.as_raw() else { return };
     let mut published = PUBLISHED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);

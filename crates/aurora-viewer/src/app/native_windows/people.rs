@@ -54,8 +54,8 @@ impl App {
         self.native_windows.reconcile(Panel::People, visible && self.panels.people);
     }
 
-    pub(super) fn paint_desktop_people(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(root) = self.gfx.as_ref().map(|gfx| gfx.window.inner_size()) else {
+    pub(super) fn paint_desktop_people(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let Some(root) = self.gfx.as_ref().map(|gfx| gfx.window.surface_size()) else {
             return;
         };
         let camera = self.map_camera(egui::vec2(root.width as f32, root.height as f32));
@@ -75,7 +75,7 @@ impl App {
             View {
                 event_loop,
                 renderer: &mut gfx.renderer,
-                root: &gfx.window,
+                root: gfx.window.as_ref(),
                 context: &ctx,
                 palette: &self.palette,
                 shadow: &mut self.egui_shadow,

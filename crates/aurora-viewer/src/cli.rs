@@ -274,13 +274,22 @@ impl TitleParts<'_> {
 pub const DESKTOP_ID: &str = "aurora-viewer";
 
 /// Window attributes with the [`DESKTOP_ID`] on Linux; elsewhere unchanged.
-pub fn with_desktop_id(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+pub fn with_desktop_id(
+    attrs: winit::window::WindowAttributes,
+    _event_loop: &dyn winit::event_loop::ActiveEventLoop,
+) -> winit::window::WindowAttributes {
     #[cfg(target_os = "linux")]
     {
-        // one field behind both traits: the Wayland app_id is `general`,
-        // the X11 WM_CLASS is (`instance`, `general`)
-        use winit::platform::wayland::WindowAttributesExtWayland;
-        attrs.with_name(DESKTOP_ID, DESKTOP_ID)
+        use wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+        match _event_loop.display_handle().map(|handle| handle.as_raw()) {
+            Ok(RawDisplayHandle::Wayland(_)) => attrs.with_platform_attributes(Box::new(
+                winit::platform::wayland::WindowAttributesWayland::default().with_name(DESKTOP_ID, DESKTOP_ID),
+            )),
+            Ok(RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_)) => attrs.with_platform_attributes(Box::new(
+                winit::platform::x11::WindowAttributesX11::default().with_name(DESKTOP_ID, DESKTOP_ID),
+            )),
+            _ => attrs,
+        }
     }
     #[cfg(not(target_os = "linux"))]
     attrs

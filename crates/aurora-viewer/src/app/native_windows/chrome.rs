@@ -23,13 +23,15 @@ pub(super) fn attributes(attrs: WindowAttributes) -> WindowAttributes {
     let attrs = attrs.with_enabled_buttons(WindowButtons::all() - WindowButtons::MINIMIZE);
     #[cfg(windows)]
     {
-        use winit::platform::windows::WindowAttributesExtWindows;
-        attrs.with_decorations(false).with_undecorated_shadow(true)
+        use winit::platform::windows::WindowAttributesWindows;
+        attrs
+            .with_decorations(false)
+            .with_platform_attributes(Box::new(WindowAttributesWindows::default().with_undecorated_shadow(true)))
     }
     #[cfg(target_os = "macos")]
     {
-        use winit::platform::macos::WindowAttributesExtMacOS;
-        attrs.with_titlebar_hidden(true)
+        use winit::platform::macos::WindowAttributesMacOS;
+        attrs.with_platform_attributes(Box::new(WindowAttributesMacOS::default().with_titlebar_hidden(true)))
     }
     #[cfg(target_os = "linux")]
     {
@@ -61,7 +63,7 @@ pub(super) struct Caption {
 }
 
 impl Chrome {
-    pub(super) fn new(ctx: &egui::Context, window: &Window) -> Self {
+    pub(super) fn new(ctx: &egui::Context, window: &dyn Window) -> Self {
         #[cfg(windows)]
         let caption = win32::Caption::install(window);
         #[cfg(windows)]
@@ -91,7 +93,7 @@ impl Chrome {
         }
     }
 
-    pub(super) fn show(&self, ui: &mut egui::Ui, palette: &Palette, window: &Window) -> Caption {
+    pub(super) fn show(&self, ui: &mut egui::Ui, palette: &Palette, window: &dyn Window) -> Caption {
         let custom = self.custom;
         let mut action = None;
         // The panel's layout decides whether to draw a divider. Keep the
@@ -150,7 +152,7 @@ impl Chrome {
         }
     }
 
-    pub(super) fn finish(&self, mut row: Caption, palette: &Palette, window: &Window, title: &str) {
+    pub(super) fn finish(&self, mut row: Caption, palette: &Palette, window: &dyn Window, title: &str) {
         if !self.custom {
             return;
         }
@@ -172,16 +174,16 @@ impl Chrome {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    pub(super) fn event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
+    pub(super) fn event(&mut self, window: &dyn Window, event: &winit::event::WindowEvent) -> bool {
         self.client.event(window, event)
     }
 
     #[cfg(target_os = "linux")]
-    pub(super) fn resize_cursor(&self, window: &Window) -> Option<egui::CursorIcon> {
+    pub(super) fn resize_cursor(&self, window: &dyn Window) -> Option<egui::CursorIcon> {
         self.client.resize_cursor(window)
     }
 
-    pub(super) fn is_maximized(&self, window: &Window) -> bool {
+    pub(super) fn is_maximized(&self, window: &dyn Window) -> bool {
         #[cfg(target_os = "macos")]
         {
             let _ = window;

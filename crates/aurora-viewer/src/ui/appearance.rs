@@ -937,7 +937,7 @@ fn gallery(
                             st.wanted_images.insert(image);
                         }
                         if let Some(t) = images.get(&image) {
-                            let (image_rect, uv) = preview_rects(rect.shrink(3.0), t.size_vec2(), st.fill_previews);
+                            let (image_rect, uv) = preview_rects(rect.shrink(3.0), t.resolution_vec2(), st.fill_previews);
                             ui.painter().image(t.id(), image_rect, uv, widgets::PICTURE_TINT);
                         } else if let Some(t) = icons::global("hanger-2-filled") {
                             ui.painter().image(

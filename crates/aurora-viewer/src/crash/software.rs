@@ -41,8 +41,8 @@ impl Painter {
                                 continue;
                             }
                             let start = (y + row) * texture.width() + x;
-                            texture.pixels[start..start + image.width()]
-                                .copy_from_slice(&image.pixels[row * image.width()..(row + 1) * image.width()]);
+                            texture.pixels_mut()[start..start + image.width()]
+                                .copy_from_slice(&image.pixels()[row * image.width()..(row + 1) * image.width()]);
                         }
                     }
                 } else {

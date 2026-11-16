@@ -68,7 +68,7 @@ pub fn paces(period: Option<Duration>) -> bool {
 
 /// Called for every main window (at start and after a GPU recovery), on
 /// the thread that created it.
-pub fn install(window: &Window) {
+pub fn install(window: &dyn Window) {
     #[cfg(windows)]
     if std::env::var("AURORA_WINDOW_HOLD").as_deref() != Ok("0") {
         imp::install(window);
@@ -136,7 +136,7 @@ mod imp {
         (point.x, point.y)
     }
 
-    pub fn install(window: &winit::window::Window) {
+    pub fn install(window: &dyn winit::window::Window) {
         let Ok(handle) = window.window_handle() else {
             return;
         };
