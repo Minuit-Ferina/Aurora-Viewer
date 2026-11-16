@@ -5022,7 +5022,12 @@ impl App {
             Action::NearbyChat => self.chat_ui.toggle_nearby_chat(&self.egui_ctx, &mut self.panels.chat),
             Action::Conversations => ui::widgets::toggle_floater(&self.egui_ctx, "conversations", &mut self.panels.chat),
             Action::People => {
-                ui::widgets::toggle_floater(&self.egui_ctx, "people", &mut self.panels.people);
+                let panel = native_windows::Panel::People;
+                if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "people", &mut self.panels.people);
+                }
                 self.panels.people_tab = 0;
             }
             Action::Friends => self.people_tab_shortcut(ui::people::TAB_FRIENDS),
@@ -15451,6 +15456,16 @@ impl App {
                 kind => self.open_env_editor_snapshot(kind),
             },
             BarAction::TeleportHistory => self.toggle_teleport_history(),
+            BarAction::ShowPeople(tab) => self.show_people_tab(tab),
+            BarAction::TogglePeopleTab(tab) => self.people_tab_shortcut(tab),
+            BarAction::TogglePlaces => {
+                let panel = native_windows::Panel::Places;
+                if self.native_windows.is_native(panel) {
+                    self.native_windows.reveal(panel);
+                } else {
+                    ui::widgets::toggle_floater(&self.egui_ctx, "places", &mut self.panels.places);
+                }
+            }
             BarAction::CreateLandmark => self.open_create_landmark(None),
             BarAction::PhotoToDisk => self.photo_to_disk(),
             BarAction::PhotoRoll => self.photo_reel_show_newest(),
@@ -15711,6 +15726,7 @@ impl App {
     fn open_places_favorites(&mut self) {
         self.places_ui.tab = 0;
         ui::widgets::open_floater(&self.egui_ctx, "places", &mut self.panels.places);
+        self.native_windows.reveal(native_windows::Panel::Places);
     }
 
     /// A click in the favourites of the islands.
@@ -16340,8 +16356,7 @@ impl App {
                     list_in_profile,
                 } => self.world.groups.set_flags(group, accept_notices, list_in_profile),
                 GroupAction::ShowInPeople(name) => {
-                    self.panels.people = true;
-                    self.panels.people_tab = 2;
+                    self.show_people_tab(ui::people::TAB_GROUPS);
                     self.people_ui.filter = name;
                 }
                 GroupAction::LoadLand { group, ledger } => {
@@ -16377,7 +16392,12 @@ impl App {
     /// history floater: a minimized Places expands, a shown one hides on
     /// any tab, else it opens on the history.
     fn toggle_teleport_history(&mut self) {
-        if self.panels.places {
+        let panel = native_windows::Panel::Places;
+        if self.native_windows.is_native(panel) {
+            self.world.place_details.close_panel();
+            self.places_ui.open_tab(ui::places::TAB_HISTORY);
+            self.native_windows.reveal(panel);
+        } else if self.panels.places {
             ui::widgets::toggle_floater(&self.egui_ctx, "places", &mut self.panels.places);
         } else {
             self.world.place_details.close_panel();
@@ -17090,23 +17110,7 @@ impl App {
                 let held = self.photo_held(&ctx, &p);
                 // what belongs to the world first: the HUD attachments, the bars and
                 // every window cover the name tags, the floating texts and the beacon
-                let voice_levels = if self.demo {
-                    static VOICE_MODE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-                    let mut levels = crate::demo::voice_levels(
-                        ctx.input(|i| i.time),
-                        self.world.agent_id,
-                        self.settings.audio.voice_enabled,
-                        self.talking(),
-                        self.voice.mic_level,
-                        VOICE_MODE.get_or_init(|| std::env::var("AURORA_DEMO_VOICE").ok()).as_deref(),
-                    );
-                    crate::demo::tags::voice(&mut levels, ctx.input(|i| i.time));
-                    crate::demo::people::voice(&mut levels, ctx.input(|i| i.time));
-                    crate::demo::voice_controls::voice(&mut levels, ctx.input(|i| i.time));
-                    levels
-                } else {
-                    self.voice.levels(self.world.agent_id)
-                };
+                let voice_levels = self.ui_voice_levels(&ctx);
                 // who gets the voice row of the avatar menus
                 let me = self.world.agent_id;
                 self.world.calls.voice_peers.clear();
@@ -18425,7 +18429,14 @@ impl App {
                     log::warn!("cannot open the transcripts folder: {e}");
                 }
                 // their confirmations, also asked from the other menus
-                contact_actions.extend(ui::contacts::dialog_windows(&ctx, &p, &mut self.world, &mut self.contacts_ui));
+                let only_people = self.native_windows.is_native(native_windows::Panel::People).then_some(false);
+                contact_actions.extend(ui::contacts::dialog_windows(
+                    &ctx,
+                    &p,
+                    &mut self.world,
+                    &mut self.contacts_ui,
+                    only_people,
+                ));
                 // residents added to a conversation: a conversation with one
                 // resident that became a conference closes (FSFloaterIM::
                 // addP2PSessionParticipants)
@@ -18464,6 +18475,12 @@ impl App {
                     now: self.radar_clock.elapsed().as_secs_f64(),
                     pics: &self.avatar_pics,
                 };
+                let panel = native_windows::Panel::People;
+                let mut desktop = ui::widgets::DesktopPanels {
+                    live: self.native_windows.is_native(panel).then_some(()).into_iter().collect(),
+                    requested: Vec::new(),
+                };
+                self.contacts_ui.set_people_origin(true);
                 let people = ui::people::people_window(
                     &ctx,
                     &p,
@@ -18478,7 +18495,12 @@ impl App {
                     },
                     &mut people_map,
                     !self.settings.classic_people && !(self.demo && crate::demo::people::legacy()),
+                    ui::widgets::PanelHost::Viewer(&mut desktop),
                 );
+                self.contacts_ui.set_people_origin(false);
+                if !desktop.requested.is_empty() {
+                    self.native_windows.detach(panel, aurora_i18n::tr!("common-people").to_owned());
+                }
                 if self.settings.radar.alert_sounds != people_before.0.alert_sounds {
                     self.settings.audio.ui.set_radar_sounds(self.settings.radar.alert_sounds);
                 }
@@ -18486,7 +18508,10 @@ impl App {
                     self.settings.save();
                 }
                 // (and those of Conversations › Contacts, the same tab)
-                self.apply_people_actions(people.into_iter().chain(contacts_people), &mut a);
+                self.contacts_ui.set_people_origin(true);
+                self.apply_people_actions(people, &mut a);
+                self.contacts_ui.set_people_origin(false);
+                self.apply_people_actions(contacts_people, &mut a);
                 t = self.ui_parts.lap(Part::UiPeople, t);
                 self.poll_inventory_animation_stats();
                 self.show_imports(&ctx, &p);
@@ -19302,6 +19327,11 @@ impl App {
                     sort: self.settings.places_sort,
                     favorites: &favorites_order,
                 });
+                let panel = native_windows::Panel::Places;
+                let mut desktop = ui::widgets::DesktopPanels {
+                    live: self.native_windows.is_native(panel).then_some(()).into_iter().collect(),
+                    requested: Vec::new(),
+                };
                 let places_acts = self.places_ui.show(
                     &ctx,
                     &mut c,
@@ -19309,8 +19339,12 @@ impl App {
                     self.settings.landmarks_by_date,
                     self.settings.confirm_teleports,
                     places_env.as_ref(),
+                    ui::widgets::PanelHost::Viewer(&mut desktop),
                 );
                 self.panels.places = open;
+                if !desktop.requested.is_empty() {
+                    self.native_windows.detach(panel, aurora_i18n::tr!("common-places").to_owned());
+                }
                 for pa in window_acts {
                     match pa {
                         // FSFloaterPlaceDetails::onTeleportButtonClicked: no
@@ -19325,47 +19359,7 @@ impl App {
                         ui::place_details::PlaceAction::Close(serial) => self.world.place_details.close_window(serial),
                     }
                 }
-                for pa in places_acts {
-                    use ui::places::PlacesAction;
-                    match pa {
-                        PlacesAction::Teleport(g) => self.teleport_saved_place(g),
-                        PlacesAction::TeleportLandmark(asset) => a.landmark = Some(asset),
-                        PlacesAction::CreateLandmark(dest) => self.open_create_landmark(dest),
-                        PlacesAction::ShowOnMap(g) => {
-                            self.world.map.show_location(g.x, g.y, g.z as f32);
-                            self.panels.world_map = true;
-                        }
-                        PlacesAction::OpenProfile(source) => {
-                            self.world
-                                .place_details
-                                .open_panel(source, &self.world.map, &mut self.world.landmarks, Instant::now())
-                        }
-                        PlacesAction::CloseProfile => self.world.place_details.close_panel(),
-                        PlacesAction::RemoveHistory(i) => self.world.tp_storage.remove(i),
-                        PlacesAction::ClearHistory => {
-                            // order matters: the back / forward list first
-                            self.world.tp_history.purge();
-                            self.world.tp_storage.clear();
-                        }
-                        PlacesAction::SortByDate(on) => {
-                            self.settings.landmarks_by_date = on;
-                            self.settings.save();
-                        }
-                        PlacesAction::StopConfirmingTeleports => self.stop_confirming_teleports(),
-                        PlacesAction::Edit(change) => self.apply_inventory_action(ui::inventory::InvAction::Edit(change)),
-                        PlacesAction::ExpectFavorite => self.world.favorites.expect_added(),
-                        PlacesAction::MoveFavorite(item, rank) => self.world.favorites.rearrange(&self.world.inventory, item, rank),
-                        PlacesAction::OpenWindow(source) => {
-                            let w = &mut self.world;
-                            let serial = w.place_details.open_window(source, &w.map, &mut w.landmarks, Instant::now());
-                            self.place_ui.raise(serial);
-                        }
-                        PlacesAction::Sort(by) => {
-                            self.settings.places_sort = by;
-                            self.settings.save();
-                        }
-                    }
-                }
+                self.apply_places_actions(places_acts, &mut a);
                 // "Search"
                 let search_home = self.panels.search.then(|| self.search_home()).flatten();
                 let search_session = self.search_session();
@@ -19433,21 +19427,7 @@ impl App {
                     &mut open,
                 ));
                 self.panels.minimap = open;
-                for ma in mini {
-                    match ma {
-                        ui::minimap::MiniMapAction::Teleport { x, y, z } => self.world.map.track_location(x, y, z, true),
-                        ui::minimap::MiniMapAction::Track { x, y, z } => self.world.map.track_location(x, y, z, false),
-                        ui::minimap::MiniMapAction::StopTracking => self.world.map.clear_track(),
-                        ui::minimap::MiniMapAction::OpenWorldMap => self.panels.world_map = true,
-                        ui::minimap::MiniMapAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
-                        ui::minimap::MiniMapAction::AboutLand(gx, gy) => {
-                            ui::land::LandUi::select_at_global(&mut self.world, gx, gy);
-                            self.panels.about_land = true;
-                        }
-                        ui::minimap::MiniMapAction::Colors(k) => self.settings.colors = k,
-                        ui::minimap::MiniMapAction::Close => self.panels.minimap = false,
-                    }
-                }
+                self.apply_minimap_actions(mini);
                 let mut open = self.panels.world_map && !self.world.rlva.has("showworldmap");
                 let panel = native_windows::Panel::WorldMap;
                 let mut desktop = ui::widgets::DesktopPanels {

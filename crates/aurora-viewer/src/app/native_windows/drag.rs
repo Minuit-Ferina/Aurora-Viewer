@@ -1,4 +1,4 @@
-//! Route an existing inventory drag to the viewer window under the pointer.
+//! Route an in-app drag to the viewer window under the pointer.
 //! Winit's capture keeps delivering Windows drag events to the source HWND.
 
 use std::sync::Arc;
@@ -6,20 +6,27 @@ use winit::dpi::PhysicalPosition;
 use winit::window::{Window, WindowId};
 
 use crate::ui::inventory::{drag::Cargo, task_drop::TaskDrag};
+use crate::ui::places::drag::PlaceDrag;
 
 enum Payload {
     Inventory(Cargo),
     Task(Arc<TaskDrag>),
+    Place(Arc<PlaceDrag>),
 }
 
 impl Payload {
     #[cfg(windows)]
     fn carried(ctx: &egui::Context) -> bool {
-        crate::ui::inventory::drag::carried_count(ctx).is_some() || egui::DragAndDrop::has_payload_of_type::<TaskDrag>(ctx)
+        crate::ui::inventory::drag::carried_count(ctx).is_some()
+            || egui::DragAndDrop::has_payload_of_type::<TaskDrag>(ctx)
+            || egui::DragAndDrop::has_payload_of_type::<PlaceDrag>(ctx)
     }
 
     #[cfg(windows)]
     fn take(ctx: &egui::Context) -> Option<Self> {
+        if egui::DragAndDrop::has_payload_of_type::<PlaceDrag>(ctx) {
+            return egui::DragAndDrop::take_payload::<PlaceDrag>(ctx).map(Self::Place);
+        }
         Cargo::take_desktop(ctx)
             .map(Self::Inventory)
             .or_else(|| egui::DragAndDrop::take_payload::<TaskDrag>(ctx).map(Self::Task))
@@ -29,6 +36,7 @@ impl Payload {
         match self {
             Self::Inventory(cargo) => cargo.present(ctx),
             Self::Task(cargo) => egui::DragAndDrop::set_payload(ctx, (**cargo).clone()),
+            Self::Place(cargo) => egui::DragAndDrop::set_payload(ctx, (**cargo).clone()),
         }
     }
 }
@@ -249,6 +257,26 @@ mod tests {
         assert_eq!(input.point, PhysicalPosition::new(51.0, 67.0));
         assert_eq!(input.modifiers, egui::Modifiers::CTRL);
         assert!(session.frame(destination).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_places_drag_preserves_its_destination_across_windows() {
+        let ctx = egui::Context::default();
+        let target = crate::ui::places::drag::Target::History(glam::DVec3::new(1.0, 2.0, 3.0));
+        egui::DragAndDrop::set_payload(
+            &ctx,
+            PlaceDrag {
+                target,
+                favorite: None,
+                name: String::from("Destination"),
+                thumbnail: None,
+            },
+        );
+        let transfer = Payload::take(&ctx).expect("places transfer");
+        assert!(!egui::DragAndDrop::has_any_payload(&ctx));
+        transfer.present(&ctx);
+        assert_eq!(egui::DragAndDrop::payload::<PlaceDrag>(&ctx).unwrap().target, target);
     }
 
     #[test]

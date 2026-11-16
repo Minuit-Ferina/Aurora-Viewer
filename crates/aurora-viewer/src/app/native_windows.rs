@@ -12,7 +12,9 @@ mod info;
 mod input;
 mod inventory;
 mod notecards;
+mod people;
 mod placement;
+mod places;
 mod scripts;
 mod worldmap;
 
@@ -68,6 +70,8 @@ pub(super) enum Panel {
     About,
     GridStatus,
     WorldMap,
+    People,
+    Places,
     Bumps,
     GroupTitles,
     RegionTracker,
@@ -763,6 +767,16 @@ impl NativeWindows {
                 LogicalSize::new(620.0, 420.0),
                 LogicalSize::new(460.0, 260.0),
             ),
+            Panel::Places => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(620.0, 620.0),
+                LogicalSize::new(320.0, 360.0),
+            ),
+            Panel::People => (
+                self.detached[&panel].clone(),
+                LogicalSize::new(580.0, 620.0),
+                LogicalSize::new(320.0, 280.0),
+            ),
             Panel::WorldMap => (
                 self.detached[&panel].clone(),
                 LogicalSize::new(1040.0, 640.0),
@@ -936,6 +950,8 @@ fn placement_key(panel: Panel) -> Option<egui::Id> {
         Panel::About => "about",
         Panel::GridStatus => "grid-status",
         Panel::WorldMap => "world-map",
+        Panel::People => "people",
+        Panel::Places => "places",
         Panel::Bumps => "bumps",
         Panel::GroupTitles => "group-titles",
         Panel::RegionTracker => "region-tracker",

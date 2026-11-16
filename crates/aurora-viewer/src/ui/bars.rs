@@ -123,6 +123,9 @@ pub enum BarAction {
     TeleportForward,
     /// A place of the arrows' list, by its index in the session's history.
     TeleportHistoryItem(usize),
+    ShowPeople(u8),
+    TogglePeopleTab(u8),
+    TogglePlaces,
     /// Voice light clicked: open "Sound and voice".
     VoicePrefs,
     /// Location typed or pasted in the navigation bar (SLURL, Region/x/y/z...).
@@ -1041,8 +1044,7 @@ fn main_menus(ui: &mut egui::Ui, p: &Palette, panels: &mut Panels, st: &StatusIn
             (4, "ban", aurora_i18n::tr!("ui-bars-block-list")),
         ] {
             if menu::item(ui, p, icon, label) {
-                super::widgets::open_floater(ui.ctx(), "people", &mut panels.people);
-                panels.people_tab = tab;
+                *action = BarAction::ShowPeople(tab);
             }
         }
         menu::separator(ui, p);
@@ -1089,14 +1091,9 @@ fn main_menus(ui: &mut egui::Ui, p: &Palette, panels: &mut Panels, st: &StatusIn
         if menu::item_keys(ui, p, "history", aurora_i18n::tr!("common-teleport-history"), &history) {
             *action = BarAction::TeleportHistory;
         }
-        flip_window(
-            ui,
-            p,
-            "map-pin-filled",
-            aurora_i18n::tr!("common-places"),
-            "places",
-            &mut panels.places,
-        );
+        if menu::item(ui, p, "map-pin-filled", aurora_i18n::tr!("common-places")) {
+            *action = BarAction::TogglePlaces;
+        }
         // menu_viewer.xml: Destinations, after Places (Floater.Toggle), on a
         // grid with a guide
         if st.destinations && menu::item(ui, p, "map-2", aurora_i18n::tr!("toolbar-command-destinations")) {
@@ -2407,7 +2404,7 @@ pub fn run_command(ctx: &egui::Context, cmd: &str, panels: &mut Panels) -> BarAc
         "minimap" => panels.minimap = !panels.minimap,
         "worldmap" => toggle("worldmap", &mut panels.world_map),
         "regiontracker" => toggle(super::region_tracker::WINDOW, &mut panels.region_tracker),
-        "places" => toggle("places", &mut panels.places),
+        "places" => return BarAction::TogglePlaces,
         "search" => toggle(super::search::WINDOW, &mut panels.search),
         "areasearch" => toggle(super::area_search::WINDOW, &mut panels.area_search),
         "soundexplorer" => toggle(super::sound_explorer::WINDOW, &mut panels.sound_explorer),
@@ -2474,13 +2471,7 @@ pub fn run_command(ctx: &egui::Context, cmd: &str, panels: &mut Panels) -> BarAc
                 "block_list" => super::people::TAB_BLOCKED,
                 _ => super::people::TAB_SETS,
             };
-            // the same button again closes People on its tab
-            if panels.people && panels.people_tab == tab {
-                toggle("people", &mut panels.people);
-            } else {
-                super::widgets::open_floater(ctx, "people", &mut panels.people);
-            }
-            panels.people_tab = tab;
+            return BarAction::TogglePeopleTab(tab);
         }
         "build" => return BarAction::Build(0),
         "ik_edit" => return BarAction::IkEdit,

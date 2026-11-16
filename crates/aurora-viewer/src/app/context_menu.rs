@@ -369,6 +369,7 @@ impl App {
             w.place_details.open_panel(source, &w.map, &mut w.landmarks, now);
             self.panels.places = true;
             self.places_ui.show_profile();
+            self.native_windows.reveal(super::native_windows::Panel::Places);
         }
     }
 
@@ -891,8 +892,7 @@ impl App {
                 }
             }
             CtxAction::OpenPeople(tab) => {
-                self.panels.people = true;
-                self.panels.people_tab = tab;
+                self.show_people_tab(tab);
             }
             CtxAction::ZoomAvatar(id) => {
                 // a drawn avatar is followed; one only known by its map

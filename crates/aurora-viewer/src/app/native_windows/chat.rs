@@ -62,8 +62,7 @@ impl App {
                     self.chat_ui.selected = None;
                 }
                 ui::chat::ConvAction::OpenPeople(tab) => {
-                    self.panels.people = true;
-                    self.panels.people_tab = tab;
+                    self.show_people_tab(tab);
                 }
                 ui::chat::ConvAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
                 ui::chat::ConvAction::Contacts(c) => contact_actions.push(c),
@@ -186,6 +185,8 @@ impl App {
         self.reconcile_desktop_notecards();
         self.reconcile_desktop_info();
         self.reconcile_desktop_world_map();
+        self.reconcile_desktop_people();
+        self.reconcile_desktop_places();
         let Some(gfx) = &mut self.gfx else { return };
         let drawable = self.native_windows.next(event_loop, &mut gfx.renderer, &self.egui_ctx);
         self.native_windows.update_chat_presence(&self.egui_ctx);
@@ -205,6 +206,14 @@ impl App {
             }
             Panel::About | Panel::GridStatus | Panel::Bumps | Panel::GroupTitles | Panel::RegionTracker | Panel::AvatarRenderSettings => {
                 self.paint_desktop_info(event_loop, drawable);
+                return;
+            }
+            Panel::Places => {
+                self.paint_desktop_places(event_loop);
+                return;
+            }
+            Panel::People => {
+                self.paint_desktop_people(event_loop);
                 return;
             }
             Panel::WorldMap => {

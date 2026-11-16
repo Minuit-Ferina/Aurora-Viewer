@@ -183,8 +183,7 @@ impl App {
 
     pub(super) fn open_ignored_list(&mut self) {
         self.people_ui.filter.clear();
-        self.panels.people_tab = ui::people::TAB_BLOCKED;
-        ui::widgets::open_floater(&self.egui_ctx, "people", &mut self.panels.people);
+        self.show_people_tab(ui::people::TAB_BLOCKED);
     }
 
     /// RequestMultipleObjects for the objects back from the list, and the
