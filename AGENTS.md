@@ -193,13 +193,13 @@ to a contribution targeting Aurora.
 
 Read [the fork workflow](docs/FORK_WORKFLOW.md) before creating a task:
 
-- Fork tooling and CI start from `origin/main` and use a squash PR to fork `main`.
-- Our viewer changes start from `origin/develop` (`-BaseBranch develop`) and
-  use a PR to `develop`. This branch is our usable version. Update it from
-  `main` through a tested merge PR; never merge `develop` back into `main`.
-- A sync starts from `origin/main`, merges `upstream/main`, and merges its
-  PR into the fork **with a merge commit**, never squash or rebase. Preserve
-  upstream ancestry and fork PR testing when resolving conflicts.
+- All fork PRs start from `origin/develop` (`-BaseBranch develop`) and
+  target `develop`. Use squash for tooling, CI and viewer changes.
+- To synchronize Aurora, start from `origin/develop` and merge the exact
+  tag of an official stable Aurora release. Merge the sync PR into
+  `develop` with a merge commit to preserve upstream ancestry and rerun
+  the fork's full required checks. Use the published stable tag as the
+  release baseline. Tag fork releases from tested commits of `develop`.
 - Contributions to Aurora start from `upstream/main` with
   `new-task.ps1 -BaseRemote upstream -SkipCleanup`. Never merge fork `main`
   or `develop` into them or copy fork CI/docs onto them. Push the branch to `origin` and

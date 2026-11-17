@@ -76,12 +76,12 @@ existing skip. The required check names are `fmt, clippy (Windows)`,
 `clippy, tests, demo (macOS)`. A skipped or cancelled required test job is
 not a successful test run. The upstream repository keeps its merge queue.
 
-`main` follows Aurora with our small fork CI/tooling adjustments; `develop` is
-our usable version with our viewer changes. Use squash for tooling and feature
-PRs, and merge commits for syncs from upstream to `main` and `main` to `develop`.
-The fork allows both methods and does not require linear history: this
-preserves Aurora's ancestry across repeated syncs. A sync still goes
-through a PR and all its required checks, with no administrator bypass.
+`develop` holds our viewer changes and is the target for all fork PRs.
+Merge official stable Aurora release tags directly into `develop` through
+sync PRs. Use a merge commit for each sync to preserve Aurora's history
+and squash for tooling and feature PRs. The fork's protected `main`
+holds the earlier snapshot and initial workflow setup. Prepare fork
+release tags from tested commits of `develop`.
 
 Start contributions to Aurora from `upstream/main`, push their branches to
 the fork, and explicitly open the PR in Aurora. Never merge the fork's
