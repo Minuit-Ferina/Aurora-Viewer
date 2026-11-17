@@ -762,7 +762,9 @@ the review comment.
 - A release is made **when the human asks for it** ("release 0.4.0"), never
   on your own initiative. If they give no number, propose one from the labels
   of the PRs merged since the last version and wait for their agreement.
-  Then:
+  For this fork, tag the tested commit of `origin/develop` and verify the
+  required checks of the PR that integrated it. Aurora's official release
+  procedure uses `origin/main` instead:
 
   ```powershell
   gh run list --workflow CI --branch main --limit 1   # main must be green
@@ -798,8 +800,9 @@ the review comment.
   the project (what is left to do, missing features, progress of a task,
   issues, PRs, what was merged):
   - run `git fetch origin`;
-  - read `TASKS.md` from `origin/main` (`git show origin/main:TASKS.md`),
-    not a worktree's copy nor an earlier reading in the session;
+  - read `TASKS.md` from the target's current remote branch
+    (`git show origin/develop:TASKS.md` for the fork,
+    `git show upstream/main:TASKS.md` for Aurora);
   - list the open issues (`gh issue list`), the open PRs and the recently
     merged ones (`gh pr list --state open`, `gh pr list --state merged
     --limit 30`);
