@@ -162,8 +162,10 @@ impl App {
         if self.rlva_selftest.demo_step == 0 {
             self.rlva_selftest.demo_step = 1;
             self.seed_rlva_selftest_demo();
-            self.settings.rlva_enabled = true;
-            self.world.rlva_configure(true);
+            if !aurora_version::edition::CURRENT.always_on() {
+                self.settings.rlva_enabled = true;
+            }
+            self.world.rlva_configure(self.settings.effective_rlva_enabled());
             self.panels.chat = false;
             self.panels.inventory = false;
             self.panels.perf = false;
