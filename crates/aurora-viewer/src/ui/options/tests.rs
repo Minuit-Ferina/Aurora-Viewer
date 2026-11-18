@@ -389,7 +389,8 @@ fn rlva_settings_live_on_their_own_page() {
         .filter(|(page, _)| *page == Page::Rlva)
         .map(|(_, p)| p.as_str())
         .collect();
-    assert!(on_rlva.contains(&"rlva_enabled"), "the global switch: {on_rlva:?}");
+    let configurable = !aurora_version::edition::CURRENT.always_on();
+    assert_eq!(on_rlva.contains(&"rlva_enabled"), configurable, "the global switch: {on_rlva:?}");
     assert!(on_rlva.iter().filter(|p| p.starts_with("rlva.")).count() >= 20, "{on_rlva:?}");
     assert!(on_rlva.iter().all(|p| rlva(p)), "only RLVa on its page: {on_rlva:?}");
     let elsewhere: Vec<_> = paths.iter().filter(|(page, p)| *page != Page::Rlva && rlva(p)).collect();
@@ -402,7 +403,8 @@ fn rlva_settings_live_on_their_own_page() {
     reset_page_settings(Page::Protections, &mut s);
     assert_ne!(s.rlva_enabled, Settings::default().rlva_enabled, "Protections reset preserves RLVa");
     reset_page_settings(Page::Rlva, &mut s);
-    assert_eq!(s.rlva_enabled, Settings::default().rlva_enabled);
+    assert_eq!(s.rlva_enabled, !configurable);
+    assert_eq!(s.effective_rlva_enabled(), !configurable);
 }
 
 #[test]

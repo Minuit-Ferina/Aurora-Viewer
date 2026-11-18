@@ -49,7 +49,12 @@ fn confirm(ctx: &egui::Context, p: &Palette, st: &mut UninstallUi, actions: &mut
         ui.set_width(460.0);
         ui.label(RichText::new(tr!("uninstall-title")).size(15.0).strong().color(p.ink));
         ui.add_space(6.0);
-        ui.add(egui::Label::new(RichText::new(tr!("uninstall-text")).size(12.5).color(p.muted)).wrap());
+        let text = if std::env::var_os("AURORA_DEMO").is_some() {
+            tr!("uninstall-text")
+        } else {
+            tr!("uninstall-edition-text")
+        };
+        ui.add(egui::Label::new(RichText::new(text).size(12.5).color(p.muted)).wrap());
         ui.add_space(8.0);
         egui::ScrollArea::vertical()
             .max_height(280.0)
@@ -189,7 +194,12 @@ fn report_body(
         left.scroll_to_me(Some(egui::Align::TOP));
     }
     ui.add_space(2.0);
-    ui.add(egui::Label::new(RichText::new(tr!("uninstall-left-text")).size(12.0).color(p.muted)).wrap());
+    let text = if report.dry_run {
+        tr!("uninstall-left-text")
+    } else {
+        tr!("uninstall-edition-left-text")
+    };
+    ui.add(egui::Label::new(RichText::new(text).size(12.0).color(p.muted)).wrap());
     ui.add_space(6.0);
     for place in &report.remaining {
         ui.horizontal(|ui| {

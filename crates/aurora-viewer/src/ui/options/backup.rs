@@ -99,6 +99,14 @@ pub(super) fn restore_modal(ctx: &egui::Context, p: &Palette, s: &mut Settings, 
         });
     });
     if confirmed && let Some(pending) = st.restore.take() {
+        if r.maintenance.is_none() {
+            r.maintenance = crate::settings::shared_profile::try_maintenance();
+        }
+        if r.maintenance.is_none() {
+            st.restore_status = aurora_i18n::tr!("shared-profile-busy").to_owned();
+            r.maintenance_denied = true;
+            return;
+        }
         let mut parts = pending.parts;
         // a reset's undo would now bring back what came before the restore
         st.undo = None;

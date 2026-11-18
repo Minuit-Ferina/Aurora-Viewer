@@ -3259,7 +3259,10 @@ mod tests {
         let ctx = egui::Context::default();
         crate::theme::Theme::default().apply(&ctx, 1.0);
         let _icons = icons::Icons::load(&ctx, None);
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         model::seed_demo(&mut world.inventory, Uuid::from_u128(1));
         let folder = Uuid::from_u128(704);
         let links = world.inventory.folders[&folder]
@@ -4387,7 +4390,10 @@ mod tests {
             let ctx = egui::Context::default();
             crate::theme::Theme::default().apply(&ctx, 1.0);
             let _icons = icons::Icons::load(&ctx, None);
-            let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+            let mut world = World::with_rlva_activation(
+                std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+                crate::world::rlva::Activation::Configurable,
+            );
             model::seed_demo(&mut world.inventory, Uuid::from_u128(1));
             world.rlva.configure(true);
             let target = Uuid::from_u128(723);

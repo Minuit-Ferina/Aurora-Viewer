@@ -156,7 +156,10 @@ mod tests {
     const SESSION: Uuid = Uuid::from_u128(0x726c766173657373);
 
     fn world() -> World {
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         world.agent_id = Uuid::from_u128(99);
         world.rlva.configure(true);
         world

@@ -48,7 +48,10 @@ fn rlva_permissive_affects_only_behaviours_with_strict_exceptions() {
 
 #[test]
 fn rlva_vendor_payments_follow_buy_while_resident_payments_follow_pay() {
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     world.rlva_configure(true);
     let object = NetCommand::PayObject {
         handle: 1,
@@ -72,7 +75,10 @@ fn rlva_vendor_payments_follow_buy_while_resident_payments_follow_pay() {
 
 #[test]
 fn rlva_only_an_actual_remove_locked_hud_prevents_hiding_huds_and_using_wireframe() {
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -171,7 +177,10 @@ fn rlva_inventory_wire_order_attachment_groups_and_own_locks_match_the_reference
         AttachRequest,
         inventory::{InvFolder, InvItem},
     };
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -291,7 +300,10 @@ fn rlva_privacy_strict_exceptions_landmarks_profile_locations_and_nearby_release
         NetCommand,
         profile::{ClassifiedInfo, PickInfo},
     };
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -380,7 +392,10 @@ fn rlva_attachment_replacement_preserves_locked_cof_links_but_explicit_removal_i
         inventory::{InvFolder, InvItem},
         outfits::{OutfitLink, OutfitMutation},
     };
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     let cof = Uuid::from_u128(10);
     let old = Uuid::from_u128(11);
@@ -486,7 +501,10 @@ fn rlva_outfit_changes_keep_locked_wearables_and_skip_blocked_additions() {
         inventory::{InvFolder, InvItem},
         outfits::{OutfitLink, OutfitMutation},
     };
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     let cof = Uuid::from_u128(20);
     // (id, asset type, wearable type): shirt, shape, pants, new shape,
@@ -576,7 +594,10 @@ fn rlva_multi_wear_leaves_out_only_the_blocked_attachment() {
         inventory::{InvFolder, InvItem},
         outfits::{OutfitLink, OutfitMutation},
     };
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     let cof = Uuid::from_u128(40);
     w.inventory.folders.insert(
@@ -668,7 +689,10 @@ fn rlva_presence_queries_hide_locked_slots_but_exempt_the_requester_and_keep_bod
         AttachRequest,
         inventory::{InvFolder, InvItem},
     };
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -760,7 +784,10 @@ fn rlva_presence_queries_hide_locked_slots_but_exempt_the_requester_and_keep_bod
 fn rlva_maturity_deferred_teleports_keep_the_actor_recheck_locks_and_cancel_on_disable() {
     use crate::world::maturity::{MaturityPreference, Outcome};
     use aurora_net::search::{SIM_ACCESS_MATURE, SIM_ACCESS_PG};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     world.rlva.configure(true);
     let mut maturity = MaturityPreference::default();
     maturity.request(SIM_ACCESS_MATURE, SIM_ACCESS_PG);
@@ -805,7 +832,10 @@ fn rlva_maturity_deferred_teleports_keep_the_actor_recheck_locks_and_cancel_on_d
 #[test]
 fn rlva_temporary_attachment_locks_and_detachme_do_not_require_inventory_or_cof() {
     use aurora_net::{AttachRequest, NetCommand};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -946,7 +976,7 @@ fn rlva_is_explicitly_opt_in_and_disable_releases_everything() {
     assert!(!crate::settings::Settings::default().rlva_enabled);
     let decoded: crate::settings::Settings = serde_json::from_str("{}").expect("old settings");
     assert!(!decoded.rlva_enabled);
-    let mut r = Rlva::default();
+    let mut r = Rlva::with_activation(Activation::Configurable);
     assert!(!r.receive(&chat("@fly=n,version=123")));
     assert!(r.out.is_empty());
     r.configure(true);
@@ -960,6 +990,20 @@ fn rlva_is_explicitly_opt_in_and_disable_releases_everything() {
     assert!(r.pending.is_empty());
     r.configure(true);
     assert!(!r.has("fly"));
+}
+
+#[test]
+fn compiled_activation_applies_before_configuration_and_preserves_stored_preference() {
+    let world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let enabled = aurora_version::edition::CURRENT.always_on();
+    assert_eq!(world.rlva.enabled(), enabled);
+    assert!(world.rlva.restrictions().is_empty());
+    let mut settings = crate::settings::Settings::default();
+    assert_eq!(settings.effective_rlva_enabled(), enabled);
+    let result = crate::settings::registry::set(&mut settings, "rlva_enabled", serde_json::json!(true));
+    assert_eq!(result.is_err(), enabled);
+    assert_eq!(settings.rlva_enabled, !enabled);
+    assert!(settings.effective_rlva_enabled());
 }
 
 #[test]
@@ -1250,7 +1294,10 @@ fn rlva_command_discovery_includes_strict_and_supported_environment_variants() {
 fn rlva_shared_wear_and_nostrip_apply_to_scripted_undressing() {
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.inventory.root = Uuid::from_u128(10);
     let root = Uuid::from_u128(11);
     w.inventory.folders.insert(
@@ -1298,7 +1345,10 @@ fn rlva_shared_wear_and_nostrip_apply_to_scripted_undressing() {
 fn rlva_inventory_queries_keep_the_shared_root_and_report_descendants() {
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     let root = Uuid::from_u128(11);
     let child = Uuid::from_u128(12);
@@ -1345,7 +1395,7 @@ fn rlva_inventory_queries_keep_the_shared_root_and_report_descendants() {
 #[test]
 fn rlva_world_receives_commands_before_chat_and_blocks_real_action_variants() {
     let lib = std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load());
-    let mut w = crate::world::World::new(lib);
+    let mut w = crate::world::World::with_rlva_activation(lib, Activation::Configurable);
     w.rlva.configure(true);
     w.apply(aurora_net::NetEvent::Chat(chat("@unsit=n,pay=n,tploc=n")));
     assert!(w.rlva.has("unsit"));
@@ -1419,7 +1469,10 @@ fn rlva_environment_preserves_slider_scales_components_angles_and_session_lifeti
 #[test]
 fn rlva_editing_and_permissions_are_enforced_on_linksets_and_wire_commands() {
     use aurora_net::{NetEvent, build::BuildCmd};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for ev in crate::demo::events().into_iter().chain(crate::demo::worn::events()) {
         w.apply(ev);
     }
@@ -1514,7 +1567,10 @@ fn rlva_editing_and_permissions_are_enforced_on_linksets_and_wire_commands() {
 fn rlva_folder_locks_respect_scope_nearest_exception_other_issuers_and_folded_folders() {
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     w.inventory.root = Uuid::from_u128(10);
     let ids: Vec<_> = (11..18).map(Uuid::from_u128).collect();
@@ -1695,7 +1751,10 @@ fn rlva_im_ranges_and_nametag_distances_follow_exclusions_and_strict_exceptions(
 
 #[test]
 fn rlva_stand_return_waits_for_a_successful_sit_and_is_cancelled_by_disabling() {
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     command(&mut w.rlva, A, "@standtp=n,tploc=n");
     let origin = (42, glam::Vec3::new(100.0, 100.0, 30.0));
@@ -1723,7 +1782,10 @@ fn rlva_stand_return_waits_for_a_successful_sit_and_is_cancelled_by_disabling() 
 #[test]
 fn rlva_local_teleports_use_global_xy_and_sit_radius_uses_xyz_across_region_edges() {
     use glam::Vec3;
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -1761,7 +1823,10 @@ fn rlva_local_teleports_use_global_xy_and_sit_radius_uses_xyz_across_region_edge
 #[test]
 fn rlva_teleport_home_landmarks_and_bare_tplocal_follow_the_legacy_rules() {
     use glam::Vec3;
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -1805,7 +1870,10 @@ fn rlva_render_aliases_release_without_mutating_saved_settings_and_touch_measure
     command(&mut r, A, "@camtextures=y,camavdist:4=y");
     assert_eq!(r.camera_texture(), None);
     assert_eq!(r.silhouette_distance(), None);
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -1831,7 +1899,10 @@ fn rlva_render_aliases_release_without_mutating_saved_settings_and_touch_measure
 fn rlva_watchdog_folder_locks_resolved_once_match_single_checks() {
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -1947,7 +2018,10 @@ fn rlva_watchdog_folder_locks_resolved_once_match_single_checks() {
 fn rlva_watchdog_checks_run_again_only_after_a_change() {
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -2076,7 +2150,10 @@ fn rlva_wear_locks_follow_the_legacy_wear_masks() {
     use super::wear_locks::Wear;
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     let root = Uuid::from_u128(30);
     let cof = Uuid::from_u128(31);
     let clothes = Uuid::from_u128(32);
@@ -2217,7 +2294,10 @@ fn rlva_wear_locks_follow_the_legacy_wear_masks() {
 fn rlva_wear_on_a_point_held_by_a_locked_attachment_keeps_add() {
     use super::wear_locks::Wear;
     use aurora_net::{AttachRequest, inventory::InvItem};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -2275,7 +2355,10 @@ fn rlva_wear_on_a_point_held_by_a_locked_attachment_keeps_add() {
 #[test]
 fn rlva_drop_and_detach_of_a_worn_object_follow_its_remove_lock_and_rez() {
     use aurora_net::{AttachRequest, build::BuildCmd, inventory::InvItem};
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -2351,7 +2434,10 @@ fn rlva_folder_state_change_is_one_outfit_change_that_drops_the_old_folder() {
     use crate::world::appearance::{self, Action, WearRequest};
     use crate::world::inventory::{FetchState, Folder};
     use aurora_net::inventory::{InvFolder, InvItem};
-    let mut w = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut w = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     w.rlva.configure(true);
     let root = Uuid::from_u128(10);
     let (shared, jasx, dressed, underwear, cof) = (
@@ -2505,7 +2591,10 @@ fn rlva_folder_state_change_is_one_outfit_change_that_drops_the_old_folder() {
 #[test]
 fn rlva_waits_for_requested_detaches_to_leave_the_avatar() {
     use aurora_net::AttachRequest;
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events() {
         world.apply(event);
     }
@@ -2554,7 +2643,10 @@ fn empty_trash_ignores_rlva_locks_without_exempting_other_purges() {
         InvFolder,
         operations::{Mutation, Operation},
     };
-    let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = crate::world::World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     world.rlva.configure(true);
     command(&mut world.rlva, A, "@detach=n");
     assert!(world.rlva.inventory_locked());
@@ -2588,7 +2680,10 @@ fn empty_trash_ignores_rlva_locks_without_exempting_other_purges() {
 #[test]
 fn rlva_linking_refuses_the_locked_seat_like_can_stand_but_sittp_alone_does_not() {
     use crate::world::World;
-    let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+    let mut world = World::with_rlva_activation(
+        std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+        crate::world::rlva::Activation::Configurable,
+    );
     for event in crate::demo::events()
         .into_iter()
         .chain(crate::demo::selection_cycle_events())

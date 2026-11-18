@@ -797,14 +797,15 @@ mod tests {
         }
         clean(&w, &root);
 
-        for enabled in [false, true] {
+        let always_on = aurora_version::edition::CURRENT.always_on();
+        for (requested, enabled) in [(false, always_on), (true, true)] {
             for allow_filing in [false, true] {
                 let root = temp();
                 let mut w = world(&root);
                 w.inventory_offers.auto_accept = true;
                 w.inventory_offers.auto_accept_chat = false;
                 w.inventory_offers.auto_accept_notify = false;
-                w.rlva_configure(enabled);
+                w.rlva_configure(requested);
                 w.rlva.preferences.allow_shared_offers = allow_filing;
                 for dialog in [im::INVENTORY_OFFERED, im::TASK_INVENTORY_OFFERED] {
                     let task = dialog == im::TASK_INVENTORY_OFFERED;

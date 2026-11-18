@@ -11,20 +11,20 @@
 param(
     [Parameter(Mandatory)][string]$Exe,
     [Parameter(Mandatory)][string]$Out,
+    [ValidateSet('classic','ftrlv')][string]$Edition = 'classic',
     # repository whose files go in the bundle (default: this script's)
     [string]$Source = (Split-Path $PSScriptRoot -Parent)
 )
 $ErrorActionPreference = 'Stop'
 
-if (Test-Path -LiteralPath $Out) { Remove-Item -LiteralPath $Out -Recurse -Force }
+if (Test-Path -LiteralPath $Out) { throw "Bundle already exists: $Out" }
 $contents = Join-Path $Out 'Contents'
 $macos = Join-Path $contents 'MacOS'
 $resources = Join-Path $contents 'Resources'
-New-Item -ItemType Directory -Force -Path $macos, $resources | Out-Null
-
 # the files every package carries, then the executable where macOS runs it
 # (code only in Contents/MacOS: the signature seals the rest as resources)
-& (Join-Path $PSScriptRoot 'package.ps1') -Exe $Exe -Out $resources -Source $Source
+& (Join-Path $PSScriptRoot 'package.ps1') -Exe $Exe -Out $resources -Source $Source -Edition $Edition
+New-Item -ItemType Directory -Force -Path $macos | Out-Null
 Move-Item -LiteralPath (Join-Path $resources (Split-Path $Exe -Leaf)) -Destination (Join-Path $macos 'aurora-viewer')
 
 # MAJOR.MINOR.PATCH of the build, the only form CFBundleShortVersionString
@@ -32,6 +32,9 @@ Move-Item -LiteralPath (Join-Path $resources (Split-Path $Exe -Leaf)) -Destinati
 $version = (Get-Content -LiteralPath (Join-Path $resources 'aurora-install.json') -Raw | ConvertFrom-Json).version
 if ($version -notmatch '^(\d+\.\d+\.\d+)') { throw "Invalid package version: $version" }
 $plist = Get-Content -LiteralPath (Join-Path $Source 'packaging/macos/Info.plist') -Raw
+if ($Edition -eq 'ftrlv') {
+    $plist = $plist.Replace('org.aurora-viewer.AuroraViewer', 'org.aurora-viewer.AuroraViewer.FTRLV').Replace('<string>Aurora Viewer</string>', '<string>Aurora Viewer FTRLV</string>')
+}
 Set-Content -LiteralPath (Join-Path $contents 'Info.plist') -Value $plist.Replace('@VERSION@', $Matches[1]) -Encoding utf8NoBOM -NoNewline
 Set-Content -LiteralPath (Join-Path $contents 'PkgInfo') -Value 'APPL????' -Encoding ascii -NoNewline
 

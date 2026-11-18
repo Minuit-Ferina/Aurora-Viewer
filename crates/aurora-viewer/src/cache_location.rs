@@ -54,8 +54,13 @@ pub fn init() {
     if let Some(last) = last.filter(|l| !l.as_os_str().is_empty() && *l != now)
         && is_ours(&last)
     {
+        let Some(guard) = crate::settings::shared_profile::try_maintenance() else {
+            log::info!("previous shared cache kept while another viewer is active");
+            return;
+        };
         log::info!("cache folder changed: the previous cache is removed");
         let _ = std::thread::Builder::new().name("aurora-cache-purge".into()).spawn(move || {
+            let _guard = guard;
             if let Err(e) = std::fs::remove_dir_all(&last)
                 && e.kind() != std::io::ErrorKind::NotFound
             {

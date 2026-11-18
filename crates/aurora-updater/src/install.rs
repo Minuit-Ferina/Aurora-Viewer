@@ -190,6 +190,7 @@ impl Workspace {
             parent: std::process::id(),
             args,
             version: version.into(),
+            edition: aurora_version::edition::CURRENT.id().into(),
             maintenance,
         };
         let mut file = OpenOptions::new().write(true).create_new(true).open(self.root.join("plan.json"))?;
@@ -239,11 +240,13 @@ struct Plan {
     parent: u32,
     args: Vec<String>,
     version: String,
+    edition: String,
     #[serde(default)]
     maintenance: crate::Maintenance,
 }
 
 fn validate_work(work: &Path, plan: &Plan) -> Result<()> {
+    ensure!(plan.edition == aurora_version::edition::CURRENT.id(), "wrong transaction edition");
     ensure!(uuid::Uuid::parse_str(&plan.token).is_ok(), "invalid transaction token");
     ensure!(
         work.is_absolute()
@@ -268,6 +271,7 @@ fn cleanup_work(work: &Path, install: &Path, token: &str) -> Result<()> {
         parent: 0,
         args: vec![],
         version: String::new(),
+        edition: aurora_version::edition::CURRENT.id().into(),
         maintenance: Default::default(),
     };
     validate_work(work, &plan)?;
@@ -466,6 +470,7 @@ pub fn apply(install: &Path, work: &Path, launch: impl FnOnce() -> Result<()>) -
             parent: 0,
             args: vec![],
             version: String::new(),
+            edition: aurora_version::edition::CURRENT.id().into(),
             maintenance: Default::default(),
         },
     )?;
@@ -535,7 +540,10 @@ pub fn acknowledge_splash() {
         let work = PathBuf::from(path);
         let plan: Plan = serde_json::from_slice(&fs::read(work.join("plan.json"))?)?;
         validate_work(&work, &plan)?;
-        ensure!(plan.version == aurora_version::version(), "update acknowledgement mismatch");
+        ensure!(
+            plan.edition == aurora_version::edition::CURRENT.id() && plan.version == aurora_version::version(),
+            "update acknowledgement mismatch"
+        );
         fs::write(work.join(SPLASH_SHOWN), format!("{}\n{}", plan.token, plan.version))?;
         Ok(())
     })();
@@ -554,7 +562,9 @@ pub fn acknowledge_frame() {
             let plan: Plan = serde_json::from_slice(&fs::read(work.join("plan.json"))?)?;
             validate_work(&work, &plan)?;
             ensure!(
-                plan.version == aurora_version::version() && std::env::current_exe()?.canonicalize()? == plan.install.join(EXE),
+                plan.edition == aurora_version::edition::CURRENT.id()
+                    && plan.version == aurora_version::version()
+                    && std::env::current_exe()?.canonicalize()? == plan.install.join(EXE),
                 "update acknowledgement mismatch"
             );
             fs::write(work.join("first-frame"), format!("{}\n{}", plan.token, plan.version))?;

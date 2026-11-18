@@ -2495,7 +2495,7 @@ pub enum NetCommand {
     /// (LLAgentWearables::sendDummyAgentWearablesUpdate).
     DummyWearablesUpdate,
     /// Forget the in-memory object caches (the files are deleted by the viewer).
-    ClearObjectCache,
+    ClearObjectCache(crossbeam_channel::Sender<()>),
     /// Build tools: selection, moves, new prims, links, terraforming.
     Build(crate::build::BuildCmd),
 }

@@ -14493,3 +14493,21 @@ before linking, for manual Ctrl+L and button checks. `link-denied,0,0` leaves on
 prim without Modify and attempts the same link: the refusal dialog must appear
 and both prims stay separate. Use `AURORA_DEMO_BUILD_STYLE=aurora|legacy` to
 compare the layouts and capture at frame 720 or later. These use no grid assets.
+
+## Fork editions and FTRLV
+
+Run `./scripts/check.ps1 -Edition classic` and
+`./scripts/check.ps1 -Edition ftrlv` in the task worktree. Use a separate
+build and staging pass for each edition. Query `--edition` and `--version` on
+each packaged binary, inspect its install manifest, verify the archive's
+SHA-256 and try packaging the binary as the other edition.
+
+Use a disposable profile with a saved false RLVa value. In offline demos,
+check the fixed FTRLV status and About label, then switch to Classic and
+verify the stored preference. Exercise rule release and session reset with
+synthetic issuers. For shared-profile checks, open both editions on that
+disposable profile and verify that reset, restore and purge refuse while
+the other instance uses it.
+
+The fork's edition matrix checks Windows, Linux and macOS separately. Only
+a human verifies real-session rule handling and logout on a grid.

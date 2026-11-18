@@ -155,7 +155,10 @@ mod tests {
     const CHILD: Uuid = Uuid::from_u128(102);
 
     fn world() -> World {
-        let mut w = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut w = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             w.apply(event);
         }

@@ -434,6 +434,10 @@ built.
   installed (`winget install Kitware.CMake`); without CMake the script says so,
   and VR then needs an `openxr_loader.dll` on the PC.
 - Close the viewer of that folder before rebuilding (the script says so).
+- In the fork, run `./scripts/build-release.ps1 -Edition ftrlv` in a task
+  worktree to create its own Release archive and checksum in
+  `.scratch/dist`. Pass `-Edition classic` for the configurable edition.
+  Both use the current checkout in this explicit archive mode.
 
 ## Building and launching by hand
 

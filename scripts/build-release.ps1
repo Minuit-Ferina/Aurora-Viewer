@@ -15,8 +15,20 @@
 .EXAMPLE
     ./scripts/build-release.ps1          # latest main of GitHub
     ./scripts/build-release.ps1 -Pr 42   # PR 42
+.EXAMPLE
+    ./scripts/build-release.ps1 -Edition ftrlv -ArchiveOut .scratch/dist
+    Builds a complete Release archive from the current task worktree.
 #>
-param([int]$Pr)
+param(
+    [int]$Pr,
+    [ValidateSet('classic','ftrlv')][string]$Edition,
+    [string]$ArchiveOut = '.scratch/dist'
+)
+if ($Edition) {
+    if ($Pr) { throw '-Edition builds the current worktree. Use it without -Pr.' }
+    & "$PSScriptRoot\build-edition.ps1" -Edition $Edition -Out $ArchiveOut -Release
+    return
+}
 . "$PSScriptRoot\common.ps1"
 
 $p = Get-AuroraPaths

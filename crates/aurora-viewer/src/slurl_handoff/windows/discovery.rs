@@ -34,7 +34,15 @@ impl Scope {
     }
 
     pub fn property(&self) -> Vec<u16> {
-        let mut name = format!("Aurora.SLurl.Receiver.2.{}", if self.demo { "Demo" } else { "Online" });
+        let edition_suffix = if aurora_version::edition::CURRENT.always_on() {
+            ".FTRLV"
+        } else {
+            ""
+        };
+        let mut name = format!(
+            "Aurora.SLurl.Receiver.2{edition_suffix}.{}",
+            if self.demo { "Demo" } else { "Online" }
+        );
         if let Some(title) = &self.title {
             name.push('.');
             name.push_str(title);

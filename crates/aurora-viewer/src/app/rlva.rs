@@ -30,9 +30,9 @@ impl App {
                 self.settings.save();
             }
         }
-        self.world.rlva_configure(self.settings.rlva_enabled);
+        self.world.rlva_configure(self.settings.effective_rlva_enabled());
         self.world.rlva.preferences.clone_from(&self.settings.rlva);
-        if !self.settings.rlva_enabled || !self.settings.rlva.im_queries {
+        if !self.settings.effective_rlva_enabled() || !self.settings.rlva.im_queries {
             self.world
                 .notifications
                 .list
@@ -45,13 +45,13 @@ impl App {
                 self.chat_ui.show_profile = false;
             }
         }
-        if !self.settings.rlva_enabled {
+        if !self.settings.effective_rlva_enabled() {
             self.named_teleport.cancel_scripts();
             self.world.maturity.cancel_script_teleports();
         }
         self.create_landmark_ui.apply_rlva_privacy(self.world.rlva.has("showloc"));
         self.media.enforce_focus(&self.world);
-        if !self.settings.rlva_enabled && !self.appearance_ui.pending_actor.is_nil() {
+        if !self.settings.effective_rlva_enabled() && !self.appearance_ui.pending_actor.is_nil() {
             if let Some((_, sync)) = self.appearance_ui.pending.as_mut() {
                 *sync = false;
             }
@@ -61,7 +61,7 @@ impl App {
         self.world.rlva_controllers_tick(Instant::now());
         let login_locked = self.world.rlva.has("tploc") || (self.world.agent.is_sitting() && self.world.rlva.has("unsit"));
         self.rlva_login.update(
-            self.settings.rlva_enabled,
+            self.settings.effective_rlva_enabled(),
             self.world.agent_id,
             self.world.movement_complete,
             login_locked,
@@ -193,7 +193,7 @@ impl App {
         }
         if self.frame_count == 700 {
             self.settings.rlva_enabled = mode != "disabled";
-            self.world.rlva_configure(self.settings.rlva_enabled);
+            self.world.rlva_configure(self.settings.effective_rlva_enabled());
             let scenario = mode.strip_suffix("-released").unwrap_or(&mode);
             if scenario == "baseline"
                 || scenario.starts_with("sphere-")
@@ -605,7 +605,8 @@ impl App {
             self.settings.rlva_enabled = false;
             self.world.rlva_configure(false);
             log::info!(
-                "RLVa demo: disabled, all restrictions released={}",
+                "RLVa demo: after disable request, enabled={}, all restrictions released={}",
+                self.world.rlva.enabled(),
                 !self.world.rlva.has("fly") && !self.world.rlva.has("sendchat")
             );
         }

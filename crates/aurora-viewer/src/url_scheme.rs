@@ -164,6 +164,7 @@ mod win {
         let class = format!(r"Software\Classes\{scheme}");
         write(&class, None, "URL:Virtual World")?;
         write(&class, Some("URL Protocol"), "")?;
+        write(&class, Some("AuroraEdition"), aurora_version::edition::CURRENT.id())?;
         write(&format!(r"{class}\DefaultIcon"), None, &format!("\"{exe}\",0"))?;
         write(&format!(r"{class}\shell\open"), Some("FriendlyAppName"), "Aurora Viewer")?;
         write(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" -url \"%1\""))?;
@@ -224,7 +225,9 @@ mod win {
                 continue;
             };
             let aurora = exe.file_name().is_some_and(|n| n.eq_ignore_ascii_case("aurora-viewer.exe"));
-            if aurora && !exe.exists() {
+            let registered = read(HKEY_CURRENT_USER, &class, Some("AuroraEdition"));
+            let registered = registered.as_deref().unwrap_or("classic");
+            if aurora && !exe.exists() && registered == aurora_version::edition::CURRENT.id() {
                 log::info!("{scheme} links: the registered viewer moved");
                 if let Err(e) = register_scheme(scheme) {
                     log::warn!("{scheme} links: {e}");
@@ -416,9 +419,10 @@ mod xdg {
 
     pub(super) fn desktop_entry(exe: &str) -> String {
         let mimes: String = SCHEMES.iter().map(|s| format!("x-scheme-handler/{s};")).collect();
+        let edition = aurora_version::edition::CURRENT.id();
         format!(
             "[Desktop Entry]\nType=Application\nName=Aurora Viewer\nComment=Opens Second Life and Hypergrid links\n\
-             Exec={}\nIcon=aurora-viewer\nTerminal=false\nNoDisplay=true\nMimeType={mimes}\n",
+             Exec={}\nIcon=aurora-viewer\nTerminal=false\nNoDisplay=true\nX-Aurora-Edition={edition}\nMimeType={mimes}\n",
             exec_line(exe)
         )
     }
@@ -651,6 +655,10 @@ mod xdg {
         let Ok(text) = std::fs::read_to_string(&entry) else {
             return;
         };
+        let registered = value(&text, "Desktop Entry", "X-Aurora-Edition").unwrap_or("classic");
+        if registered != aurora_version::edition::CURRENT.id() {
+            return;
+        }
         let gone = value(&text, "Desktop Entry", "Exec")
             .and_then(exec_program)
             .is_some_and(|p| Path::new(&p).is_absolute() && !Path::new(&p).exists());

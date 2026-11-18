@@ -162,13 +162,14 @@ pub struct Updater {
 }
 
 pub fn checks_enabled() -> bool {
-    std::env::var_os("AURORA_DEMO").is_none()
-        && (aurora_updater::test_environment().is_some()
-            || (env!("AURORA_BUILD_PROFILE") == "release" && published_version(aurora_version::version())))
+    // The fork distributes edition-specific archives manually until it has
+    // a feed for both editions. Keep the isolated loopback fixtures available.
+    std::env::var_os("AURORA_DEMO").is_none() && aurora_updater::test_environment().is_some()
 }
 
 /// A version the Release workflow published: a stable one, or a beta. A
 /// development build (Git distance and commit after the tag) never updates.
+#[cfg(test)]
 fn published_version(version: &str) -> bool {
     aurora_updater::feed::version(version).is_some_and(|v| Channel::Beta.accepts(&v))
 }

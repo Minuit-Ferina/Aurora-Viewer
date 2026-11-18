@@ -910,6 +910,10 @@ impl World {
     }
 
     pub fn new(avatar_lib: Arc<AvatarLibrary>) -> World {
+        Self::with_rlva_activation(avatar_lib, rlva::Activation::COMPILED)
+    }
+
+    pub(crate) fn with_rlva_activation(avatar_lib: Arc<AvatarLibrary>, activation: rlva::Activation) -> World {
         World {
             hud_aspect: 1.0,
             hud_area: None,
@@ -1019,7 +1023,7 @@ impl World {
             lsl_bridge: lslbridge::LslBridge::default(),
             hand_contacts: hand_ik::Contacts::default(),
             ik_targets: rig_targets::Targets::default(),
-            rlva: rlva::Rlva::default(),
+            rlva: rlva::Rlva::with_activation(activation),
             rlva_privacy: Default::default(),
             rlva_hover_privacy: Default::default(),
             rlva_location_hidden: false,
@@ -1128,7 +1132,7 @@ impl World {
         let quiet = self.quiet_automated_chat;
         let blocked_chat = self.blocked_chat;
         let fly_override = self.fly_override;
-        *self = World::new(lib);
+        *self = World::with_rlva_activation(lib, self.rlva.activation());
         self.chat_log = chat_log;
         self.cache_dir = cache_dir;
         self.quiet_automated_chat = quiet;

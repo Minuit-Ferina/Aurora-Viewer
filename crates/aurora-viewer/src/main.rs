@@ -132,6 +132,8 @@ mod gpu_hints {
 }
 
 fn main() -> anyhow::Result<()> {
+    // CLI queries exit before opening the user profile.
+    let cli = cli::get();
     // Preferences › Graphics › Overlays, read from the file alone: nothing
     // else of the viewer has started yet
     let allow_overlays = settings::Settings::allow_overlays_at_start();
@@ -152,10 +154,9 @@ fn main() -> anyhow::Result<()> {
     if splash::helper()? {
         return Ok(());
     }
-    cli::get();
     // without a window: before the crash watcher, the logs and the link
     // hand-off
-    if cli::get().uninstall {
+    if cli.uninstall {
         std::process::exit(uninstall::command_line());
     }
     anyhow::ensure!(
@@ -305,10 +306,11 @@ fn run_viewer() -> anyhow::Result<()> {
     raw_mouse::install(&mut event_loop);
     let event_loop = event_loop.build()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    // the cache clear an update could not do while the cache was held
-    // (aurora-updater user_data.rs), before anything opens it
-    aurora_updater::clear_deferred_cache();
-    // the cache folder of this run, before anything uses it
+    settings::shared_profile::enter()?;
+    // Complete deferred update maintenance before opening the shared cache.
+    if let Some(_maintenance) = settings::shared_profile::try_maintenance() {
+        aurora_updater::clear_deferred_cache();
+    }
     cache_location::init();
     // private browser profiles a crash left behind (search web tab)
     let private_profiles = settings::cache_dir().join(media::private_profile::ROOT);

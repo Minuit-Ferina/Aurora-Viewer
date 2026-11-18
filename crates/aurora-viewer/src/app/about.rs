@@ -171,6 +171,14 @@ impl App {
             icon: "app-window-filled",
             title: "about-section-viewer",
             rows: vec![
+                Row::key(
+                    "about-edition",
+                    if aurora_version::edition::CURRENT.always_on() {
+                        "edition-ftrlv"
+                    } else {
+                        "edition-classic"
+                    },
+                ),
                 Row::text("about-commit", aurora_version::commit()),
                 Row::text(
                     "about-build",
@@ -179,7 +187,7 @@ impl App {
                 Row::text("about-language", aurora_i18n::language()),
                 Row::text("about-window-size", format!("{w} × {h} px")),
                 Row::text("about-ui-scale", format!("{:.0} %", s.ui_scale * 100.0)),
-                if s.rlva_enabled {
+                if s.effective_rlva_enabled() {
                     Row::text("about-rlva", crate::world::rlva::VERSION)
                 } else {
                     Row::key("about-rlva", "about-off")

@@ -6,7 +6,7 @@
 
 use super::App;
 use crate::ui::uninstall::{Action, UninstallUi};
-use crate::uninstall::{self, Login, Report};
+use crate::uninstall::{self, Report};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -21,15 +21,12 @@ impl App {
     /// Preferences asked: the confirmation, with what this system holds.
     pub(super) fn uninstall_asked(&mut self) {
         let system = uninstall::system::for_run();
-        let logins = if system.dry_run() {
-            uninstall::system::demo_logins()
+        let plan = if system.dry_run() {
+            uninstall::plan(system.as_ref(), &uninstall::system::demo_logins())
         } else {
-            uninstall::saved_logins(Some(Login {
-                grid: self.settings.login_uri(),
-                user: self.settings.username.clone(),
-            }))
+            uninstall::edition_plan(system.as_ref())
         };
-        self.uninstall.ui.confirm = Some(uninstall::plan(system.as_ref(), &logins));
+        self.uninstall.ui.confirm = Some(plan);
     }
 
     /// The confirmation and the result window, drawn with the preferences.

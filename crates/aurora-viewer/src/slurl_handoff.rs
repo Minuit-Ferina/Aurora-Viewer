@@ -93,6 +93,9 @@ mod bus {
     /// a digit, and the whole name stays under 255 bytes.
     pub(super) fn name_for(demo: bool, title_slug: Option<&str>) -> String {
         let mut name = String::from(INTERFACE);
+        if aurora_version::edition::CURRENT.always_on() {
+            name.push_str(".FTRLV");
+        }
         if demo {
             name.push_str(".Demo");
         }
@@ -205,11 +208,13 @@ mod tests {
     #[test]
     fn bus_names_are_valid() {
         use super::bus::name_for;
-        assert_eq!(name_for(false, None), "org.aurora_viewer.AuroraViewer");
-        assert_eq!(
-            name_for(true, Some("test-linux-slurl")),
-            "org.aurora_viewer.AuroraViewer.Demo.T_test_linux_slurl"
-        );
+        let base = if aurora_version::edition::CURRENT.always_on() {
+            "org.aurora_viewer.AuroraViewer.FTRLV"
+        } else {
+            "org.aurora_viewer.AuroraViewer"
+        };
+        assert_eq!(name_for(false, None), base);
+        assert_eq!(name_for(true, Some("test-linux-slurl")), format!("{base}.Demo.T_test_linux_slurl"));
         // non-ASCII letters of a title, a leading digit, a very long title
         for slug in ["été-2", "9lives", &"a".repeat(400)] {
             let name = name_for(false, Some(slug));

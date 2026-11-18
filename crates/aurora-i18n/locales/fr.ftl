@@ -3129,6 +3129,7 @@ ui-options-remove-aurora = Retirer Aurora de cet ordinateur
 ui-options-remove-aurora-help = Retire ce qu'Aurora a enregistré sur cet ordinateur hors de ses propres dossiers : le gestionnaire de liens, les clés et mots de passe enregistrés dans le coffre d'identifiants du système, le module Blender. Puis liste les dossiers qui restent, à supprimer vous-même avec le viewer.
 ui-options-remove-aurora-button = Retirer…
 uninstall-title = Retirer Aurora de cet ordinateur ?
+uninstall-edition-text = Cette action retire l’enregistrement des notifications Windows de cette édition. Les deux éditions conservent leurs réglages, identifiants enregistrés, cache et intégrations partagées.
 uninstall-text = Aurora retire les éléments suivants, qu'il a enregistrés hors de ses propres dossiers. Il fonctionne jusqu'à ce que vous le quittiez, mais les mots de passe enregistrés sont oubliés et le cache est retéléchargé. Un gestionnaire de liens qui ouvre un autre programme reste tel quel.
 uninstall-confirm = Retirer
 uninstall-links = Gestionnaire des liens secondlife://, hop:// et x-grid-location-info://
@@ -3146,6 +3147,7 @@ uninstall-removed = Retiré
 uninstall-absent = Rien à retirer
 uninstall-failed = Non retiré : { $error }
 uninstall-left = Encore sur cet ordinateur
+uninstall-edition-left-text = Quittez l’édition à retirer, puis supprimez son dossier d’installation. Les emplacements ci-dessous contiennent les données utilisateur partagées et peuvent servir à l’autre édition.
 uninstall-left-text = Quittez Aurora, puis supprimez ces dossiers et le viewer lui-même. Ils contiennent vos réglages, l'historique des conversations, le cache et les journaux.
 uninstall-kind-settings = Réglages
 uninstall-kind-cache = Cache
@@ -15046,3 +15048,10 @@ joystick-layout-positional = Positionnelle
 
 joystick-layout-auto = Automatique
 joystick-layout-xinput = XInput
+
+about-edition = Édition
+edition-classic = Classique
+edition-ftrlv = FTRLV (Full Time RLV)
+rlva-activation = Activation de RLVa
+rlva-always-enabled = RLVa est toujours activé dans cette édition.
+shared-profile-busy = Fermez l’autre visionneuse avant de modifier les réglages ou le cache partagés.

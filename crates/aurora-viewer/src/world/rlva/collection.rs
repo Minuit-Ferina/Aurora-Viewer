@@ -404,7 +404,10 @@ mod tests {
         folder(&mut inv, 8, base, "~Match ignored");
         let hidden = folder(&mut inv, 9, base, ".hidden");
         folder(&mut inv, 10, hidden, "Match visible");
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         world.inventory = inv;
         world.rlva.configure(true);
         world.active_gestures.insert(gesture);
@@ -459,7 +462,10 @@ mod tests {
         }
         let link = item(&mut inv, 301, base, "Shared link to an external original", 24);
         inv.items.get_mut(&link).unwrap().asset_id = Uuid::from_u128(103);
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

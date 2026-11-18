@@ -123,7 +123,10 @@ mod tests {
 
     #[test]
     fn rlva_permission_attach_requires_an_addable_point_and_auto_grants_only_an_owned_rezzed_object() {
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

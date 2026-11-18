@@ -464,7 +464,8 @@ impl crate::world::World {
             super::inventory::path(&self.inventory, Uuid::from_u128(0x726c76616f66666572)).unwrap_or_default()
         );
     }
-    pub(crate) fn rlva_configure(&mut self, enabled: bool) {
+    pub(crate) fn rlva_configure(&mut self, requested: bool) {
+        let enabled = self.rlva.effective_activation(requested);
         if !enabled {
             for (id, im) in self.rlva.offers.ordinary_offers() {
                 self.received_items.offer(&im, id);
@@ -718,7 +719,10 @@ mod tests {
     #[test]
     fn rlva_shared_offer_world_routing_preserves_consent_global_disable_and_exact_internal_authority() {
         let (inv, shared, gift) = fixture();
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         world.inventory = inv;
         world.agent_id = Uuid::from_u128(7);
         world.rlva_configure(true);
@@ -757,5 +761,36 @@ mod tests {
             commands.is_empty(),
             "ordinary Received-items filing resumes its deferred acceptance"
         );
+    }
+    #[test]
+    fn ftrlv_false_request_preserves_rules_pending_actions_and_offers() {
+        use crate::world::rlva::{Activation, Command};
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            Activation::AlwaysOn,
+        );
+        let (inventory, _, gift) = fixture();
+        world.inventory = inventory;
+        world.agent_id = Uuid::from_u128(7);
+        world.received_items.enabled = true;
+        world.on_task_inventory_offer(&offer(true, gift), "Example giver");
+        let id = world.notifications.list.last().unwrap().id;
+        world.rlva.process(ACTOR, Command::parse("fly=n").unwrap());
+        assert!(world.rlva.has("fly"));
+        let command = Command::parse("sitground=force").unwrap();
+        world.rlva.pending.push((ACTOR, command));
+        let revision = world.rlva.revision;
+        for _ in 0..2 {
+            world.rlva_configure(false);
+            assert!(world.rlva.enabled());
+            assert_eq!(world.rlva.revision, revision);
+            assert!(world.rlva.has("fly"));
+            assert_eq!(world.rlva.pending.len(), 1);
+            assert!(world.rlva.offers.offered.contains_key(&id));
+        }
+        world.reset();
+        assert!(world.rlva.enabled());
+        assert!(!world.rlva.has("fly"));
+        assert!(world.rlva.pending.is_empty() && world.rlva.offers.offered.is_empty());
     }
 }

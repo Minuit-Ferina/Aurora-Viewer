@@ -1027,13 +1027,10 @@ files never leave the machine and are never attached to a bug report.
 
 Preferences › Language and updates › "Remove Aurora from this computer"
 (or `aurora-viewer --uninstall`, see [Command line](#command-line)) removes
-what Aurora registered outside its own folders: the `secondlife://`,
-`hop://` and `x-grid-location-info://` link handler when it opens this
-Aurora (another viewer's stays), the Windows notification identity, the
-cache key and saved logins of the system's credential store, and Aurora's
-Blender add-on. It then lists the folders that remain (settings, cache,
-logs, media plugins, and the cache or history folders you chose), each with
-an "Open folder" button: quit Aurora, then delete them and the viewer.
+this edition's Windows notification registration. Quit that edition and
+remove its installation folder. The result lists the shared data locations,
+which both editions can continue using. Saved logins, the cache key and
+shared integrations remain available.
 
 ## Under the hood
 
@@ -1073,6 +1070,37 @@ an "Open folder" button: quit Aurora, then delete them and the viewer.
   per-vertex MikkTSpace tangents.
 
 ## Build
+
+### Fork editions
+
+Classic is the default build. It offers the usual RLVa preference, off by
+default. FTRLV (Full Time RLV) keeps RLVa enabled and still honors individual
+rule releases and session cleanup.
+
+From a task worktree, build each complete portable archive in a separate
+invocation. Both commands default to a development preview.
+
+```powershell
+./scripts/build-edition.ps1 -Edition classic -Out .scratch/dist
+./scripts/build-edition.ps1 -Edition ftrlv -Out .scratch/dist
+```
+
+Add `-Release` to build distribution archives, or use
+`./scripts/build-release.ps1 -Edition ftrlv -ArchiveOut .scratch/dist`.
+The output contains an
+edition-specific application, a schema-2 install manifest and a SHA-256
+sidecar. Keep the installations in separate locations. On Linux, the
+FTRLV package contains `aurora-viewer-ftrlv` and
+`aurora-viewer-ftrlv.desktop`. On macOS the app is
+`Aurora Viewer FTRLV.app`. The script signs macOS Release builds ad hoc.
+The fork distributes both editions by manual archive while it has no
+edition-aware update feed.
+
+Both editions share settings, account data, cache, media plugins and logs.
+FTRLV preserves Classic's saved RLVa choice. Other saved choices are
+available on the next launch. Concurrent sessions save complete settings
+snapshots independently. Close other instances before you import or reset
+shared settings or clear the shared cache.
 
 Requirements: Windows 10/11, [Rust](https://rustup.rs) (stable, selected
 automatically by `rust-toolchain.toml`), a GPU with Vulkan support. On Linux,
@@ -1166,7 +1194,8 @@ exe before publishing; the local build also writes it to `version.txt`.
 | `<slurl>`, `--url <slurl>` | Starts at this place, or hands it to the viewer already running; must come last |
 | `-h`, `--help` | Shows the help |
 | `-V`, `--version` | Prints the built version then exits, with no window, log or network |
-| `--uninstall` | Removes what Aurora registered on this computer, prints it and the folders left, then exits, with no window |
+| `--edition` | Prints the compiled edition ID (`classic` or `ftrlv`), then exits before the window, log or network |
+| `--uninstall` | Removes this edition's Windows notification registration, lists shared data locations, then exits |
 
 - `--title`: the build profile ends the title (Dev, Release, Debug); the log
   file is `aurora-<text>.log` (`aurora-demo-<text>.log` in demo mode).
@@ -1198,8 +1227,8 @@ exe before publishing; the local build also writes it to `version.txt`.
 - `--uninstall`: what Preferences › Language and updates › "Remove Aurora
   from this computer" does, without its confirmation (see
   [Removing Aurora](#removing-aurora)); it prints each part with its result,
-  then the folders to delete, and exits with code 1 when a part could not be
-  removed. On Windows, run it as `aurora-viewer.exe --uninstall | more` so
+  then lists the shared data locations, and exits with code 1 when a part could
+  not be removed. On Windows, run it as `aurora-viewer.exe --uninstall | more` so
   the terminal waits for its text. With `AURORA_DEMO=1` it is a dry run that
   removes nothing.
 - `--login`: the account follows the usual "remember" choices; a single

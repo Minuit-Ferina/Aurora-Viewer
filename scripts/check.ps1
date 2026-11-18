@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     The CI checks, locally: syntax of the PowerShell scripts, formatting,
     clippy (warnings = errors) and tests. Run it before each PR.
@@ -6,7 +6,15 @@
     Clippy and the tests wait for a build slot when other heavy builds
     already run on the PC (AURORA_BUILD_SLOTS, 2 by default; common.ps1).
 #>
+param(
+    [ValidateSet('classic','ftrlv')][string]$Edition = 'classic',
+    [switch]$CI
+)
 . "$PSScriptRoot\common.ps1"
+
+$taskProfileArgs = if ($CI) { @('--profile', 'ci') } else { @() }
+$features = @()
+if ($Edition -eq 'ftrlv') { $features = @('--features', 'aurora-viewer/rlva-always-on') }
 
 Set-Location (git rev-parse --show-toplevel).Trim()
 Sync-BuildCache
@@ -18,8 +26,8 @@ if ($PSVersionTable.PSEdition -ne 'Desktop' -and -not $IsWindows) { $clippyArgs 
 $steps = @(
     @{ Name = 'PowerShell scripts (5.1 parser)'; Run = { & "$PSScriptRoot\check-scripts.ps1" } },
     @{ Name = 'Formatting (rustfmt)'; Run = { cargo fmt --all -- --check } },
-    @{ Name = 'Clippy'; Heavy = $true; Run = { cargo clippy --workspace --all-targets --locked -- @clippyArgs } },
-    @{ Name = 'Tests'; Heavy = $true; Run = { cargo test --workspace --locked } }
+    @{ Name = 'Clippy'; Heavy = $true; Run = { cargo clippy @taskProfileArgs --workspace --all-targets --locked @features -- @clippyArgs } },
+    @{ Name = 'Tests'; Heavy = $true; Run = { cargo test @taskProfileArgs --workspace --locked @features } }
 )
 $slot = $null
 try {
