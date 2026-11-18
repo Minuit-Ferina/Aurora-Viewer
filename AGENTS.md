@@ -193,13 +193,13 @@ to a contribution targeting Aurora.
 
 Read [the fork workflow](docs/FORK_WORKFLOW.md) before creating a task:
 
-- Fork tooling and CI start from `origin/main` and use a squash PR to fork `main`.
-- Our viewer changes start from `origin/develop` (`-BaseBranch develop`) and
-  use a PR to `develop`. This branch is our usable version. Update it from
-  `main` through a tested merge PR; never merge `develop` back into `main`.
-- A sync starts from `origin/main`, merges `upstream/main`, and merges its
-  PR into the fork **with a merge commit**, never squash or rebase. Preserve
-  upstream ancestry and fork PR testing when resolving conflicts.
+- All fork PRs start from `origin/develop` (`-BaseBranch develop`) and
+  target `develop`. Use squash for tooling, CI and viewer changes.
+- To synchronize Aurora, start from `origin/develop` and merge the exact
+  tag of an official stable Aurora release. Merge the sync PR into
+  `develop` with a merge commit to preserve upstream ancestry and rerun
+  the fork's full required checks. Use the published stable tag as the
+  release baseline. Tag fork releases from tested commits of `develop`.
 - Contributions to Aurora start from `upstream/main` with
   `new-task.ps1 -BaseRemote upstream -SkipCleanup`. Never merge fork `main`
   or `develop` into them or copy fork CI/docs onto them. Push the branch to `origin` and
@@ -762,7 +762,9 @@ the review comment.
 - A release is made **when the human asks for it** ("release 0.4.0"), never
   on your own initiative. If they give no number, propose one from the labels
   of the PRs merged since the last version and wait for their agreement.
-  Then:
+  For this fork, tag the tested commit of `origin/develop` and verify the
+  required checks of the PR that integrated it. Aurora's official release
+  procedure uses `origin/main` instead:
 
   ```powershell
   gh run list --workflow CI --branch main --limit 1   # main must be green
@@ -798,8 +800,9 @@ the review comment.
   the project (what is left to do, missing features, progress of a task,
   issues, PRs, what was merged):
   - run `git fetch origin`;
-  - read `TASKS.md` from `origin/main` (`git show origin/main:TASKS.md`),
-    not a worktree's copy nor an earlier reading in the session;
+  - read `TASKS.md` from the target's current remote branch
+    (`git show origin/develop:TASKS.md` for the fork,
+    `git show upstream/main:TASKS.md` for Aurora);
   - list the open issues (`gh issue list`), the open PRs and the recently
     merged ones (`gh pr list --state open`, `gh pr list --state merged
     --limit 30`);

@@ -19,7 +19,7 @@ done with [the Aurora tools](#the-aurora-tools-aurora-toolscmd).
 | Open the PR, review it, fix, comment, **merge it** | Decide when the agent asks you to (verdict ⚠️ or ❌) |
 | Keep TASKS.md up to date, publish the releases | **Ask** for a release when you want one ("release 0.4.0") |
 | Read the issues and their screenshots / files, analyse them, set their type, reply and close them once resolved | Give the details and validations needed, decide the product choices |
-| Answer your questions on what is left to do, the issues and the PRs from fresh data (`origin/main`, GitHub), never from memory | Ask whenever you want a status |
+| Answer your questions on what is left to do, the issues and the PRs from fresh data (`origin/develop` for the fork, GitHub) | Ask whenever you want a status |
 
 You have **nothing to do on GitHub**: your only job is to test what the agent
 shows you, and to log in to the grid when needed.
@@ -76,12 +76,12 @@ existing skip. The required check names are `fmt, clippy (Windows)`,
 `clippy, tests, demo (macOS)`. A skipped or cancelled required test job is
 not a successful test run. The upstream repository keeps its merge queue.
 
-`main` follows Aurora with our small fork CI/tooling adjustments; `develop` is
-our usable version with our viewer changes. Use squash for tooling and feature
-PRs, and merge commits for syncs from upstream to `main` and `main` to `develop`.
-The fork allows both methods and does not require linear history: this
-preserves Aurora's ancestry across repeated syncs. A sync still goes
-through a PR and all its required checks, with no administrator bypass.
+`develop` holds our viewer changes and is the target for all fork PRs.
+Merge official stable Aurora release tags directly into `develop` through
+sync PRs. Use a merge commit for each sync to preserve Aurora's history
+and squash for tooling and feature PRs. The fork's protected `main`
+holds the earlier snapshot and initial workflow setup. Prepare fork
+release tags from tested commits of `develop`.
 
 Start contributions to Aurora from `upstream/main`, push their branches to
 the fork, and explicitly open the PR in Aurora. Never merge the fork's
@@ -430,6 +430,9 @@ built.
   as with PowerShell 7.
 - `build-release.bat 42` builds PR no. 42 (to test its performance before
   merging it).
+- The OpenXR loader is built in, like in the published zip, when CMake is
+  installed (`winget install Kitware.CMake`); without CMake the script says so,
+  and VR then needs an `openxr_loader.dll` on the PC.
 - Close the viewer of that folder before rebuilding (the script says so).
 
 ## Building and launching by hand
