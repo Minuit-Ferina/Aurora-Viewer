@@ -94,7 +94,10 @@ mod tests {
 
     #[test]
     fn rlva_relative_wear_never_blocks_an_unrelated_query_and_global_disable_discards_callbacks() {
-        let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = crate::world::World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

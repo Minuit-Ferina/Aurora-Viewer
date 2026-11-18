@@ -2224,9 +2224,9 @@ impl App {
         if self.blender_live.local_command(&cmd, &self.world) {
             return;
         }
-        self.world.rlva_configure(self.settings.rlva_enabled);
+        self.world.rlva_configure(self.settings.effective_rlva_enabled());
         self.world.rlva.preferences.clone_from(&self.settings.rlva);
-        if !self.settings.rlva_enabled {
+        if !self.settings.effective_rlva_enabled() {
             self.named_teleport.cancel_scripts();
             self.world.maturity.cancel_script_teleports();
             if !actor.is_nil() {
@@ -3226,7 +3226,7 @@ impl App {
             .iter()
             .find(|account| account.key() == catalog_key)
             .and_then(|account| account.agent);
-        let start = if self.rlva_login.requires_last(self.settings.rlva_enabled, login_agent) {
+        let start = if self.rlva_login.requires_last(self.settings.effective_rlva_enabled(), login_agent) {
             StartLocation::Last
         } else {
             start
@@ -3475,7 +3475,7 @@ impl App {
             return;
         }
         if let NetEvent::TeleportRegionResolved { request, result } = ev {
-            if !self.settings.rlva_enabled {
+            if !self.settings.effective_rlva_enabled() {
                 self.named_teleport.cancel_scripts();
             }
             if let Some((actor, result)) = self.named_teleport.resolve(request, result) {
@@ -8242,7 +8242,7 @@ impl App {
 
     /// RlvActions::canTeleport*: reject before UI and demo side effects.
     fn user_teleport_allowed(&mut self, command: &NetCommand) -> bool {
-        self.world.rlva_configure(self.settings.rlva_enabled);
+        self.world.rlva_configure(self.settings.effective_rlva_enabled());
         self.world.rlva.preferences.clone_from(&self.settings.rlva);
         if self.world.rlva_allows_command(command, uuid::Uuid::nil()) {
             true
@@ -9803,7 +9803,7 @@ impl App {
         self.update_places();
         // the maturity preference's requests, and the teleport that waited
         // for it
-        if !self.settings.rlva_enabled {
+        if !self.settings.effective_rlva_enabled() {
             self.world.maturity.cancel_script_teleports();
         }
         for (actor, c) in self.world.maturity.take_commands() {
@@ -17115,8 +17115,16 @@ impl App {
             self.options_ui.cancel_capture();
         }
         if res.clear_cache {
-            self.disk_cache.clear();
-            self.net.send(NetCommand::ClearObjectCache);
+            if let Some(guard) = crate::settings::shared_profile::try_maintenance() {
+                let (done, cleared) = crossbeam_channel::bounded(1);
+                self.net.send(NetCommand::ClearObjectCache(done));
+                self.disk_cache.clear_after_object_cache(guard, cleared);
+            } else {
+                res.maintenance_denied = true;
+            }
+        }
+        if res.maintenance_denied {
+            self.world.system_message(aurora_i18n::tr!("shared-profile-busy").to_owned());
         }
         if res.open_chat_logs
             && let Some(dir) = self.world.chat_log.dir()
@@ -17188,6 +17196,9 @@ impl App {
         self.uninstall_window(ctx, p);
         if self.panels.settings && !open {
             self.settings.save();
+        }
+        if let Some(guard) = res.maintenance.take() {
+            self.settings.save_after_maintenance(guard);
         }
         self.panels.settings = open;
     }
@@ -20130,7 +20141,7 @@ impl App {
                     self.world.land.group_name(&group, &self.world.groups.groups);
                 }
                 if let Some(input) = rlva_actions.input {
-                    self.world.rlva_configure(self.settings.rlva_enabled);
+                    self.world.rlva_configure(self.settings.effective_rlva_enabled());
                     self.world.rlva.preferences.clone_from(&self.settings.rlva);
                     self.world.rlva_console_input(&input);
                 }

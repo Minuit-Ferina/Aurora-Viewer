@@ -3126,6 +3126,7 @@ ui-options-remove-aurora = Remove Aurora from this computer
 ui-options-remove-aurora-help = Removes what Aurora registered on this computer outside its own folders: the link handler, the keys and saved passwords of the system's credential store, the Blender add-on. Then lists the folders that remain, for you to delete with the viewer.
 ui-options-remove-aurora-button = Remove…
 uninstall-title = Remove Aurora from this computer?
+uninstall-edition-text = This removes this edition’s notification registration on Windows. Both editions keep their settings, saved logins, cache, and shared integrations.
 uninstall-text = Aurora removes the following, which it registered outside its own folders. It works until you quit it, but saved passwords are forgotten and the cache is downloaded again. A link handler that opens another program is left as it is.
 uninstall-confirm = Remove
 uninstall-links = Link handler of secondlife://, hop:// and x-grid-location-info://
@@ -3143,6 +3144,7 @@ uninstall-removed = Removed
 uninstall-absent = Nothing to remove
 uninstall-failed = Not removed: { $error }
 uninstall-left = Still on this computer
+uninstall-edition-left-text = Quit the edition you are removing, then delete its installation folder. The locations listed below contain shared user data and may be used by your other edition.
 uninstall-left-text = Quit Aurora, then delete these folders and the viewer itself. They hold your settings, conversation history, cache and logs.
 uninstall-kind-settings = Settings
 uninstall-kind-cache = Cache
@@ -15039,3 +15041,10 @@ joystick-layout-positional = Positional
 
 joystick-layout-auto = Automatic
 joystick-layout-xinput = XInput
+
+about-edition = Edition
+edition-classic = Classic
+edition-ftrlv = FTRLV (Full Time RLV)
+rlva-activation = RLVa activation
+rlva-always-enabled = RLVa is always enabled in this edition.
+shared-profile-busy = Close the other viewer before changing the shared settings or cache.

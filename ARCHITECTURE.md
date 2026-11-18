@@ -1484,9 +1484,23 @@ The reserved glyph uses the surrounding text's metrics, preserving the
 sentence baseline and line height. Unknown commands use a localized readable
 fallback; their actual URI stays available through the copy-link menu.
 
-RLVa is an explicit opt-in (`Settings::rlva_enabled`, false by
-default), exposed in Preferences > RLVa with the session's active
-restrictions. `world/rlva.rs` owns parsing, object-scoped rules, strict
+Classic exposes the optional `Settings::rlva_enabled` in Preferences > RLVa
+and defaults it to false. The fork's FTRLV build forwards the
+`rlva-always-on` feature to `aurora-version::edition`. Preferences and callers
+resolve the effective setting through the compiled activation policy.
+`World` initializes a fresh engine with that policy, including on logout.
+The world wrapper resolves activation before offer conversion and the
+engine resolves it before mutating rules or pending work.
+
+The edition ID scopes executable packaging, OS integration and handoff.
+The profile and credential namespaces are shared. Both editions take a
+shared profile lease. Settings restore, bulk reset and cache purge take
+an exclusive lease through completion. Settings publication retains atomic
+whole-file snapshots. The fork uses manual archives until it has an update
+feed. Updater fixtures and package validation carry compiled edition identity
+in the install manifest and transaction plan.
+
+`world/rlva.rs` owns parsing, object-scoped rules, strict
 exceptions, protocol replies and garbage collection. The shared exception
 checker requires secure issuers by default and all issuers under permissive=n;
 non-strict behaviours keep permissive exceptions. Channel exclusions reuse

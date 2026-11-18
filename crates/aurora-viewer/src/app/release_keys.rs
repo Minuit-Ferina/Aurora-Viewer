@@ -95,7 +95,10 @@ mod tests {
 
     #[test]
     fn rlva_remove_locks_grey_the_entry_out() {
-        let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = crate::world::World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         world.apply(NetEvent::ScriptControlChange(vec![(true, DEMO_TAKEN, false)]));
         world.rlva_configure(true);
         let source = uuid::Uuid::from_u128(7);

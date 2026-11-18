@@ -3107,6 +3107,7 @@ ui-options-remove-aurora = このコンピュータからAuroraを削除
 ui-options-remove-aurora-help = Auroraが自身のフォルダの外でこのコンピュータに登録したもの（リンクハンドラ、システムの資格情報ストアのキーと保存したパスワード、Blenderアドオン）を削除します。その後、残っているフォルダを一覧表示します。ビューアと一緒にご自身で削除してください。
 ui-options-remove-aurora-button = 削除…
 uninstall-title = このコンピュータからAuroraを削除しますか？
+uninstall-edition-text = このエディションの Windows 通知登録を削除します。設定、保存済みのログイン情報、キャッシュ、共有連携は両エディションで引き続き利用できます。
 uninstall-text = Auroraが自身のフォルダの外に登録した次のものを削除します。終了するまでは動作しますが、保存したパスワードは消去され、キャッシュは再ダウンロードされます。別のプログラムを開くリンクハンドラはそのまま残ります。
 uninstall-confirm = 削除
 uninstall-links = secondlife://、hop://、x-grid-location-info:// のリンクハンドラ
@@ -3124,6 +3125,7 @@ uninstall-removed = 削除しました
 uninstall-absent = 削除するものはありません
 uninstall-failed = 削除できませんでした：{ $error }
 uninstall-left = このコンピュータに残っているもの
+uninstall-edition-left-text = 削除するエディションを終了してから、そのインストールフォルダーを削除してください。以下の場所には共有データがあり、もう一方のエディションも使用する可能性があります。
 uninstall-left-text = Auroraを終了してから、これらのフォルダとビューア本体を削除してください。設定、会話履歴、キャッシュ、ログが含まれています。
 uninstall-kind-settings = 設定
 uninstall-kind-cache = キャッシュ
@@ -14942,3 +14944,10 @@ joystick-layout-positional = 位置に基づく
 
 joystick-layout-auto = 自動
 joystick-layout-xinput = XInput
+
+about-edition = エディション
+edition-classic = クラシック
+edition-ftrlv = FTRLV（Full Time RLV）
+rlva-activation = RLVa の有効化
+rlva-always-enabled = このエディションではRLVaは常に有効です。
+shared-profile-busy = 共有設定やキャッシュを変更する前に、ほかのビューアを終了してください。

@@ -113,7 +113,7 @@ impl Locks {
             "camera.preset" | "camera.camera_offset" | "camera.focus_offset" | "camera.offset_scale" => self.camera_preset,
             "camera.fov" => self.camera_fov,
             "autoresponse.dnd_text" => self.sendim,
-            "rlva_enabled" => self.restricted,
+            "rlva_enabled" => self.restricted || aurora_version::edition::CURRENT.always_on(),
             _ => self.restricted && key.starts_with("rlva."),
         }
     }
@@ -121,7 +121,7 @@ impl Locks {
 
 /// Whether the setting is kept out of the list, whatever its value.
 fn hidden(key: &str) -> bool {
-    HIDDEN.contains(&key) || super::backup::is_this_pc(key)
+    HIDDEN.contains(&key) || super::backup::is_this_pc(key) || (key == "rlva_enabled" && aurora_version::edition::CURRENT.always_on())
 }
 
 /// A UUID anywhere in `text`: 8-4-4-4-12 hexadecimal digits.
@@ -444,7 +444,11 @@ mod tests {
             "rlva_enabled",
             "rlva.allow_ooc",
         ] {
-            assert!(!free.locked(key), "{key}");
+            assert_eq!(
+                free.locked(key),
+                key == "rlva_enabled" && aurora_version::edition::CURRENT.always_on(),
+                "{key}"
+            );
         }
         let camera = Locks {
             camera_preset: true,

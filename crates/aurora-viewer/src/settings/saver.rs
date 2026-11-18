@@ -6,6 +6,7 @@
 //! their order, and a save not started yet is replaced by a newer one (it
 //! held an older state of the same file). The viewer waits for the last one
 //! before it ends (`wait`).
+use super::shared_profile::Maintenance;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -14,6 +15,7 @@ pub(super) type Job = Box<dyn FnOnce() + Send>;
 #[derive(Default)]
 struct State {
     pending: Option<Job>,
+    maintenance: Option<Maintenance>,
     writing: bool,
 }
 
@@ -31,7 +33,12 @@ impl Saver {
         self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    #[cfg(test)]
     pub(super) fn queue(self: &Arc<Self>, job: Job) {
+        self.queue_with_maintenance(job, None);
+    }
+
+    pub(super) fn queue_with_maintenance(self: &Arc<Self>, job: Job, guard: Option<Maintenance>) {
         let running = *self.started.get_or_init(|| {
             let saver = Arc::clone(self);
             std::thread::Builder::new()
@@ -44,24 +51,31 @@ impl Saver {
             job();
             return;
         }
-        self.lock().pending = Some(job);
+        let mut state = self.lock();
+        state.pending = Some(job);
+        // A newer snapshot can supersede a reset or restore. Keep the
+        // exclusive lease until the replacement snapshot reaches disk.
+        if let Some(guard) = guard {
+            state.maintenance = Some(guard);
+        }
         self.changed.notify_all();
     }
 
     fn run(&self) {
         loop {
-            let job = {
+            let (job, guard) = {
                 let mut state = self.lock();
                 loop {
                     if let Some(job) = state.pending.take() {
                         state.writing = true;
-                        break job;
+                        break (job, state.maintenance.take());
                     }
                     state = self.changed.wait(state).unwrap_or_else(|poisoned| poisoned.into_inner());
                 }
             };
             // (a panic is logged by the hook; the next saves still go)
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+            drop(guard);
             self.lock().writing = false;
             self.changed.notify_all();
         }

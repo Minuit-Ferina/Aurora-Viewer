@@ -221,6 +221,9 @@ impl Backup {
         let read = crate::tolerant::from_value::<Settings>(self.settings.clone()?, "settings backup")?;
         let mut restored = read.value.sanitized();
         restored.keep_this_pc(current);
+        if aurora_version::edition::CURRENT.always_on() {
+            restored.rlva_enabled = current.rlva_enabled;
+        }
         Some(restored)
     }
 

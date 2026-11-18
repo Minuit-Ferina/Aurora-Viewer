@@ -123,14 +123,18 @@ fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     writer.finish().expect("ZIP").into_inner()
 }
 fn valid_zip() -> Vec<u8> {
+    zip_with_manifest(&format!(
+        r#"{{"schema":2,"version":"0.3.0","edition":"{}"}}"#,
+        aurora_version::edition::CURRENT.id()
+    ))
+}
+
+fn zip_with_manifest(manifest: &str) -> Vec<u8> {
     zip(&[
         ("Aurora-Viewer-v0.3.0-windows-x64/aurora-viewer.exe", b"new viewer"),
         ("Aurora-Viewer-v0.3.0-windows-x64/assets/character/avatar.llm", b"avatar"),
         ("Aurora-Viewer-v0.3.0-windows-x64/LICENSE", b"license"),
-        (
-            "Aurora-Viewer-v0.3.0-windows-x64/aurora-install.json",
-            br#"{"schema":1,"version":"0.3.0"}"#,
-        ),
+        ("Aurora-Viewer-v0.3.0-windows-x64/aurora-install.json", manifest.as_bytes()),
     ])
 }
 
@@ -240,6 +244,27 @@ fn invalid_zip_paths_and_case_aliases_do_not_escape_staging() {
         assert!(package::extract(&archive, &temp.0.join("prepared"), "v0.3.0", &Cancel::default()).is_err());
         assert!(!temp.0.join("escape.txt").exists());
         assert!(!temp.0.join("prepared").exists());
+    }
+}
+
+#[test]
+fn package_requires_current_edition_and_schema() {
+    let other = if aurora_version::edition::CURRENT.always_on() {
+        "classic"
+    } else {
+        "ftrlv"
+    };
+    for manifest in [
+        r#"{"schema":1,"version":"0.3.0"}"#.to_owned(),
+        r#"{"schema":2,"version":"0.3.0"}"#.to_owned(),
+        r#"{"schema":2,"version":"0.3.0","edition":"unknown"}"#.to_owned(),
+        format!(r#"{{"schema":2,"version":"0.3.0","edition":"{other}"}}"#),
+    ] {
+        let temp = Temp::new();
+        let archive = temp.0.join("test.zip");
+        fs::write(&archive, zip_with_manifest(&manifest)).expect("ZIP file");
+        let outcome = package::extract(&archive, &temp.0.join("prepared"), "v0.3.0", &Cancel::default());
+        assert!(outcome.is_err(), "{manifest}");
     }
 }
 

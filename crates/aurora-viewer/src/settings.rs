@@ -10,6 +10,7 @@ pub mod draw_stepping;
 mod hover_height;
 pub mod registry;
 mod saver;
+pub(crate) mod shared_profile;
 pub mod stream_list;
 
 /// Where a contact-set marker stands on an avatar (`ui/contact_markers.rs`).
@@ -2895,6 +2896,10 @@ impl Settings {
         config_dir().join("settings.json")
     }
 
+    pub fn effective_rlva_enabled(&self) -> bool {
+        crate::world::rlva::Activation::COMPILED.resolve(self.rlva_enabled)
+    }
+
     pub fn load() -> Settings {
         Self::load_from(&Self::path())
     }
@@ -3582,6 +3587,7 @@ impl Settings {
         *self = Settings {
             username: old.username,
             remember_username: old.remember_username,
+            rlva_enabled: old.rlva_enabled && aurora_version::edition::CURRENT.always_on(),
             last_login: old.last_login,
             grid: old.grid,
             custom_login_uri: old.custom_login_uri,
@@ -3608,17 +3614,28 @@ impl Settings {
     /// The settings as they are now, written by the save thread
     /// (settings/saver.rs): the frame thread does not wait for the disk.
     pub fn save(&self) {
+        self.queue_save(None);
+    }
+
+    pub(crate) fn save_after_maintenance(&self, guard: shared_profile::Maintenance) {
+        self.queue_save(Some(guard));
+    }
+
+    fn queue_save(&self, guard: Option<shared_profile::Maintenance>) {
         let copy = self.to_saved();
         let path = Self::path();
-        saver::get().queue(Box::new(move || {
-            if let Some(dir) = path.parent()
-                && let Err(e) = std::fs::create_dir_all(dir)
-            {
-                log::warn!("cannot create config dir: {e}");
-                return;
-            }
-            copy.write_saved(&path);
-        }));
+        saver::get().queue_with_maintenance(
+            Box::new(move || {
+                if let Some(dir) = path.parent()
+                    && let Err(e) = std::fs::create_dir_all(dir)
+                {
+                    log::warn!("cannot create config dir: {e}");
+                    return;
+                }
+                copy.write_saved(&path);
+            }),
+            guard,
+        );
     }
 
     /// Until the saves asked for are written, `timeout` at most: before

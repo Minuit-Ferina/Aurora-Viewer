@@ -274,7 +274,7 @@ pub fn touch(path: &Path) {
 
 enum Cmd {
     Trim,
-    Clear,
+    Clear(Option<(crate::settings::shared_profile::Maintenance, crossbeam_channel::Receiver<()>)>),
 }
 
 pub struct DiskCache {
@@ -349,11 +349,13 @@ impl DiskCache {
                         // coalesce queued trims (e.g. while the size slider moves)
                         Ok(Cmd::Trim) => {
                             std::thread::sleep(Duration::from_millis(300));
-                            let mut clear = false;
+                            let mut next = Cmd::Trim;
                             while let Ok(c) = rx.try_recv() {
-                                clear |= matches!(c, Cmd::Clear);
+                                if matches!(c, Cmd::Clear(_)) {
+                                    next = c;
+                                }
                             }
-                            if clear { Cmd::Clear } else { Cmd::Trim }
+                            next
                         }
                         Ok(c) => c,
                         Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
@@ -368,7 +370,11 @@ impl DiskCache {
                         Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return,
                     };
                     match cmd {
-                        Cmd::Clear => {
+                        Cmd::Clear(coordinated) => {
+                            let _guard = coordinated.map(|(guard, done)| {
+                                let _ = done.recv();
+                                guard
+                            });
                             let mut freed = 0u64;
                             for (path, len, _) in scan(&root).0 {
                                 if std::fs::remove_file(&path).is_ok() {
@@ -440,9 +446,21 @@ impl DiskCache {
     }
 
     /// Delete every cached file (in the background).
+    pub(crate) fn clear_after_object_cache(
+        &self,
+        guard: crate::settings::shared_profile::Maintenance,
+        cleared: crossbeam_channel::Receiver<()>,
+    ) {
+        self.clearing.store(true, Ordering::Release);
+        if self.tx.send(Cmd::Clear(Some((guard, cleared)))).is_err() {
+            self.clearing.store(false, Ordering::Release);
+        }
+    }
+
+    #[cfg(test)]
     pub fn clear(&self) {
         self.clearing.store(true, Ordering::Release);
-        let _ = self.tx.send(Cmd::Clear);
+        let _ = self.tx.send(Cmd::Clear(None));
     }
 
     pub fn is_clearing(&self) -> bool {

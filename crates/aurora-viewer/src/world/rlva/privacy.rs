@@ -380,7 +380,10 @@ mod tests {
     #[test]
     fn rlva_location_history_keeps_destinations_and_teleport_offers_require_reference_exceptions() {
         use crate::world::tphistory::{HistoryItem, HistoryStorage, TeleportHistory, TpEntry};
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }
@@ -464,7 +467,10 @@ mod tests {
 
     #[test]
     fn rlva_privacy_filters_unicode_and_word_boundaries_without_changing_world_coordinates() {
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

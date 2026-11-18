@@ -3095,7 +3095,10 @@ impl Session<'_> {
                     self.maybe_send_agent_update(Instant::now());
                 }
             }
-            NetCommand::ClearObjectCache => self.object_cache.clear(),
+            NetCommand::ClearObjectCache(done) => {
+                self.object_cache.clear();
+                let _ = done.try_send(());
+            }
             NetCommand::Build(b) => self.on_build(b),
             // handled by on_social_command
             NetCommand::RequestMuteList { .. }

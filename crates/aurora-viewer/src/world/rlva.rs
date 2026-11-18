@@ -437,8 +437,28 @@ fn valid_option(c: &Command) -> bool {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum Activation {
+    #[default]
+    Configurable,
+    AlwaysOn,
+}
+
+impl Activation {
+    pub const COMPILED: Self = if aurora_version::edition::CURRENT.always_on() {
+        Self::AlwaysOn
+    } else {
+        Self::Configurable
+    };
+
+    pub const fn resolve(self, requested: bool) -> bool {
+        matches!(self, Self::AlwaysOn) || requested
+    }
+}
+
 #[derive(Default)]
 pub struct Rlva {
+    activation: Activation,
     enabled: bool,
     pub preferences: preferences::Preferences,
     pub rename: rename::RenameOnWear,
@@ -484,6 +504,22 @@ pub struct Rlva {
 }
 
 impl Rlva {
+    pub fn with_activation(activation: Activation) -> Self {
+        Self {
+            activation,
+            enabled: activation.resolve(false),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn activation(&self) -> Activation {
+        self.activation
+    }
+
+    pub fn effective_activation(&self, requested: bool) -> bool {
+        self.activation.resolve(requested)
+    }
+
     pub fn enabled(&self) -> bool {
         self.enabled
     }
@@ -539,7 +575,8 @@ impl Rlva {
             && !self.targets("showhovertext", &object.to_string())
     }
 
-    pub fn configure(&mut self, enabled: bool) {
+    pub fn configure(&mut self, requested: bool) {
+        let enabled = self.effective_activation(requested);
         if self.enabled == enabled {
             return;
         }

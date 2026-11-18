@@ -670,6 +670,8 @@ pub struct OptionsResult {
     pub ui_scale_changed: bool,
     pub font_changed: bool,
     pub clear_cache: bool,
+    pub(crate) maintenance: Option<crate::settings::shared_profile::Maintenance>,
+    pub(crate) maintenance_denied: bool,
     /// Devices, volumes or voice settings changed: apply to the audio engine.
     pub audio_changed: bool,
     /// List the audio devices again.
@@ -1571,11 +1573,17 @@ fn body(ui: &mut egui::Ui, p: &Palette, s: &mut Settings, d: &Settings, st: &mut
     if std::mem::take(&mut st.demo_reset) {
         reset_page(ui, p, s, d, st, r, st.page, now);
     }
-    match st.reset_confirmed.take() {
-        Some(ResetAsk::Page(page)) => reset_page(ui, p, s, d, st, r, page, now),
-        Some(ResetAsk::Modified) => reset_modified(ui, p, s, d, st, r, now),
-        Some(ResetAsk::All) => reset_all(s, st, r, now),
-        None => {}
+    if let Some(reset) = st.reset_confirmed.take() {
+        r.maintenance = crate::settings::shared_profile::try_maintenance();
+        if r.maintenance.is_some() {
+            match reset {
+                ResetAsk::Page(page) => reset_page(ui, p, s, d, st, r, page, now),
+                ResetAsk::Modified => reset_modified(ui, p, s, d, st, r, now),
+                ResetAsk::All => reset_all(s, st, r, now),
+            }
+        } else {
+            r.maintenance_denied = true;
+        }
     }
     // a row asked by its label (demo, another window): its page first,
     // then `Cx` opens its cog and lights it
