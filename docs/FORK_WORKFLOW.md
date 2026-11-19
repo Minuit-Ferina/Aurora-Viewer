@@ -199,8 +199,55 @@ does not by itself mean the functional test suites were rerun.
 Assemble the archives and English notes in a draft release before
 publication. Credit Aurora's contributors, identify the upstream release,
 explain the fork changes and include the existing Linden Lab disclaimer.
-Name the platforms actually provided. The upstream Release workflow
-publishes Classic only; it does not assemble a complete two-edition fork
+Archive filenames identify the available platforms. The upstream Release
+workflow publishes Classic only; it does not assemble a complete two-edition fork
 release. Keep the release tag local while preparing the draft rather than
 starting that automatic publisher. Keep the previous working build until
 the human has validated its replacement.
+
+### Release notes for users
+
+Write release notes in English for the person installing the viewer. Keep the
+existing Linden Lab disclaimer, then use these three sections in this order:
+
+1. **What's new**: explain the changes since the previous fork release and
+   why they matter to users. For the first release, describe the fork's
+   additions to Aurora. Focus on features, fixes and their practical benefit.
+2. **Choose an edition**: keep a short Classic/FTRLV table explaining whether
+   RLVa is optional or always active. Include only brief installation advice
+   that affects users, such as manual updates or macOS opening requirements.
+3. **Based on Aurora**: name and link the official Aurora release, give the
+   fork patch version, credit Aurora's contributors and link the exact source.
+   Keep the existing license, documentation and privacy links.
+
+The attached files already identify editions and platforms. Keep SHA-256
+sidecars available with the downloads without a checksum explanation in the
+notes. Verification results, CI jobs, build steps, commit hashes and release
+preparation/status reports belong in PRs and task records. Do not add
+Downloads, Verification or Release status sections to user release notes.
+
+Use this outline for future fork releases, replacing the examples with the
+actual changes and versions:
+
+```markdown
+> This software is not provided or supported by Linden Lab, the makers of Second Life.
+
+## What's new
+
+- **Feature or fix:** explain its benefit to the person using the viewer.
+
+## Choose an edition
+
+| Edition | RLVa behavior |
+|---|---|
+| **Classic** | Turn RLVa on or off in Preferences. |
+| **FTRLV** (Full Time RLV) | RLVa is always active. |
+
+## Based on Aurora
+
+Based on **[Aurora Viewer X.Y.Z](official-release-url)**, with **patch A.B.C**.
+
+This independent distribution builds on the work of the Aurora contributors.
+
+[Source code](exact-source-url) · [GPLv3 license](license-url) · [Aurora documentation](documentation-url) · [Privacy policy](privacy-url)
+```
