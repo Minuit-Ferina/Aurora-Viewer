@@ -112,7 +112,7 @@ jobs:
           assert query('--edition') == edition
           assert query('--language','en','--version') == 'Aurora Viewer '+version
           report = dict(source_commit=os.environ['SOURCE_COMMIT'],version=version,edition=edition,platform=sys.platform,archive=archive.name,sha256=sha,size=archive.stat().st_size,files=len(regular),checks=['compiled version and edition','install manifest','required files and licenses','archive-to-staging hashes','SHA-256 sidecar'])
-          (root/'archive-verification.json').write_text(json.dumps(report,indent=2)+'\n')
+          (root/'archive-verification.json').write_text(json.dumps(report,indent=2))
           print(json.dumps(report,indent=2))
           PY
       - name: Upload verified archive, checksum and report
