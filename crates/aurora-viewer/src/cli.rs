@@ -371,25 +371,27 @@ mod tests {
     #[test]
     fn title_ends_with_the_build_profile() {
         let language = aurora_i18n::language();
+        let named = |version: &str, title: &str| aurora_i18n::tr!("cli-aurora-viewer-2", version = version, t = title);
+        let plain = |version: &str| aurora_i18n::tr!("cli-aurora-viewer", version = version);
         assert_eq!(
             title_with(language, Some("Test ombres"), "debug", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - Test ombres (Dev)").as_str()
+            format!("{} (Dev)", named("0.2.0", "Test ombres"))
         );
         assert_eq!(
             title_with(language, None, "release", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Release)").as_str()
+            format!("{} (Release)", plain("0.2.0"))
         );
         assert_eq!(
             title_with(language, None, "debugging", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Debug)").as_str()
+            format!("{} ({})", plain("0.2.0"), aurora_i18n::tr!("common-debug"))
         );
         assert_eq!(
             title_with(language, Some("X"), "unknown", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - X").as_str()
+            named("0.2.0", "X")
         );
         assert_eq!(
             title_with(language, None, "debug", "0.2.0+7.gabcdef123").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0+7.gabcdef123 (Dev)").as_str()
+            format!("{} (Dev)", plain("0.2.0+7.gabcdef123"))
         );
     }
 

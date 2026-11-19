@@ -34,6 +34,8 @@ impl App {
         }
         let window = Arc::new(event_loop.create_window(attrs)?);
         self.attention.title.applied(window.id(), title);
+
+        self.current_window = Arc::downgrade(&window);
         crate::window_hold::install(&window);
         crate::slurl_handoff::window_ready(&window);
         Ok(window)
@@ -290,7 +292,7 @@ impl App {
                 return None;
             }
         };
-        renderer.apply_settings(self.settings.render_settings());
+        renderer.apply_settings(self.photo_render_settings());
         self.adopt_gpu_scene(&mut renderer);
         self.note_gpus(&renderer);
         self.screen_rate.poll(&window, Instant::now());
