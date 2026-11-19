@@ -171,3 +171,36 @@ repository and the exact PR number.
 When preparing a fork release, tag a tested commit of `develop` in the fork.
 Build each intended edition from that commit. Keep the previous working
 build until the human has validated its replacement.
+
+
+## Fork patch releases
+
+A fork release names both the official Aurora base and our own patch version:
+`Aurora Viewer 0.9.11 - Patch 0.2.0`. Its tag is
+`v0.9.11+patch.0.2.0`; the compiled version keeps the same two numbers.
+Classic and FTRLV share this version and source commit. The edition stays in
+the archive name and its schema-2 install manifest.
+
+The fork patch follows SemVer independently of the upstream base. Before
+patch 1.0, a feature bumps its minor component and a fix bumps its patch
+component. Changing the Aurora base is recorded separately. The `+patch`
+part is SemVer build metadata, which has no version precedence of its own;
+these distributions are installed manually until an edition-aware fork
+update feed is implemented.
+
+Prepare both archives from one tested commit of `origin/develop`, using a
+dedicated worktree and a local annotated tag at that exact commit. For a
+distribution, call `scripts/build-edition.ps1 -Release` once per edition.
+Verify each archive's compiled version and edition, install manifest,
+required files and SHA-256 sidecar. Record the source commit and the reused
+CI/human validation separately from these archive checks. A packaging run
+does not by itself mean the functional test suites were rerun.
+
+Assemble the archives and English notes in a draft release before
+publication. Credit Aurora's contributors, identify the upstream release,
+explain the fork changes and include the existing Linden Lab disclaimer.
+Name the platforms actually provided. The upstream Release workflow
+publishes Classic only; it does not assemble a complete two-edition fork
+release. Keep the release tag local while preparing the draft rather than
+starting that automatic publisher. Keep the previous working build until
+the human has validated its replacement.
