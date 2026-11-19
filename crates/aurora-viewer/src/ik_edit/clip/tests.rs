@@ -524,7 +524,7 @@ fn animation_timeline_shortcut_keys_follow_the_typed_character() {
     ] {
         assert_eq!(timeline::timeline_key(&Key::Character(typed.into())), Some(expected));
     }
-    assert_eq!(timeline::timeline_key(&Key::Named(NamedKey::Space)), Some(egui::Key::Space));
+    assert_eq!(timeline::timeline_key(&Key::Character(" ".into())), Some(egui::Key::Space));
     assert_eq!(timeline::timeline_key(&Key::Named(NamedKey::Home)), Some(egui::Key::Home));
     assert_eq!(timeline::timeline_key(&Key::Named(NamedKey::Delete)), Some(egui::Key::Delete));
     assert_eq!(timeline::timeline_key(&Key::Named(NamedKey::ArrowLeft)), Some(egui::Key::ArrowLeft));

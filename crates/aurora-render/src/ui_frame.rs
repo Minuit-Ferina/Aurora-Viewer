@@ -144,15 +144,15 @@ impl EguiHandOver {
         textures_delta: egui::TexturesDelta,
         pixels_per_point: f32,
     ) -> EguiFrame {
-        let (atlas_size, text) = ctx.fonts(|f| (f.font_image_size(), *f.options()));
+        let (atlas_size, text) = ctx.fonts(|f| (f.font_image_resolution(), *f.options()));
         let twin = match &mut self.twin {
-            Some(twin) if twin.size()[0] == atlas_size[0] && *twin.options() == text => twin,
+            Some(twin) if twin.resolution()[0] == atlas_size[0] && *twin.options() == text => twin,
             twin => twin.insert(TextureAtlas::new([atlas_size[0], NEW_ATLAS_HEIGHT], text)),
         };
         // the twin's discs are normalized by its own size: back to whole
         // texels, then the arithmetic of `TextureAtlas::prepared_discs` on
         // the size the context's atlas has now
-        let [twin_w, twin_h] = twin.size().map(|side| side as f32);
+        let [twin_w, twin_h] = twin.resolution().map(|side| side as f32);
         let (inv_w, inv_h) = (1.0 / atlas_size[0] as f32, 1.0 / atlas_size[1] as f32);
         let mut discs = twin.prepared_discs();
         for disc in &mut discs {
@@ -277,7 +277,7 @@ mod tests {
         let mut atlas_heights = Vec::new();
         for rows in [2, 12, 40] {
             let out = pass(&ctx, rows, 2048);
-            atlas_heights.push(ctx.fonts(|f| f.font_image_size())[1]);
+            atlas_heights.push(ctx.fonts(|f| f.font_image_resolution())[1]);
             let frame = hand_over.frame(&ctx, out.shapes.clone(), out.textures_delta, out.pixels_per_point);
             let ui = frame.tessellate();
             assert_eq!(ui.shapes, out.shapes.len());
@@ -402,13 +402,13 @@ mod tests {
         let mut hand_over = EguiHandOver::default();
         let out = pass(&ctx, 3, 2048);
         let _ = hand_over.frame(&ctx, out.shapes, out.textures_delta, out.pixels_per_point);
-        assert_eq!(hand_over.twin.as_ref().map(|t| t.size()[0]), Some(2048));
+        assert_eq!(hand_over.twin.as_ref().map(|t| t.resolution()[0]), Some(2048));
         // another atlas width: the font atlas is made again, its discs with it
         let _ = pass(&ctx, 3, 4096);
         let out = pass(&ctx, 3, 4096);
-        assert_eq!(ctx.fonts(|f| f.font_image_size())[0], 4096);
+        assert_eq!(ctx.fonts(|f| f.font_image_resolution())[0], 4096);
         let frame = hand_over.frame(&ctx, out.shapes.clone(), out.textures_delta, out.pixels_per_point);
-        assert_eq!(hand_over.twin.as_ref().map(|t| t.size()[0]), Some(4096));
+        assert_eq!(hand_over.twin.as_ref().map(|t| t.resolution()[0]), Some(4096));
         assert_same(&frame.tessellate().primitives, &ctx.tessellate(out.shapes, out.pixels_per_point));
     }
 }

@@ -91,7 +91,7 @@ pub fn motion(delta: (f64, f64)) -> Option<(f64, f64)> {
 /// The same hook joins the surrogate halves winit drops (wide_chars.rs):
 /// winit keeps one hook only.
 #[cfg(windows)]
-pub fn install(builder: &mut winit::event_loop::EventLoopBuilder<()>) {
+pub fn install(builder: &mut winit::event_loop::EventLoopBuilder) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MSG, WM_INPUT};
     use winit::platform::windows::EventLoopBuilderExtWindows;
 

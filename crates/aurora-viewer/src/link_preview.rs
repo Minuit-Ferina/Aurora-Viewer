@@ -1197,7 +1197,7 @@ where
         frames.push((color_image(&buffer), delay));
     }
     let first = frames.first().ok_or(Failure::NotPicture)?;
-    let first = image::RgbaImage::from_raw(w, h, first.0.pixels.iter().flat_map(|c| c.to_array()).collect())
+    let first = image::RgbaImage::from_raw(w, h, first.0.pixels().iter().flat_map(|c| c.to_array()).collect())
         .map(image::DynamicImage::ImageRgba8)
         .ok_or(Failure::NotPicture)?;
     Ok(Picture {
@@ -1312,7 +1312,7 @@ fn demo_gif() -> Picture {
         })
         .collect();
     let first = image::DynamicImage::ImageRgba8(
-        image::RgbaImage::from_raw(w, h, frames[0].0.pixels.iter().flat_map(|c| c.to_array()).collect()).unwrap_or_default(),
+        image::RgbaImage::from_raw(w, h, frames[0].0.pixels().iter().flat_map(|c| c.to_array()).collect()).unwrap_or_default(),
     );
     Picture {
         blurred: blurred(&first),
@@ -1859,11 +1859,11 @@ mod tests {
         let p = decode(&png(1600, 1200)).unwrap();
         assert_eq!(p.size, [1600, 1200]);
         assert_eq!(p.frames.len(), 1);
-        assert_eq!(p.frames[0].0.size, [800, 600]);
-        assert!(p.blurred.size[0] <= 48);
+        assert_eq!(p.frames[0].0.resolution(), [800, 600]);
+        assert!(p.blurred.resolution()[0] <= 48);
         let detail = decode_sized(&png(2400, 1200), 2048).unwrap();
         assert_eq!(detail.size, [2400, 1200]);
-        assert_eq!(detail.frames[0].0.size, [2048, 1024]);
+        assert_eq!(detail.frames[0].0.resolution(), [2048, 1024]);
         assert_eq!(decode(b"<html>not a picture</html>").err(), Some(Failure::NotPicture));
     }
 
@@ -1883,7 +1883,7 @@ mod tests {
         let p = decode(&out).unwrap();
         assert_eq!(p.size, [600, 300]);
         assert_eq!(p.frames.len(), 2);
-        assert_eq!(p.frames[0].0.size, [480, 240]);
+        assert_eq!(p.frames[0].0.resolution(), [480, 240]);
         assert_eq!(p.frames[0].1, Duration::from_millis(50));
         // no delay: drawn as browsers do
         assert_eq!(p.frames[1].1, Duration::from_millis(100));
@@ -1900,7 +1900,7 @@ mod tests {
             [80, 120, 200].map(Duration::from_millis),
             "three frames with their own delays"
         );
-        assert_ne!(p.frames[0].0.pixels[0], p.frames[1].0.pixels[0]);
+        assert_ne!(p.frames[0].0.pixels()[0], p.frames[1].0.pixels()[0]);
     }
 
     /// A server answering each connection with one of `answers`.
@@ -2018,7 +2018,7 @@ mod tests {
         let (base, thread) = server(vec![answer]);
         let p = rt.block_on(fetch_picture(&client, &format!("{base}/a.png"))).ok().unwrap();
         assert_eq!(p.size, [64, 32]);
-        assert_eq!(p.frames[0].0.size, [64, 32]);
+        assert_eq!(p.frames[0].0.resolution(), [64, 32]);
         thread.join().unwrap();
     }
 

@@ -1376,6 +1376,10 @@ pub enum NetEvent {
         request: crate::slm::SlmRequest,
         reply: crate::slm::SlmReply,
     },
+    DesktopTextImport {
+        request: Uuid,
+        outcome: crate::inventory::text_import::Outcome,
+    },
     InventoryContentSaved {
         request: Uuid,
         item: Uuid,
@@ -2449,6 +2453,8 @@ pub enum NetCommand {
         data: Vec<u8>,
         permissions: Option<crate::inventory::upload::Permissions>,
     },
+    /// Create a new inventory text item and save its source after its callback.
+    ImportDesktopText(crate::inventory::text_import::Import),
     /// A recovered script (LLScriptRecoverQueue::recoverNext /
     /// onCreateScript): CreateInventoryItem, then its text through
     /// UpdateScriptAgent, compiled for Mono. Answered by

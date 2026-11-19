@@ -58,7 +58,7 @@ pub use bus::release;
 pub fn release() {}
 
 #[cfg(not(windows))]
-pub fn window_ready(_window: &std::sync::Arc<winit::window::Window>) {}
+pub fn window_ready(_window: &std::sync::Arc<dyn winit::window::Window>) {}
 
 #[cfg(not(windows))]
 pub fn focused() {}

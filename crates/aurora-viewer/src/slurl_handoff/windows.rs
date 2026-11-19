@@ -11,7 +11,7 @@ use discovery::Scope;
 
 static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub fn window_ready(window: &std::sync::Arc<winit::window::Window>) {
+pub fn window_ready(window: &std::sync::Arc<dyn winit::window::Window>) {
     if READY.load(std::sync::atomic::Ordering::Acquire) {
         discovery::publish(window);
     }

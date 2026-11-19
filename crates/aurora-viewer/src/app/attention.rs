@@ -320,7 +320,7 @@ impl App {
     /// is in front, the flash asked for, and the clicks on the notifications.
     pub(super) fn attention_window(&mut self) {
         if let Some(g) = &self.gfx {
-            self.attention.behind = !window_in_front(&g.window);
+            self.attention.behind = !window_in_front(g.window.as_ref());
         }
         self.update_main_title();
         if std::mem::take(&mut self.attention.flash)
@@ -329,7 +329,7 @@ impl App {
             #[cfg(windows)]
             {
                 log::info!("taskbar flash");
-                flash_window(&g.window);
+                flash_window(g.window.as_ref());
             }
             #[cfg(not(windows))]
             if flashes_here(g.window.is_minimized()) {
@@ -424,7 +424,7 @@ impl App {
 
 /// The window is the foreground window and not minimized.
 #[cfg(windows)]
-fn window_in_front(window: &winit::window::Window) -> bool {
+fn window_in_front(window: &dyn winit::window::Window) -> bool {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic};
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -441,7 +441,7 @@ fn window_in_front(window: &winit::window::Window) -> bool {
 }
 
 #[cfg(not(windows))]
-fn window_in_front(window: &winit::window::Window) -> bool {
+fn window_in_front(window: &dyn winit::window::Window) -> bool {
     window.has_focus() && !window.is_minimized().unwrap_or(false)
 }
 
@@ -458,7 +458,7 @@ fn flashes_here(minimized: Option<bool>) -> bool {
 }
 
 #[cfg(windows)]
-fn flash_window(window: &winit::window::Window) {
+fn flash_window(window: &dyn winit::window::Window) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{FLASHW_TRAY, FLASHWINFO, FlashWindowEx};
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -663,8 +663,8 @@ mod tests {
     #[test]
     fn account_title_cache_tracks_the_session_inputs_and_native_window() {
         let mut title = MainTitle::default();
-        let first = WindowId::from(1u64);
-        let replacement = WindowId::from(2u64);
+        let first = WindowId::from_raw(1);
+        let replacement = WindowId::from_raw(2);
         let inputs = title_inputs("en", 0, false, false);
         let mut writes = Vec::new();
         let mut record = |s: &str| writes.push(s.to_owned());

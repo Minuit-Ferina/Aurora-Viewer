@@ -53,7 +53,7 @@ impl UiImageCache {
         can_reload: bool,
     ) {
         let id = texture.id();
-        let [w, h] = texture.size();
+        let [w, h] = texture.resolution();
         if let Some(old) = images.insert(asset, texture) {
             self.forget(&asset, old.id());
         }

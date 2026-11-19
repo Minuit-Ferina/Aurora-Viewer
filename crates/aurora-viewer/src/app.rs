@@ -65,6 +65,7 @@ mod crash_state;
 mod cursor_hold;
 mod derender;
 mod describe;
+mod desktop_text_import;
 mod dev_toolbox;
 mod folders;
 mod hover_pick;
@@ -214,7 +215,7 @@ struct Gfx {
     /// then, `Renderer::new`).
     renderer: Renderer,
     egui_state: egui_winit::State,
-    window: Arc<Window>,
+    window: Arc<dyn Window>,
     /// Revealed only once the renderer has presented its first image.
     shown: bool,
     maximize_on_show: bool,
@@ -238,8 +239,8 @@ impl WindowedGeometry {
         }
     }
 
-    fn from_window(window: &Window) -> Self {
-        let size = window.inner_size();
+    fn from_window(window: &dyn Window) -> Self {
+        let size = window.surface_size();
         let scale = window.scale_factor();
         Self {
             width: (size.width as f64 / scale).round() as u32,
@@ -249,13 +250,13 @@ impl WindowedGeometry {
         }
     }
 
-    fn apply(self, window: &Window) {
+    fn apply(self, window: &dyn Window) {
         window.set_fullscreen(None);
         window.set_maximized(false);
         if let Some((x, y)) = self.position {
-            window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+            window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y).into());
         }
-        let _ = window.request_inner_size(winit::dpi::LogicalSize::new(self.width, self.height));
+        let _ = window.request_surface_size(winit::dpi::LogicalSize::new(self.width, self.height).into());
         window.set_maximized(self.maximized);
     }
 
@@ -427,9 +428,9 @@ pub struct App {
     fullscreen_applied: bool,
     /// The window of a lost GPU device, kept on screen until the new one has
     /// presented its first image (gpu_recovery.rs).
-    retired_window: Option<Arc<Window>>,
+    retired_window: Option<Arc<dyn Window>>,
     // Available while a frame borrows Gfx for rendering and dispatches a quit action.
-    current_window: Weak<Window>,
+    current_window: Option<Weak<dyn Window>>,
     exit_windows_hidden: bool,
     /// When the GPU device was lost lately (gpu_recovery.rs `loss_step`).
     gpu_losses: std::collections::VecDeque<Instant>,
@@ -437,7 +438,7 @@ pub struct App {
     logo: Option<egui::TextureHandle>,
     logo_rx: Option<crossbeam_channel::Receiver<LogoData>>,
     /// The window's icon, kept for a window a GPU recovery opens.
-    window_icon: Option<winit::window::Icon>,
+    window_icon: Option<winit::icon::Icon>,
     world: World,
     bridge_runtime: crate::world::bridge::Bridge,
     /// The RLVa self-test (Dev Toolbox T1, development builds only).
@@ -1209,6 +1210,7 @@ pub struct App {
     dual_inventory_ui: ui::inventory::InventoryUi,
     /// Pane whose inventory mutation currently owns local completion feedback.
     inventory_mutation_editor: Option<uuid::Uuid>,
+    desktop_text_import: desktop_text_import::Controller,
     texture_library: ui::texture_library::LibraryUi,
     library_drag: texture_library::DragState,
     library_demo_seeded: bool,
@@ -1331,7 +1333,6 @@ fn exit_prompt_key(key: &winit::keyboard::Key, composing: bool) -> Option<egui::
         Key::Named(NamedKey::Enter) => Some(egui::Key::Enter),
         Key::Named(NamedKey::Escape) => Some(egui::Key::Escape),
         Key::Named(NamedKey::Tab) => Some(egui::Key::Tab),
-        Key::Named(NamedKey::Space) => Some(egui::Key::Space),
         Key::Character(s) if s == " " => Some(egui::Key::Space),
         _ => None,
     }
@@ -1812,7 +1813,7 @@ impl App {
             fullscreen_restore: None,
             fullscreen_applied: false,
             retired_window: None,
-            current_window: Weak::new(),
+            current_window: None,
             exit_windows_hidden: false,
             gpu_losses: Default::default(),
             egui_ctx,
@@ -2276,6 +2277,7 @@ impl App {
             inventory_ui: Default::default(),
             dual_inventory_ui: ui::inventory::InventoryUi::dual_pane(),
             inventory_mutation_editor: None,
+            desktop_text_import: Default::default(),
             texture_library: Default::default(),
             library_demo_seeded: false,
             library_drag: Default::default(),
@@ -3543,6 +3545,7 @@ impl App {
         // the last account's residents and sets: a relog as another account
         // must not save them into its sets
         self.contacts_ui = Default::default();
+        self.desktop_text_import.clear_session();
         self.contents_copies = Default::default();
         self.texture_library.reset();
         self.library_drag = Default::default();
@@ -3657,6 +3660,10 @@ impl App {
     }
 
     fn on_app_event(&mut self, ev: NetEvent) {
+        if let NetEvent::DesktopTextImport { request, outcome } = ev {
+            self.desktop_text_reply(request, outcome);
+            return;
+        }
         if matches!(&ev, NetEvent::AgentMovementComplete { .. })
             && let Some(recovery) = &mut self.follow_recovery
         {
@@ -7180,6 +7187,7 @@ impl App {
             self.world.save_open_ims();
         }
         if self.in_world() && !self.demo {
+            self.desktop_text_import.stop_accepting();
             self.record_inventory_logout();
             self.want_scene_capture = true;
             self.release_bridge();
@@ -7188,7 +7196,7 @@ impl App {
     }
 
     /// Log out, save the window, layout, inventory cache and settings, exit.
-    fn shutdown(&mut self, event_loop: &ActiveEventLoop) {
+    fn shutdown(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.hide_windows_for_exit();
         self.instances.leave();
         // closed while the graphics card still holds a frame, from its
@@ -7271,12 +7279,12 @@ impl App {
             return;
         }
         self.exit_windows_hidden = true;
-        if let Some(window) = self.current_window.upgrade() {
+        if let Some(window) = self.current_window.as_ref().and_then(Weak::upgrade) {
             if forced_window_size().is_none() && window.fullscreen().is_none() {
                 self.settings.window_maximized = window.is_maximized();
                 // The last restored size and position already belong to a maximized window.
                 if !self.settings.window_maximized && !window.is_minimized().unwrap_or(false) {
-                    let size = window.inner_size();
+                    let size = window.surface_size();
                     let scale = window.scale_factor();
                     if size.width > 0 && size.height > 0 {
                         self.settings.window_width = (size.width as f64 / scale) as u32;
@@ -7331,7 +7339,7 @@ impl App {
         if g.window.fullscreen().is_some() || g.window.is_maximized() || g.window.is_minimized().unwrap_or(false) {
             return;
         }
-        let s = g.window.inner_size();
+        let s = g.window.surface_size();
         if s.width == 0 || s.height == 0 {
             return;
         }
@@ -7370,18 +7378,18 @@ impl App {
                     ..WindowedGeometry::from_settings(&self.settings)
                 }
             } else {
-                WindowedGeometry::from_window(&window)
+                WindowedGeometry::from_window(window.as_ref())
             };
             restore.save(&mut self.settings);
             self.fullscreen_restore = Some(restore);
-            window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(window.current_monitor())));
+            window.set_fullscreen(Some(winit::monitor::Fullscreen::Borderless(window.current_monitor())));
         } else {
             let restore = self
                 .fullscreen_restore
                 .take()
                 .unwrap_or_else(|| WindowedGeometry::from_settings(&self.settings));
             restore.save(&mut self.settings);
-            restore.apply(&window);
+            restore.apply(window.as_ref());
         }
         self.geom_changed = None;
         self.settings.save();
@@ -9058,13 +9066,12 @@ impl App {
     /// The headset has no viewer UI yet. Restrict keyboard actions so an
     /// accidental shortcut cannot open an invisible window or enter text.
     fn vr_keyboard_input(&mut self, key: &winit::event::KeyEvent) {
-        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
         let PhysicalKey::Code(code) = key.physical_key else {
             return;
         };
         let code = crate::keybinds::binding_code(code, &key.logical_key);
         let input = Input::key(code);
-        let gesture = crate::gestures::keys::from_key(code, &key.key_without_modifiers());
+        let gesture = crate::gestures::keys::from_key(code, &key.key_without_modifiers);
         if key.state == ElementState::Released {
             self.down.remove(&input);
             self.check_temp_run();
@@ -9916,15 +9923,15 @@ impl App {
         let coarse = self
             .ui_images
             .get(&image)
-            .is_some_and(|t| ui_copy_needs_refine(t.size(), target_w, target_h))
+            .is_some_and(|t| ui_copy_needs_refine(t.resolution(), target_w, target_h))
             || self
                 .avatar_pic_images
                 .get(&image)
-                .is_some_and(|t| ui_copy_needs_refine(t.size(), target_w, target_h));
+                .is_some_and(|t| ui_copy_needs_refine(t.resolution(), target_w, target_h));
         if coarse {
             let sizes = [
-                self.ui_images.get(&image).map(egui::TextureHandle::size),
-                self.avatar_pic_images.get(&image).map(egui::TextureHandle::size),
+                self.ui_images.get(&image).map(egui::TextureHandle::resolution),
+                self.avatar_pic_images.get(&image).map(egui::TextureHandle::resolution),
             ];
             match ui_follow_step(self.ui_coarse.get(&image).copied(), sizes, Instant::now()) {
                 Some(follow) => self.ui_coarse.insert(image, follow),
@@ -9953,8 +9960,8 @@ impl App {
                 return false;
             }
             let sizes = [
-                images.get(id).map(egui::TextureHandle::size),
-                pics.get(id).map(egui::TextureHandle::size),
+                images.get(id).map(egui::TextureHandle::resolution),
+                pics.get(id).map(egui::TextureHandle::resolution),
             ];
             match ui_follow_step(Some(*follow), sizes, now) {
                 Some(next) => {
@@ -9973,12 +9980,12 @@ impl App {
             let (pics, images) = (&self.avatar_pic_images, &self.ui_images);
             let have = images
                 .get(&image)
-                .map(egui::TextureHandle::size)
+                .map(egui::TextureHandle::resolution)
                 .filter(|size| ui_copy_needs_refine(*size, target_w, target_h))
                 .into_iter()
                 .chain(
                     pics.get(&image)
-                        .map(egui::TextureHandle::size)
+                        .map(egui::TextureHandle::resolution)
                         .filter(|size| ui_copy_needs_refine(*size, target_w, target_h)),
                 )
                 .min_by_key(|size| size[0].saturating_mul(size[1]));
@@ -9990,15 +9997,15 @@ impl App {
                 Some((w, h, rgba))
                     if (images
                         .get(&image)
-                        .is_some_and(|t| ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h))
+                        .is_some_and(|t| ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h))
                         || pics
                             .get(&image)
-                            .is_some_and(|t| ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)))
+                            .is_some_and(|t| ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)))
                         && rgba.len() == (w * h * 4) as usize =>
                 {
                     let ci = || egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
                     if let Some(t) = self.ui_images.get_mut(&image)
-                        && ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)
+                        && ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)
                     {
                         t.set(ci(), egui::TextureOptions::LINEAR);
                         self.ui_image_cache.note(image, t.id(), w, h, now);
@@ -10008,7 +10015,7 @@ impl App {
                     }
                     let mut picture_updated = false;
                     if let Some(t) = self.avatar_pic_images.get_mut(&image)
-                        && ui_copy_can_improve(t.size(), [w as usize, h as usize], target_w, target_h)
+                        && ui_copy_can_improve(t.resolution(), [w as usize, h as usize], target_w, target_h)
                     {
                         t.set(ci(), egui::TextureOptions::LINEAR);
                         self.ui_image_cache.note(image, t.id(), w, h, now);
@@ -10360,7 +10367,7 @@ impl App {
         self.world.map.overlays.retain(|h, _| regions.contains_key(h));
     }
 
-    fn frame(&mut self, event_loop: &ActiveEventLoop) {
+    fn frame(&mut self, event_loop: &dyn ActiveEventLoop) {
         // the input this frame reads came with the events just handled: its
         // time to the screen starts here (Performance › latency, pacing.rs)
         if let Some(g) = &mut self.gfx {
@@ -10619,7 +10626,7 @@ impl App {
         {
             self.logo = Some(self.egui_ctx.load_texture("logo", l.ui, egui::TextureOptions::LINEAR));
             if let Some((rgba, w, h)) = l.icon
-                && let Ok(icon) = winit::window::Icon::from_rgba(rgba, w, h)
+                && let Ok(icon) = winit::icon::RgbaIcon::new(rgba, w, h).map(winit::icon::Icon::from)
             {
                 if let Some(g) = &self.gfx {
                     g.window.set_window_icon(Some(icon.clone()));
@@ -10680,6 +10687,7 @@ impl App {
         }
         self.poll_inventory_offers();
         self.net_profile.events_left(self.net.events.len());
+        self.tick_desktop_text_import();
         let corrections = self.world.agent.take_corrections();
         if corrections.count > 0 {
             aurora_net::transition::step(|| format!("position of our avatar corrected by {:.2} m", corrections.largest));
@@ -11022,7 +11030,7 @@ impl App {
         self.studio_photo_frame(&mut gfx.renderer);
         self.viewfinder_frame(&mut gfx.renderer);
         self.director_frame(dt);
-        self.director_pointer(&gfx.window);
+        self.director_pointer(gfx.window.as_ref());
         self.photo_isolate_frame(&mut gfx.renderer);
         self.studio_frame(&mut gfx.renderer, dt);
         let photo = self.photo_frame(&mut gfx.renderer);
@@ -11702,7 +11710,7 @@ impl App {
                 },
             );
             self.frame_profile.lap(Lap::Complexity);
-            let hud_size = gfx.window.inner_size();
+            let hud_size = gfx.window.surface_size();
             self.world.hud_area = self.hud_area([hud_size.width, hud_size.height]);
             self.world.hud_aspect = match (self.snapshots.capturing, self.world.hud_area) {
                 // the HUD laid out for the photo's proportions
@@ -12822,7 +12830,7 @@ impl App {
             self.system_fonts_pending = !ui::fonts::apply(&self.egui_ctx, &ui_font(&self.settings));
         }
         ui::fonts::preview::release_unused(&self.egui_ctx);
-        let mut raw = gfx.egui_state.take_egui_input(&gfx.window);
+        let mut raw = gfx.egui_state.take_egui_input(gfx.window.as_ref());
         raw.events.extend(self.alt_text.drain(..).map(egui::Event::Text));
         self.demo_script_input(&mut raw);
         // Synthetic preedit uses the ordinary focused Conversations editor.
@@ -13163,7 +13171,9 @@ impl App {
         let mut library_drop = None;
         let t_pass = Instant::now();
         let mut windows_ms = 0.0;
+        self.publish_desktop_text_status(&ctx);
         let mut full = ctx.run_ui(raw, |ui| {
+            ui::inventory::text_import::begin(ui.ctx(), gfx.window.id(), gfx.window.surface_size(), gfx.window.scale_factor());
             self.sound_cues.pass_start(ui.ctx());
             // before any field reads its keys: Ctrl+W is the frontmost window's
             ui::close_key::begin(ui.ctx());
@@ -13176,6 +13186,17 @@ impl App {
             // the second, or a click that changed a row's size is lost.
             actions.merge(self.draw_ui(ui, &projector, &gfx.renderer));
             self.studio_overlay(ui.ctx());
+            if let Some(position) = self.desktop_text_import.drag_position(gfx.window.id()) {
+                ui::inventory::text_import::draw_hover(
+                    ui.ctx(),
+                    gfx.window.id(),
+                    gfx.window.surface_size(),
+                    gfx.window.scale_factor(),
+                    position,
+                    &self.palette,
+                    &self.world.inventory,
+                );
+            }
             actions.ui_scale_changed |= ui::options::scale_keyboard(ui.ctx(), &mut self.settings.ui_scale);
             if inventory_drop.is_empty() {
                 inventory_drop = self.inventory_drag_input(ui.ctx(), &gfx.renderer);
@@ -13215,7 +13236,7 @@ impl App {
         ) {
             let position = winit::dpi::PhysicalPosition::new(anchor.x * ctx.pixels_per_point(), anchor.y * ctx.pixels_per_point());
             if (self.cursor_pos.0 - position.x).abs() > 0.5 || (self.cursor_pos.1 - position.y).abs() > 0.5 {
-                if gfx.window.set_cursor_position(position).is_ok() {
+                if gfx.window.set_cursor_position(position.into()).is_ok() {
                     self.cursor_pos = (position.x, position.y);
                 } else {
                     self.numeric_drag.cancel();
@@ -13425,7 +13446,7 @@ impl App {
             );
         }
         gfx.egui_state
-            .handle_platform_output_with_event_loop(&gfx.window, event_loop, full.platform_output);
+            .handle_platform_output_with_event_loop(gfx.window.as_ref(), event_loop, full.platform_output);
         self.perf.ui_ms = t_ui.elapsed().as_secs_f32() * 1000.0;
         self.frame_profile.lap(Lap::Hover);
         self.evict_ui_images(&full.shapes);
@@ -13678,7 +13699,7 @@ impl App {
             // On Windows, maximizing can show even a hidden window. Defer
             // it until its client area already contains a rendered image;
             // shown once, with the focus (window_show.rs)
-            crate::window_show::show(&gfx.window, gfx.maximize_on_show);
+            crate::window_show::show(gfx.window.as_ref(), gfx.maximize_on_show);
             log::info!("startup window shown after the first presented frame");
             // a recovery's old window goes once its successor is on screen;
             // hidden first, as a render thread left behind in the driver
@@ -13687,7 +13708,7 @@ impl App {
                 old.set_visible(false);
             }
             crate::splash::shown();
-            crate::crash::watch_window(&gfx.window);
+            crate::crash::watch_window(gfx.window.as_ref());
             crate::crash::demo_freeze();
             crate::crash::demo_thread_death();
         }
@@ -13718,7 +13739,7 @@ impl App {
         // frame limiter; vsync already paces at the rate of the screen the
         // window is on now (it may have moved, the screen may have changed
         // its mode)
-        self.screen_rate.poll(&gfx.window, Instant::now());
+        self.screen_rate.poll(gfx.window.as_ref(), Instant::now());
         let monitor_hz = self.screen_rate.hz();
         let timed = self.capture.is_some() || self.frame_profile.enabled();
         let cap = frame_cap(
@@ -14439,7 +14460,7 @@ impl App {
         self.crash_frame();
         self.end_deep_profile(&gfx.renderer);
         self.monitor_frame(&gfx.renderer);
-        self.crash_state(&gfx.renderer, &gfx.window);
+        self.crash_state(&gfx.renderer, gfx.window.as_ref());
         self.gpu_stall_frame(&gfx.renderer);
         self.gfx = Some(gfx);
         if let Some(safe) = self.gpu_stall.recover.take() {
@@ -16067,7 +16088,7 @@ impl App {
         self.egui_ctx.copy_text(aurora_version::version().to_owned());
     }
 
-    fn handle_actions(&mut self, mut a: UiActions, event_loop: &ActiveEventLoop) {
+    fn handle_actions(&mut self, mut a: UiActions, event_loop: &dyn ActiveEventLoop) {
         if let Some(action) = a.exit {
             self.confirm_exit(action);
             return;
@@ -16292,6 +16313,7 @@ impl App {
                 self.ik_editor.stop_editing();
                 self.want_scene_capture = true;
                 self.release_bridge();
+                self.desktop_text_import.stop_accepting();
                 self.net.send(NetCommand::Logout);
                 self.world.system_message(aurora_i18n::tr!("app-logging-out"));
             }
@@ -21170,8 +21192,17 @@ impl UiActions {
     }
 }
 
+impl App {
+    /// Dispose of the clipboard and windows before closing the Wayland connection.
+    pub(crate) fn release_window(&mut self) {
+        self.hide_windows_for_exit();
+        self.gfx = None;
+        self.retired_window = None;
+    }
+}
+
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.gfx.is_some() {
             return;
         }
@@ -21190,7 +21221,10 @@ impl ApplicationHandler for App {
         // last position, only if it is still on a connected screen
         if let (Some(x), Some(y), false) = (self.settings.window_x, self.settings.window_y, capture) {
             let on = event_loop.available_monitors().find(|m| {
-                let (p, s) = (m.position(), m.size());
+                let (Some(p), Some(mode)) = (m.position(), m.current_video_mode()) else {
+                    return false;
+                };
+                let s = mode.size();
                 // the title bar (top-left corner area) must be reachable
                 x + 40 >= p.x && x + 40 < p.x + s.width as i32 && y + 10 >= p.y && y + 10 < p.y + s.height as i32
             });
@@ -21201,17 +21235,21 @@ impl ApplicationHandler for App {
         }
         // a "normal" size covering the whole screen is a maximized window
         // recorded as normal (older versions): restore to 80 % of the screen
-        if let (Some(m), false) = (&monitor, capture) {
+        if let (Some(m), false) = (&monitor, capture)
+            && let Some(mode) = m.current_video_mode()
+        {
             let sf = m.scale_factor();
-            let (mw, mh) = (m.size().width as f64 / sf, m.size().height as f64 / sf);
+            let size = mode.size();
+            let (mw, mh) = (size.width as f64 / sf, size.height as f64 / sf);
             if w as f64 >= mw * 0.95 && h as f64 >= mh * 0.9 {
                 w = (mw * 0.8) as u32;
                 h = (mh * 0.8) as u32;
-                let p = m.position();
-                pos = Some((
-                    p.x + ((m.size().width as f64 - w as f64 * sf) / 2.0) as i32,
-                    p.y + ((m.size().height as f64 - h as f64 * sf) / 2.0) as i32,
-                ));
+                pos = m.position().map(|p| {
+                    (
+                        p.x + ((size.width as f64 - w as f64 * sf) / 2.0) as i32,
+                        p.y + ((size.height as f64 - h as f64 * sf) / 2.0) as i32,
+                    )
+                });
             }
         }
         let plan = gpu_recovery::WindowPlan {
@@ -21220,7 +21258,7 @@ impl ApplicationHandler for App {
             // Automated captures must not steal the user's keyboard focus.
             active: !capture,
             fullscreen: (!capture && forced_window_size().is_none() && self.settings.window_fullscreen)
-                .then(|| winit::window::Fullscreen::Borderless(monitor.clone())),
+                .then(|| winit::monitor::Fullscreen::Borderless(monitor.clone())),
         };
         self.fullscreen_applied = plan.fullscreen.is_some();
         let window = match self.open_window(event_loop, &plan) {
@@ -21303,8 +21341,8 @@ impl ApplicationHandler for App {
         // the card in demo, without changing a setting)
         self.login_form.camera_limits_restored = std::mem::take(&mut self.settings.camera_limits_restored)
             || (self.demo && std::env::var_os("AURORA_DEMO_CAMERA_LIMITS").is_some());
-        self.screen_rate.poll(&window, Instant::now());
-        let egui_state = self.egui_state_for(&window, &renderer);
+        self.screen_rate.poll(window.as_ref(), Instant::now());
+        let egui_state = self.egui_state_for(window.as_ref(), &renderer);
         self.gfx = Some(Gfx {
             window,
             shown: false,
@@ -24276,21 +24314,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    /// The window, its renderer and egui-winit's state go while the event
-    /// loop still lives: `run_app` drops the loop, and with it the Wayland
-    /// connection, before `main` drops the app. On Wayland the clipboard of
-    /// egui-winit (smithay-clipboard) keeps a worker thread on that
-    /// connection; dropped after it, the worker destroyed its objects on a
-    /// closed connection and every exit ended in a segmentation fault (before
-    /// the browsers' private profiles were cleaned up).
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.hide_windows_for_exit();
-        #[cfg(windows)]
-        crate::slurl_handoff::release();
-        self.gfx = None;
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, id: WindowId, event: WindowEvent) {
         // the emoji a remote desktop types as two halves, which winit loses,
         // given back to the press of the second (wide_chars.rs)
         #[cfg(windows)]
@@ -24303,6 +24327,9 @@ impl ApplicationHandler for App {
             return;
         }
         self.typing_pointer.window_event(&event);
+        if self.desktop_text_native(event_loop, id, &event) {
+            return;
+        }
         // The system's view of the keys when the focus comes back is no key
         // press: a key it wrongly reports as down (#2287) would stay held
         // here, with no release to come. Like egui-winit, and like
@@ -24338,7 +24365,7 @@ impl ApplicationHandler for App {
             match ime {
                 Ime::Preedit(text, _) => self.ime_preedit = !text.is_empty(),
                 Ime::Commit(_) | Ime::Disabled => self.ime_preedit = false,
-                Ime::Enabled => {}
+                Ime::Enabled | Ime::DeleteSurrounding { .. } => {}
             }
             if self.exit_prompt.open {
                 return;
@@ -24405,7 +24432,7 @@ impl ApplicationHandler for App {
         // it never hovers, clicks or scrolls the windows (#1343)
         let held_pointer = self.cursor_hold.held() && cursor_hold::held_from_ui(&event);
         // Repeated position reports must not put egui's hover back while typing.
-        let stationary_hidden_pointer = self.typing_pointer.hidden() && matches!(event, WindowEvent::CursorMoved { .. });
+        let stationary_hidden_pointer = self.typing_pointer.hidden() && matches!(event, WindowEvent::PointerMoved { .. });
         // AltGr's shortcut key must not also reach egui as a plain key:
         // for example G would snap a selection while Ctrl+Alt+G runs.
         // Releases still clear any key pressed before AltGr was held.
@@ -24472,7 +24499,7 @@ impl ApplicationHandler for App {
                     repaint: true,
                 }
             } else {
-                g.egui_state.on_window_event(&g.window, &event)
+                g.egui_state.on_window_event(g.window.as_ref(), event_loop, &event)
             };
         let events = &mut g.egui_state.egui_input_mut().events;
         if (self.alt_text.len() != pending_alt_chars || events[first_event..].iter().any(typing_pointer::inserts_text))
@@ -24485,7 +24512,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 self.request_exit();
             }
-            WindowEvent::Resized(s) => {
+            WindowEvent::SurfaceResized(s) => {
                 ui::menu::window_geometry_changed(&self.egui_ctx);
                 if sync_auto_render_scale(&mut self.settings, g.window.scale_factor()) {
                     g.renderer.apply_settings(crate::snapshot::light::render_settings(
@@ -24516,11 +24543,11 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested if !self.exit_windows_hidden => self.frame(event_loop),
             WindowEvent::ModifiersChanged(m) => {
-                self.super_held = m.state().super_key();
+                self.super_held = m.state().meta_key();
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
                 self.alt = m.state().alt_key();
-                self.command = cfg!(target_os = "macos") && m.state().super_key();
+                self.command = cfg!(target_os = "macos") && m.state().meta_key();
                 if !self.ctrl || self.alt {
                     self.build.reset_selection_wheel();
                 }
@@ -24750,8 +24777,7 @@ impl ApplicationHandler for App {
                     }
                     // Releases always go through so keys never get stuck.
                     let typing = self.egui_ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(&self.egui_ctx);
-                    use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-                    let gesture_key = crate::gestures::keys::from_key(code, &ke.key_without_modifiers());
+                    let gesture_key = crate::gestures::keys::from_key(code, &ke.key_without_modifiers);
                     if !pressed && let Some(key) = gesture_key {
                         self.gesture_state.manager.release(Some(key));
                     }
@@ -24886,11 +24912,21 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved {
+                position,
+                source: winit::event::PointerSource::Mouse,
+                ..
+            } => {
                 self.cursor_pos = (position.x as f32, position.y as f32);
                 self.recenter_mouselook_cursor();
             }
-            WindowEvent::MouseInput { state, button, .. } => {
+            WindowEvent::PointerButton {
+                state,
+                button: winit::event::ButtonSource::Mouse(button),
+                position,
+                ..
+            } => {
+                self.cursor_pos = (position.x as f32, position.y as f32);
                 self.last_input = Instant::now();
                 // (AURORA_DEMO_BUSY_PAUSE: a click ends the demo's busy card,
                 // as the focus does a real one; busy_pause.rs)
@@ -24908,7 +24944,7 @@ impl ApplicationHandler for App {
                 // shortcut being captured: middle / side buttons bind, left / right cancel
                 if self.options_ui.capture.is_some() {
                     if pressed {
-                        self.finish_capture(Input::mouse(*button));
+                        self.finish_capture(self.mouse_binding(*button));
                     }
                     return;
                 }
@@ -24922,6 +24958,7 @@ impl ApplicationHandler for App {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => *y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
+                    _ => return,
                 };
                 if self.studio_scroll(steps) {
                     return;
@@ -24963,8 +25000,8 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn device_event(&mut self, _el: &ActiveEventLoop, _id: winit::event::DeviceId, event: DeviceEvent) {
-        if let DeviceEvent::MouseMotion { delta } = event {
+    fn device_event(&mut self, _el: &dyn ActiveEventLoop, _id: Option<winit::event::DeviceId>, event: DeviceEvent) {
+        if let DeviceEvent::PointerMotion { delta } = event {
             // a remote desktop's or a tablet's position: its motion (raw_mouse.rs)
             let Some(delta) = crate::raw_mouse::motion(delta) else {
                 return;
@@ -24983,7 +25020,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         crate::crash::pumped();
         if self.exit_windows_hidden {
             // A hidden window need not receive redraws. Finish the last scene

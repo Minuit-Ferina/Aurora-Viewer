@@ -383,7 +383,7 @@ impl Previews {
                 view.demo(&mode);
             }
         } else if !shown.animated()
-            && shown.size.iter().copied().max().unwrap_or(0) > shown.frames[0].0.size().into_iter().max().unwrap_or(0) as u32
+            && shown.size.iter().copied().max().unwrap_or(0) > shown.frames[0].0.resolution().into_iter().max().unwrap_or(0) as u32
             && let (Some(rt), Some((trusted, any))) = (&self.runtime, &self.clients)
         {
             let client = if trusted_only { trusted.clone() } else { any.clone() };

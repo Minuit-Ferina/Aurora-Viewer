@@ -22,7 +22,8 @@ use winit::{
 };
 
 pub fn show(dir: &Path, record: super::Record, summary: super::summary::Summary) -> anyhow::Result<()> {
-    let event_loop = EventLoop::new()?;
+    use winit::event_loop::run_on_demand::EventLoopExtRunOnDemand;
+    let mut event_loop = EventLoop::new()?;
     let context = egui::Context::default();
     record.theme.apply(&context, record.font_scale);
     // This window draws on events only: the few milliseconds of the system
@@ -70,7 +71,12 @@ pub fn show(dir: &Path, record: super::Record, summary: super::summary::Summary)
             aurora_i18n::tr!("crash-reason-unknown")
         },
     };
-    event_loop.run_app(&mut app)?;
+    let result = event_loop.run_app_on_demand(&mut app);
+    // Drop the clipboard before closing the Wayland connection.
+    app.input = None;
+    app.surface = None;
+    app.window = None;
+    result?;
     if let Some(error) = app.error {
         anyhow::bail!(error);
     }
@@ -84,8 +90,8 @@ struct Recovery {
     icons: Icons,
     trace: String,
     painter: super::software::Painter,
-    surface: Option<softbuffer::Surface<OwnedDisplayHandle, Arc<Window>>>,
-    window: Option<Arc<Window>>,
+    surface: Option<softbuffer::Surface<OwnedDisplayHandle, Arc<dyn Window>>>,
+    window: Option<Arc<dyn Window>>,
     input: Option<egui_winit::State>,
     error: Option<String>,
     last_frame: Instant,
@@ -182,7 +188,7 @@ fn issue_body(report: &str, description: &str, drivers_current: bool) -> String 
 }
 
 impl Recovery {
-    fn content(&mut self, ui: &mut egui::Ui, event_loop: &ActiveEventLoop) {
+    fn content(&mut self, ui: &mut egui::Ui, event_loop: &dyn ActiveEventLoop) {
         let p = self.record.theme.palette();
         self.sending.github.poll();
         if let Some(number) = self.sending.github.created
@@ -349,10 +355,11 @@ impl Recovery {
             let scale = window.scale_factor();
             let height = window
                 .current_monitor()
-                .map(|m| f64::from(m.size().height) / scale - 100.0)
+                .and_then(|m| m.current_video_mode())
+                .map(|mode| f64::from(mode.size().height) / scale - 100.0)
                 .unwrap_or(760.0)
                 .clamp(500.0, 760.0);
-            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(840.0, height));
+            let _ = window.request_surface_size(winit::dpi::LogicalSize::new(840.0, height).into());
         }
     }
 
@@ -514,14 +521,15 @@ impl Recovery {
     //         let scale = window.scale_factor();
     //         let height = window
     //             .current_monitor()
-    //             .map(|m| f64::from(m.size().height) / scale - 100.0)
+    //             .and_then(|m| m.current_video_mode())
+    //             .map(|mode| f64::from(mode.size().height) / scale - 100.0)
     //             .unwrap_or(940.0)
     //             .clamp(500.0, 940.0);
-    //         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(840.0, height));
+    //         let _ = window.request_surface_size(winit::dpi::LogicalSize::new(840.0, height).into());
     //     }
     // }
 
-    fn render(&mut self, event_loop: &ActiveEventLoop) -> anyhow::Result<()> {
+    fn render(&mut self, event_loop: &dyn ActiveEventLoop) -> anyhow::Result<()> {
         if let Some(fps) = crate::cli::get().fps_limit {
             let next = self.last_frame + Duration::from_secs_f64(1.0 / f64::from(fps));
             if self.frames > 0 && Instant::now() < next {
@@ -534,7 +542,7 @@ impl Recovery {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("missing recovery window"))?
             .clone();
-        let size = window.inner_size();
+        let size = window.surface_size();
         let (Some(width), Some(height)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return Ok(());
         };
@@ -542,13 +550,13 @@ impl Recovery {
             .input
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("missing recovery input"))?
-            .take_egui_input(&window);
+            .take_egui_input(window.as_ref());
         let context = self.context.clone();
         let output = context.run_ui(raw, |ui| self.content(ui, event_loop));
         self.input
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("missing recovery input"))?
-            .handle_platform_output_with_event_loop(&window, event_loop, output.platform_output);
+            .handle_platform_output_with_event_loop(window.as_ref(), event_loop, output.platform_output);
         let primitives = context.tessellate(output.shapes, output.pixels_per_point);
         let surface = self.surface.as_mut().ok_or_else(|| anyhow::anyhow!("missing recovery surface"))?;
         surface.resize(width, height).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -599,18 +607,18 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 }
 
 impl ApplicationHandler for Recovery {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         let setup = || -> anyhow::Result<_> {
             let title = match &crate::cli::get().title {
                 Some(title) => format!("{} — {title}", aurora_i18n::tr!("crash-title")),
                 None => aurora_i18n::tr!("crash-title").to_owned(),
             };
-            let window = Arc::new(
+            let window = Arc::<dyn Window>::from(
                 event_loop.create_window(
-                    crate::cli::with_desktop_id(Window::default_attributes())
+                    crate::cli::with_desktop_id(winit::window::WindowAttributes::default(), event_loop)
                         .with_title(title)
-                        .with_inner_size(winit::dpi::LogicalSize::new(840.0, 610.0))
-                        .with_min_inner_size(winit::dpi::LogicalSize::new(700.0, 500.0)),
+                        .with_surface_size(winit::dpi::LogicalSize::new(840.0, 610.0))
+                        .with_min_surface_size(winit::dpi::LogicalSize::new(700.0, 500.0)),
                 )?,
             );
             let display = softbuffer::Context::new(event_loop.owned_display_handle()).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -647,13 +655,13 @@ impl ApplicationHandler for Recovery {
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if matches!(event, WindowEvent::CloseRequested) {
             event_loop.exit();
             return;
         }
         if let (Some(input), Some(window)) = (&mut self.input, &self.window) {
-            let response = input.on_window_event(window, &event);
+            let response = input.on_window_event(window.as_ref(), event_loop, &event);
             if response.repaint {
                 self.next_repaint = Some(Instant::now());
             }
@@ -666,18 +674,7 @@ impl ApplicationHandler for Recovery {
         }
     }
 
-    /// As the viewer's own window does (app.rs): egui-winit's state and the
-    /// window go while the event loop, and with it the Wayland connection,
-    /// still lives. Dropped after `run_app`, the clipboard's objects were
-    /// destroyed on a closed connection and closing this window ended in a
-    /// segmentation fault on Wayland, before `acknowledged` was written.
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.input = None;
-        self.surface = None;
-        self.window = None;
-    }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         let cap = crate::cli::get()
             .fps_limit
             .map(|fps| Duration::from_secs_f64(1.0 / f64::from(fps)))

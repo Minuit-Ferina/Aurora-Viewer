@@ -38,7 +38,6 @@ pub fn from_event(key: &Key) -> Option<u8> {
             (c.next().is_none() && first.is_ascii() && !first.is_ascii_control()).then_some(first as u8)
         }
         Key::Named(n) => Some(match n {
-            NamedKey::Space => 32,
             NamedKey::Enter => 0x81,
             NamedKey::ArrowLeft => 0x82,
             NamedKey::ArrowRight => 0x83,

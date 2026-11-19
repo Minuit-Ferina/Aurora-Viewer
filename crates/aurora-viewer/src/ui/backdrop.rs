@@ -87,7 +87,7 @@ impl Backdrop {
         let Some(t) = &self.tex else {
             return false;
         };
-        let [tw, th] = t.size();
+        let [tw, th] = t.resolution();
         let (ta, ra) = (tw as f32 / th.max(1) as f32, rect.width() / rect.height().max(1.0));
         // crop the texture to the screen aspect ratio
         let uv = if ta > ra {

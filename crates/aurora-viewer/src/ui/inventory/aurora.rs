@@ -348,6 +348,7 @@ fn compact(
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
     actions: &mut Vec<InvAction>,
 ) {
+    text_import::inline(ui, p, (!st.scope.is_nil()).then_some(st.scope), actions);
     // a folder window has no tabs
     if st.scope.is_nil() {
         toolbar::tabs(ui, p, inv, st, prefs);
@@ -377,6 +378,7 @@ fn compact(
     });
     let zone = ui.interact(out.inner_rect, ui.scope_id().with("aurora_list_zone"), Sense::hover());
     let target = list_destination(st, root);
+    text_import::record(ui, zone.rect, inv, (!filtered && !target.is_nil()).then_some(target), false);
     task_drop::target(ui, p, &zone, inv, target, actions);
     drag::target(ui, p, &zone, inv, target, st, prefs, facts, actions);
     in_rect(ui, foot, "aurora_inventory_foot", |ui| {
@@ -457,6 +459,7 @@ fn explorer_list(
     actions: &mut Vec<InvAction>,
     layout: Layout,
 ) {
+    text_import::inline(ui, p, (!st.scope.is_nil()).then_some(st.scope), actions);
     match layout {
         Layout::Wide => toolbar::chips(ui, p, st, prefs),
         _ => toolbar::breadcrumb_row(ui, p, inv, st),
@@ -514,6 +517,14 @@ fn explorer_list(
     };
     widgets::remember_scroll_bar(ui, list_id, &out);
     let zone = ui.interact(out.inner_rect, ui.scope_id().with("aurora_list_zone"), Sense::hover());
+    let native_target = if explore { st.browse } else { target };
+    text_import::record(
+        ui,
+        zone.rect,
+        inv,
+        (!filtered && !native_target.is_nil()).then_some(native_target),
+        false,
+    );
     task_drop::target(ui, p, &zone, inv, target, actions);
     drag::target(ui, p, &zone, inv, target, st, prefs, facts, actions);
     in_rect(ui, foot, "aurora_inventory_foot", |ui| match layout {
