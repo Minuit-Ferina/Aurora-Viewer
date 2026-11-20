@@ -6903,13 +6903,12 @@ impl Backend {
             // Wait out the changing sizes, then restore a sharp image even
             // when Windows is still holding the border. The next size change
             // will retain this new swapchain.
-            const RESIZE_SETTLE_DELAY: Duration = Duration::from_millis(150);
             let settled = retain
                 && !size_changed
                 && self
                     .resize_source
                     .as_ref()
-                    .is_some_and(|(_, changed)| changed.elapsed() >= RESIZE_SETTLE_DELAY);
+                    .is_some_and(|(_, changed)| changed.elapsed() >= crate::present::RESIZE_SETTLE_DELAY);
             if !retain || settled {
                 self.resize_source = None;
             }

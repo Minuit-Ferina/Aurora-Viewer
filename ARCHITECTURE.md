@@ -4386,14 +4386,14 @@ and positioning on other platforms follow their window manager.
 | Logical panel or floater type | Desktop integration |
 |---|---|
 | `Conversations` and `Conversation` | Shared chat models, layouts, drafts and the existing reattach action. |
-| `Inventory` and `Build` | Shared selections, model updates, actions and owner dialogs. The Windows inventory and object-contents drag route in app/native_windows/drag.rs sends the real target's local pointer position to the original drop rules. |
+| `Inventory` and `Build` | Shared selections, model updates, actions and owner dialogs. The native drag bridge in app/native_windows/drag.rs uses viewport-local pointer positions and the existing Inventory and Build drop rules. |
 | `Script` and `Notecard` | Shared editor state, saves and close prompts. Script file dialogs retain their initiating window while open. |
 | `About` and `GridStatus` | Shared panel models and platform clipboard or external browser output. |
 | `GroupTitles` and `Bumps` | Shared rows, filter or selection, actions, and region privacy checks. |
 | `WorldMap` | Both styles use the same tiles, camera, actions and RLVa checks. The minimap remains attached to the world. |
 | `RegionTracker` and `AvatarRenderSettings` | Shared tracker and display-exception state. The resident picker opens in the editor's viewport and the tracker opens the shared World Map. |
 | `People` | Both styles share the radar, map, detail sheets and contacts model. People-owned contacts dialogs follow the panel. The standalone minimap remains in the viewer. |
-| `Places` | Both styles share favorites, landmarks, the teleport history, inline place profiles and confirmations. The Windows drag bridge routes place payloads to the existing destination checks. Desktop drags across windows on macOS and Linux remain to be verified and supported. |
+| `Places` | Both styles share favorites, landmarks, the teleport history, inline place profiles and confirmations. The native drag bridge routes place payloads to the existing destination checks on Windows, macOS, Wayland and X11. |
 | Area Search | Object actions use viewer-level confirmations and secondary windows that need a route to the initiating host. |
 | World, login, loading, HUDs and world overlays | Root window. |
 | Menus, tooltips and modal dialogs | Follow the panel or application that owns them. |

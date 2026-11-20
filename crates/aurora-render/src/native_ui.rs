@@ -59,6 +59,8 @@ struct Surface {
     config: wgpu::SurfaceConfiguration,
     configure: bool,
     resize_scaling: bool,
+    /// Last client extent and when it changed while stretching this surface.
+    resize_sample: Option<([u32; 2], Instant)>,
     egui: egui_wgpu::Renderer,
     previews: crate::preview::Cache,
 }
@@ -118,6 +120,7 @@ impl Surface {
             config,
             configure: true,
             resize_scaling: false,
+            resize_sample: None,
             previews: Default::default(),
         })
     }
@@ -150,13 +153,31 @@ impl Surface {
         frame: EguiFrame,
     ) -> NativeUiResult {
         if width == 0 || height == 0 {
+            self.resize_sample = None;
             return NativeUiResult::Occluded;
         }
-        // Retain the swapchain only when the driver enabled explicit STRETCH.
-        // Its last image then covers the changing client area while this worker
-        // prepares the next layout. Release restores exact pixel dimensions.
-        let retaining = resizing && self.resize_scaling && !self.configure;
-        if self.configure || !retaining && (self.config.width != width || self.config.height != height) {
+        let size = [width, height];
+        let size_differs = size != [self.config.width, self.config.height];
+        // A held resize stretches through changing sizes, then restores exact
+        // pixels on a pause or release. Each new size starts its own delay.
+        let can_retain = resizing && self.resize_scaling && !self.configure && size_differs;
+        let retaining = if can_retain {
+            let changed = self
+                .resize_sample
+                .filter(|(last, _)| *last == size)
+                .map_or_else(Instant::now, |(_, changed)| changed);
+            self.resize_sample = Some((size, changed));
+            changed.elapsed() < crate::present::RESIZE_SETTLE_DELAY
+        } else {
+            false
+        };
+        if !retaining {
+            self.resize_sample = None;
+        }
+        if self.configure || !retaining && size_differs {
+            if can_retain {
+                log::trace!("native UI {width}x{height}: settled while held");
+            }
             self.config.width = width;
             self.config.height = height;
             let start = log::log_enabled!(log::Level::Trace).then(Instant::now);

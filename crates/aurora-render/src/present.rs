@@ -13,8 +13,12 @@
 //! crash reports.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use wgpu::PresentMode;
+
+/// Restore native resolution once the client size has stopped changing.
+pub(crate) const RESIZE_SETTLE_DELAY: Duration = Duration::from_millis(150);
 
 /// Mode to configure the surface with, among those the surface supports.
 ///

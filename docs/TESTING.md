@@ -6597,8 +6597,10 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   then return the panel and check the selected tab and filter. For Places,
   use `AURORA_DEMO_PLACES=favorites:wide` or `history:classic`; check the
   selected tab, inline profile, map action and confirmation in both hosts.
-  Under Windows, drag a landmark or history entry from the detached Places
-  window to the viewer and check that the existing drop preview takes over.
+  Drag a landmark or history entry from the detached Places window to the
+  viewer and check the drop preview. On Linux, repeat in native Wayland and
+  X11 sessions. On XWayland, keep the mouse button held as the pointer crosses
+  into the viewer, then release at the destination.
 
 - In the offline demo, the window-and-arrow icon
   moves the current panel to the desktop. The inverse icon returns it to
@@ -13560,10 +13562,10 @@ What the inventory must show with these scenarios:
   for the main viewer and detached panels. The previous image fills the
   client area during resizing, while the layout continues to update. The
   main viewer draws the scene and interface at the live size, then scales
-  the composed image on the GPU into the retained swapchain. After 150 ms
-  at the same size, or on release, it restores direct presentation at the
-  exact client size. Drivers without scaling support use the exact-size
-  resize path. Detached panels restore exact size on release.
+  the composed image on the GPU into the retained swapchain. The main viewer
+  and detached panels restore the exact client size after 150 ms at the
+  same size, or on release. Drivers without scaling support use the
+  exact-size resize path.
   In the main offline demo, resize from the side and bottom, pause with the
   border held, resume, then release. Check that the scene and interface fill
   the window, that text sharpens while held, and that the transition does not
@@ -13571,9 +13573,11 @@ What the inventory must show with these scenarios:
   live sizes retaining the swapchain and one exact-size configuration on
   each pause and after the final movement.
   Check growing and shrinking from every edge, pausing while held, release,
-  maximize/restore, and the native preview fixture. With
+  maximize/restore, and the native preview fixture. In a detached Inventory,
+  confirm that the text sharpens while the border is held still, and that
+  stretching resumes when the border moves again. With
   `RUST_LOG=warn,aurora_render::native_ui=trace`, the log records the panel
-  frame size, swapchain configuration time and presentation time.
+  frame size, settlement during a hold, configuration and presentation time.
   - `0`: no helper. On the main window the image stays still for the whole hold,
     which `perf summary` shows as one long `between` in `max:`.
   - It needs real mouse input, there is no demo scenario: hold the button
