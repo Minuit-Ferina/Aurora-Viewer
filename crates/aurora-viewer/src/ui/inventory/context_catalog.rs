@@ -359,6 +359,26 @@ fn build_mode(inv: &Inventory, id: Uuid, st: &InventoryUi, prefs: &InventoryPref
     );
     c.slot("new", 0);
     creation(&mut c, &new, to.unwrap_or_default(), can_create);
+    if all || single && rules::text_import_destination(inv, id) {
+        c.invoke(
+            "import-desktop-text",
+            TEXT,
+            "file-text-filled",
+            aurora_i18n::tr!("desktop-text-import-command"),
+            can_create,
+            InvAction::ImportDesktopText(id),
+        );
+        if let Some(drop) = st.desktop_text_choice {
+            c.invoke(
+                "choose-desktop-text-folder",
+                TEXT,
+                "file-text-filled",
+                aurora_i18n::tr!("desktop-text-import-choose-folder"),
+                can_create,
+                InvAction::ChooseDesktopText(drop, id),
+            );
+        }
+    }
     if trash_root && !all {
         c.add(
             "empty-trash",

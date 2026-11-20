@@ -147,7 +147,7 @@ impl Previews {
                     continue;
                 }
                 let drawn = picture.image.map(|(image, y_offset)| {
-                    let size = egui::vec2(image.size[0] as f32, image.size[1] as f32) / pixels_per_point;
+                    let size = egui::vec2(image.resolution()[0] as f32, image.resolution()[1] as f32) / pixels_per_point;
                     let name = format!("font-preview:{}", picture.path.display());
                     Drawn {
                         texture: ctx.load_texture(name, image, egui::TextureOptions::LINEAR),
@@ -497,12 +497,16 @@ mod tests {
         let image = rasterize(&face, "Inter", 20.0, 1000.0).expect("Inter draws its name");
         let k = 20.0 / f32::from(face.units_per_em());
         let height = (f32::from(face.ascender()) - f32::from(face.descender()) + f32::from(face.line_gap())) * k;
-        assert_eq!(image.size[1], height.ceil() as usize);
-        assert!(image.size[0] > 20 && image.size[0] < 100, "{:?}", image.size);
-        assert!(image.pixels.iter().any(|p| p.a() > 200), "the letters have ink");
+        assert_eq!(image.resolution()[1], height.ceil() as usize);
+        assert!(
+            image.resolution()[0] > 20 && image.resolution()[0] < 100,
+            "{:?}",
+            image.resolution()
+        );
+        assert!(image.pixels().iter().any(|p| p.a() > 200), "the letters have ink");
         // a narrow row cuts the name before the glyph that would pass it
         let cut = rasterize(&face, "Inter", 20.0, 25.0).expect("its first letters");
-        assert!(cut.size[0] <= 25);
+        assert!(cut.resolution()[0] <= 25);
         // nothing to draw: spaces only
         assert!(rasterize(&face, "   ", 20.0, 1000.0).is_none());
     }

@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(screenshot_size((1000, 1000)), (768, 768));
         assert_eq!(screenshot_size((800, 600)), (800, 600));
         let (preview, j2c) = prepare_screenshot(64, 32, vec![128; 64 * 32 * 4]).expect("pixels");
-        assert_eq!(preview.size, [64, 32]);
+        assert_eq!(preview.resolution(), [64, 32]);
         assert!(j2c.is_some_and(|d| d.starts_with(&[0xFF, 0x4F])));
         assert!(prepare_screenshot(64, 32, vec![0; 10]).is_none());
     }

@@ -2,6 +2,7 @@
 //! one-second hover (Firestorm indra/llui, LGPL 2.1). The human also requested
 //! closing an open folder on hover; latch each visit to prevent oscillation.
 use super::*;
+use winit::data_transfer::DataTransferId;
 
 fn active(ctx: &egui::Context) -> bool {
     ctx.input(|i| i.pointer.primary_down())
@@ -56,11 +57,13 @@ pub(crate) fn folder(ui: &egui::Ui, r: &egui::Response, editor: Uuid, id: Uuid, 
 
 #[derive(Clone)]
 struct Owner {
+    transfer: Option<DataTransferId>,
     scroll: egui::Id,
     frame: u64,
 }
 #[derive(Clone)]
 struct Motion {
+    transfer: Option<DataTransferId>,
     direction: f32,
     since: f64,
     frame: u64,
@@ -77,7 +80,8 @@ pub(crate) fn scroll<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput
     if cfg!(test) || demo::enabled() {
         ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("inventory_drag_viewport", editor)), (rect, out.id)));
     }
-    if !active(ctx) {
+    let native = text_import::pointer(ctx);
+    if native.is_none() && !active(ctx) {
         ctx.data_mut(|d| {
             d.remove::<Owner>(owner_id);
             d.remove::<Motion>(motion_id);
@@ -85,20 +89,41 @@ pub(crate) fn scroll<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput
         return;
     }
     let frame = ctx.cumulative_frame_nr();
-    let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) else {
+    let (transfer, pos) = if let Some((id, pos)) = native {
+        (Some(id), pos)
+    } else if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+        (None, pos)
+    } else {
         return;
     };
     let layer = ctx.layer_id_at(pos);
+    let pos = ctx
+        .layer_transform_from_global(ui.layer_id())
+        .map_or(pos, |transform| transform * pos);
     let over_window = layer == Some(ui.layer_id());
     let entered = over_window && rect.contains(pos);
     let owns = ctx.data_mut(|d| {
         if entered {
-            d.insert_temp(owner_id, Owner { scroll: out.id, frame });
+            d.insert_temp(
+                owner_id,
+                Owner {
+                    transfer,
+                    scroll: out.id,
+                    frame,
+                },
+            );
         }
         let owner = d.get_temp::<Owner>(owner_id);
-        let owns = owner.is_some_and(|o| o.scroll == out.id && o.frame.saturating_add(1) >= frame);
+        let owns = owner.is_some_and(|o| o.transfer == transfer && o.scroll == out.id && o.frame.saturating_add(1) >= frame);
         if owns {
-            d.insert_temp(owner_id, Owner { scroll: out.id, frame });
+            d.insert_temp(
+                owner_id,
+                Owner {
+                    transfer,
+                    scroll: out.id,
+                    frame,
+                },
+            );
         }
         owns
     });
@@ -115,15 +140,17 @@ pub(crate) fn scroll<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput
     let (now, dt) = ctx.input(|i| (i.time, i.unstable_dt.clamp(0.0, 0.05)));
     let since = ctx.data_mut(|d| {
         let motion = d.get_temp_mut_or_insert_with(motion_id, || Motion {
+            transfer,
             direction,
             since: now,
             frame: u64::MAX,
         });
-        if motion.frame == frame {
+        if motion.transfer == transfer && motion.frame == frame {
             return None;
         }
-        if motion.direction != direction || motion.frame.saturating_add(1) < frame {
+        if motion.transfer != transfer || motion.direction != direction || motion.frame.saturating_add(1) < frame {
             motion.since = now;
+            motion.transfer = transfer;
             motion.direction = direction;
         }
         motion.frame = frame;

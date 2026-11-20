@@ -877,7 +877,7 @@ fn enlarged_maps_keep_resolution_and_reject_replaced_or_closed_previews() {
     }
     let cached = imports.entries[0].material_large_previews[0].take().expect("large map prepared");
     assert_eq!(
-        cached.2.size(),
+        cached.2.resolution(),
         [400, 200],
         "the loupe uses original pixels rather than the 96-pixel thumbnail"
     );

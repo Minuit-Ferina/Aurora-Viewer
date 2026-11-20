@@ -1090,11 +1090,23 @@ pub async fn save_task_notecard(http: &reqwest::Client, cap: &str, object: Uuid,
 }
 
 async fn upload_content(http: &reqwest::Client, cap: &str, body: &Llsd, data: Vec<u8>) -> Result<Llsd, String> {
+    upload_content_staged(http, cap, body, data).await.map_err(|err| err.message)
+}
+
+pub(crate) async fn upload_content_staged(
+    http: &reqwest::Client,
+    cap: &str,
+    body: &Llsd,
+    data: Vec<u8>,
+) -> Result<Llsd, super::text_import::SaveError> {
+    use super::text_import::SaveError;
     let answer = crate::caps::post_llsd(http, cap, body)
         .await
-        .map_err(|_| aurora_i18n::tr!("inventory-operations-the-save-was-rejected").to_owned())?;
+        .map_err(|_| SaveError::before(aurora_i18n::tr!("inventory-operations-the-save-was-rejected")))?;
     if answer["state"].as_str() != "upload" {
-        return Err(aurora_i18n::tr!("inventory-operations-the-server-did-not-offer-an-upload").into());
+        return Err(SaveError::before(aurora_i18n::tr!(
+            "inventory-operations-the-server-did-not-offer-an-upload"
+        )));
     }
     let url = answer["uploader"].to_string_value();
     let response = http
@@ -1104,20 +1116,23 @@ async fn upload_content(http: &reqwest::Client, cap: &str, body: &Llsd, data: Ve
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|_| aurora_i18n::tr!("inventory-operations-save-interrupted").to_owned())?;
+        .map_err(|_| SaveError::uncertain(aurora_i18n::tr!("inventory-operations-save-interrupted")))?;
     if !response.status().is_success() {
-        return Err(aurora_i18n::tr!(
+        return Err(SaveError::uncertain(aurora_i18n::tr!(
             "inventory-operations-save-rejected-http",
             value0 = format!("{}", response.status().as_u16())
-        ));
+        )));
     }
     let bytes = response
         .bytes()
         .await
-        .map_err(|_| aurora_i18n::tr!("common-interrupted-response").to_owned())?;
-    let ack = aurora_llsd::from_xml(&bytes).map_err(|_| aurora_i18n::tr!("inventory-operations-unreadable-response").to_owned())?;
+        .map_err(|_| SaveError::uncertain(aurora_i18n::tr!("common-interrupted-response")))?;
+    let ack =
+        aurora_llsd::from_xml(&bytes).map_err(|_| SaveError::uncertain(aurora_i18n::tr!("inventory-operations-unreadable-response")))?;
     if ack["state"].as_str() != "complete" {
-        return Err(aurora_i18n::tr!("inventory-operations-the-server-did-not-confirm-the-save").into());
+        return Err(SaveError::uncertain(aurora_i18n::tr!(
+            "inventory-operations-the-server-did-not-confirm-the-save"
+        )));
     }
     Ok(ack)
 }

@@ -2934,6 +2934,7 @@ impl Session<'_> {
             } => {
                 self.create_notecard_item(request, parent, name, data, permissions);
             }
+            NetCommand::ImportDesktopText(import) => self.import_desktop_text(import),
             NetCommand::CreateScriptItem {
                 request,
                 parent,
@@ -5358,7 +5359,7 @@ impl Session<'_> {
                     .collect::<Vec<_>>(),
             );
             if let Some(parameter) = m.param_list.first() {
-                self.on_inventory_generic(m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
+                self.on_inventory_generic(from, m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
                 self.on_url_floater_generic(m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
             }
             self.on_social_generic(m.agent_data.agent_id, &m.method_data.method);
@@ -5375,7 +5376,7 @@ impl Session<'_> {
                     .collect::<Vec<_>>(),
             );
             if let Some(parameter) = m.param_list.first() {
-                self.on_inventory_generic(m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
+                self.on_inventory_generic(from, m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
                 self.on_url_floater_generic(m.agent_data.agent_id, &m.method_data.method, &parameter.parameter);
             }
             self.on_social_generic(m.agent_data.agent_id, &m.method_data.method);
@@ -5388,7 +5389,7 @@ impl Session<'_> {
                     .iter()
                     .map(|it| {
                         let item = crate::inventory::operations::item_from_udp(it);
-                        self.asset_created(it.callback_id, &item);
+                        self.asset_created(from, it.callback_id, &item);
                         self.accept_inventory_copy(it.callback_id, &item);
                         if let Some((editor, notecard, open)) = self.notecard_copies.remove(&it.callback_id) {
                             emit(
@@ -5455,7 +5456,7 @@ impl Session<'_> {
                         if new {
                             created.push(item.clone());
                         }
-                        self.asset_created(it.callback_id, &item);
+                        self.asset_created(from, it.callback_id, &item);
                         if let Some((editor, notecard, open)) = self.notecard_copies.remove(&it.callback_id) {
                             emit(
                                 self.sh,

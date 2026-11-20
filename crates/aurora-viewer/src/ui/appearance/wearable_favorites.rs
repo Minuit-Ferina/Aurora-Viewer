@@ -786,7 +786,7 @@ fn paint_row(
     ui.painter().rect_filled(pic, radius, p.field);
     if let Some(t) = texture {
         egui::Image::new(t)
-            .uv(crop_square(t.size_vec2()))
+            .uv(crop_square(t.resolution_vec2()))
             .corner_radius(radius)
             .tint(widgets::PICTURE_TINT)
             .paint_at(ui, pic);
@@ -846,7 +846,7 @@ fn tooltip(
     ui.set_max_width(TIP_WIDTH);
     if let Some(t) = texture {
         egui::Image::new(t)
-            .uv(crop_square(t.size_vec2()))
+            .uv(crop_square(t.resolution_vec2()))
             .corner_radius(ui.visuals().window_corner_radius)
             .fit_to_exact_size(Vec2::splat(TIP_PICTURE))
             .ui(ui);

@@ -655,7 +655,7 @@ impl App {
                 .thumbs
                 .pictures()
                 .map(|(key, texture)| {
-                    let [w, h] = texture.size();
+                    let [w, h] = texture.resolution();
                     (*key, (texture.id(), egui::vec2(w as f32, h as f32)))
                 })
                 .collect();

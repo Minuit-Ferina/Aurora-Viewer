@@ -163,9 +163,9 @@ fn pictures_are_decoded_within_their_side_and_only_as_pictures() {
         .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
         .expect("encoded");
     let card = decode(&png, CARD_SIDE).expect("decoded");
-    assert_eq!(card.size, [320, 192]);
+    assert_eq!(card.resolution(), [320, 192]);
     let photo = decode(&png, PHOTO_SIDE).expect("decoded");
-    assert_eq!(photo.size, [640, 384], "a smaller picture is kept whole");
+    assert_eq!(photo.resolution(), [640, 384], "a smaller picture is kept whole");
     assert!(decode(b"<html>not a picture</html>", CARD_SIDE).is_none());
     let mut bmp = Vec::new();
     image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4))
@@ -186,7 +186,7 @@ fn the_demo_guide_is_read_by_the_same_parser() {
     assert!(events[0].until.is_some(), "the event has its last day");
     let url = events[0].card.clone().expect("a picture");
     let img = picture(&url, CARD_SIDE).expect("drawn");
-    assert_eq!(img.size, [250, 150]);
+    assert_eq!(img.resolution(), [250, 150]);
     assert!(
         parse_places(places_json(Fixture::Empty, "editor").as_bytes())
             .expect("places")

@@ -93,10 +93,10 @@ pub(super) fn inserts_text(event: &egui::Event) -> bool {
 impl TypingPointer {
     pub(super) fn window_event(&mut self, event: &WindowEvent) {
         match event {
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved { position, .. } => {
                 self.moved((position.x as f32, position.y as f32));
             }
-            WindowEvent::CursorLeft { .. } | WindowEvent::Focused(_) => {
+            WindowEvent::PointerLeft { .. } | WindowEvent::Focused(_) => {
                 self.show();
             }
             _ => {}
@@ -233,8 +233,11 @@ mod tests {
         for event in [
             WindowEvent::Focused(false),
             WindowEvent::Focused(true),
-            WindowEvent::CursorLeft {
-                device_id: winit::event::DeviceId::dummy(),
+            WindowEvent::PointerLeft {
+                device_id: None,
+                position: None,
+                primary: true,
+                kind: winit::event::PointerKind::Mouse,
             },
         ] {
             p.typed((10.0, 10.0), egui::Id::NULL, || true);

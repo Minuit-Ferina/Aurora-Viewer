@@ -1634,7 +1634,7 @@ fn changed(s: &Settings, before: &Settings, out: &mut Vec<Action>) {
 /// proportions.
 pub fn frozen(ctx: &egui::Context, p: &Palette, texture: &egui::TextureHandle) {
     let screen = ctx.content_rect();
-    let size = texture.size_vec2();
+    let size = texture.resolution_vec2();
     let rect = fit(screen, size.x / size.y.max(1.0));
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("photo_frozen")));
     painter.rect_filled(screen, 0.0, p.navy);

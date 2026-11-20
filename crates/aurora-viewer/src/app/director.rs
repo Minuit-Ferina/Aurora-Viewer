@@ -638,7 +638,7 @@ impl App {
     /// The mouse pointer goes while the track plays (and comes back with a
     /// question over the picture, or when a camera drag holds it: the hold
     /// shows it again itself when it ends).
-    pub(super) fn director_pointer(&mut self, window: &winit::window::Window) {
+    pub(super) fn director_pointer(&mut self, window: &dyn winit::window::Window) {
         if self.cursor_hold.held() {
             self.director.pointer_hidden = false;
             return;

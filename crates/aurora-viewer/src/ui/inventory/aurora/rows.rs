@@ -393,11 +393,19 @@ pub(in super::super) fn item(
     } else {
         0.0
     };
+    let import_status = text_import::item(ui.ctx(), id);
     let pills = pills(inv, it, facts, frame.layout);
     let pills_w: f32 = pills.iter().map(|(text, _)| pill_width(ui, text) + 6.0).sum();
     let favorite = rules::is_favorite(inv, id);
     let star_w = if favorite { 20.0 } else { 0.0 };
-    let room = cols.name_end - name_left - quick_w - trailing - pills_w - star_w - if trailing > 0.0 { 8.0 } else { 0.0 };
+    let status_w = import_status.as_ref().map_or(0.0, |status| {
+        ui.painter()
+            .layout_no_wrap(status.label.clone(), egui::TextStyle::Small.resolve(ui.style()), status.color(p))
+            .size()
+            .x
+            + 8.0
+    });
+    let room = cols.name_end - name_left - quick_w - trailing - pills_w - star_w - status_w - if trailing > 0.0 { 8.0 } else { 0.0 };
     // LLItemBridge::getLabelStyle / LLGestureBridge::getLabelStyle
     // (indra/newview/llinventorybridge.cpp) supply the worn/active state.
     // By human choice, names share the tag's semi-bold face and text colour.
@@ -426,6 +434,16 @@ pub(in super::super) fn item(
     let clip = ui.clip_rect();
     ui.set_clip_rect(clip.intersect(Rect::from_min_max(full.min, Pos2::new(cols.name_end, full.bottom()))));
     widgets::paint_row_text(ui.painter(), galley, name_left, rect.center().y, ink);
+    if let Some(status) = import_status {
+        let color = status.color(p);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(status.label, egui::TextStyle::Small.resolve(ui.style()), color);
+        x += 8.0;
+        let width = galley.size().x;
+        widgets::paint_row_text(ui.painter(), galley, x, rect.center().y, color);
+        x += width;
+    }
     for (text, tone) in &pills {
         x += 6.0;
         x += paint_pill(ui, p, text, *tone, x, rect.center().y);

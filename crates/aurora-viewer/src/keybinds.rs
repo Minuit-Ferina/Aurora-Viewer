@@ -49,18 +49,22 @@ impl From<SavedInput> for Input {
 
 impl Input {
     pub fn key(code: KeyCode) -> Input {
-        Input::Key(format!("{code:?}"))
+        Input::Key(match code {
+            KeyCode::MetaLeft => "SuperLeft".into(),
+            KeyCode::MetaRight => "SuperRight".into(),
+            code => format!("{code:?}"),
+        })
     }
 
     /// Mouse buttons that can be bound (left / right drive the camera and
     /// the context menu, like in Firestorm).
-    pub fn mouse(b: MouseButton) -> Option<Input> {
+    pub fn mouse(b: MouseButton, legacy_code: u16) -> Option<Input> {
         match b {
             MouseButton::Left | MouseButton::Right => None,
             MouseButton::Middle => Some(Input::Mouse("Middle".into())),
             MouseButton::Back => Some(Input::Mouse("Back".into())),
             MouseButton::Forward => Some(Input::Mouse("Forward".into())),
-            MouseButton::Other(n) => Some(Input::Mouse(format!("Other{n}"))),
+            _ => Some(Input::Mouse(format!("Other{legacy_code}"))),
         }
     }
 
@@ -74,8 +78,8 @@ impl Input {
                 | KeyCode::ControlRight
                 | KeyCode::AltLeft
                 | KeyCode::AltRight
-                | KeyCode::SuperLeft
-                | KeyCode::SuperRight
+                | KeyCode::MetaLeft
+                | KeyCode::MetaRight
         )
     }
 
@@ -2826,7 +2830,7 @@ mod tests {
             (MouseButton::Back, "Back"),
             (MouseButton::Forward, "Forward"),
         ] {
-            assert_eq!(Input::mouse(button), Some(Input::Mouse(name.into())));
+            assert_eq!(Input::mouse(button, 0), Some(Input::Mouse(name.into())));
         }
         for (saved, name) in [("中央", "Middle"), ("戻る", "Back"), ("前進", "Forward"), ("Other9", "Other9")] {
             let json = serde_json::to_string(&Input::Mouse(saved.into())).expect("save input");

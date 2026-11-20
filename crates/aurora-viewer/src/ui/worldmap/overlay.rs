@@ -455,7 +455,7 @@ fn events_in(world: &World, key: (u32, u32), s: &crate::world::worldmap::SimInfo
 
 /// A texture laid over `rect`, cropped to fill it.
 fn cover(painter: &egui::Painter, t: &egui::TextureHandle, rect: Rect) {
-    let [w, h] = t.size();
+    let [w, h] = t.resolution();
     let (tw, th) = (w.max(1) as f32, h.max(1) as f32);
     let k = (rect.width() / tw).max(rect.height() / th);
     let (u, v) = (rect.width() / (tw * k), rect.height() / (th * k));

@@ -838,7 +838,7 @@ fn swatches(
                 match tex {
                     None if model.is_some() => {}
                     Some(t) => {
-                        let [w, h] = t.size();
+                        let [w, h] = t.resolution();
                         egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), rect.size()))
                             .uv(sheet::cover_uv(w, h, rect.size()))
                             .tint(widgets::PICTURE_TINT)

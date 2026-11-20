@@ -47,12 +47,12 @@ pub(super) enum TimelineShortcut {
 pub(super) fn timeline_key(key: &winit::keyboard::Key) -> Option<egui::Key> {
     use winit::keyboard::{Key, NamedKey};
     match key {
-        Key::Named(NamedKey::Space) => Some(egui::Key::Space),
         Key::Named(NamedKey::Home) => Some(egui::Key::Home),
         Key::Named(NamedKey::Delete) => Some(egui::Key::Delete),
         Key::Named(NamedKey::ArrowLeft) => Some(egui::Key::ArrowLeft),
         Key::Named(NamedKey::ArrowRight) => Some(egui::Key::ArrowRight),
         Key::Character(character) => match character.to_lowercase().as_str() {
+            " " => Some(egui::Key::Space),
             "z" => Some(egui::Key::Z),
             "y" => Some(egui::Key::Y),
             "c" => Some(egui::Key::C),

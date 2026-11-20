@@ -388,15 +388,15 @@ fn the_banner_is_a_few_soft_pixels_of_the_picture() {
         }
     }
     let img = banner_image(8, 4, &rgba);
-    assert_eq!(img.size, [12, 6], "twelve pixels wide, the picture's proportions");
-    let left = img.pixels[0].to_srgba_unmultiplied();
-    let right = img.pixels[11].to_srgba_unmultiplied();
+    assert_eq!(img.resolution(), [12, 6], "twelve pixels wide, the picture's proportions");
+    let left = img.pixels()[0].to_srgba_unmultiplied();
+    let right = img.pixels()[11].to_srgba_unmultiplied();
     assert!(left[0] > 200 && left[2] < 40, "a little more saturated: {left:?}");
     assert!(right[2] > 200 && right[0] < 40, "{right:?}");
     assert_eq!(left[3], 230, "slightly see-through");
     // a broken buffer gives a dark banner, not a panic
     let img = banner_image(8, 4, &[]);
-    assert_eq!(img.size, [12, 6]);
+    assert_eq!(img.resolution(), [12, 6]);
 }
 
 struct PhotoFixture {

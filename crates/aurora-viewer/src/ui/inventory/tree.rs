@@ -159,13 +159,12 @@ pub fn search_field(
 /// The outline of a row or a list that cargo hovers: the light accent when
 /// it takes the drop, the danger colour when it refuses it.
 pub fn drop_outline(ui: &egui::Ui, p: &Palette, rect: egui::Rect, allowed: bool) {
+    paint_drop_outline(ui.painter(), p, ui.visuals().window_corner_radius, rect, allowed);
+}
+
+pub(super) fn paint_drop_outline(painter: &egui::Painter, p: &Palette, radius: egui::CornerRadius, rect: egui::Rect, allowed: bool) {
     let color = if allowed { p.violet_light } else { p.danger };
-    ui.painter().rect_stroke(
-        rect,
-        ui.visuals().window_corner_radius,
-        egui::Stroke::new(1.0, color),
-        egui::StrokeKind::Inside,
-    );
+    painter.rect_stroke(rect, radius, egui::Stroke::new(1.0, color), egui::StrokeKind::Inside);
 }
 
 /// The footer line of a tree window: small text, a message colour.

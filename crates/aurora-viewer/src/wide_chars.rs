@@ -114,7 +114,7 @@ thread_local! {
 pub fn hook(msg: &windows_sys::Win32::UI::WindowsAndMessaging::MSG) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_PACKET;
     use windows_sys::Win32::UI::WindowsAndMessaging::{WM_CHAR, WM_KEYDOWN, WM_KEYUP, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP};
-    // winit 0.30's Windows WindowId is the HWND converted to u64.
+    // winit's Windows WindowId is the HWND converted to u64.
     let window = msg.hwnd as isize as u64;
     let message = match msg.message {
         WM_CHAR | WM_SYSCHAR => Msg::Char(msg.wParam as u16),
@@ -131,21 +131,17 @@ pub fn hook(msg: &windows_sys::Win32::UI::WindowsAndMessaging::MSG) {
 #[cfg(windows)]
 pub fn attach(window: winit::window::WindowId, event: &mut winit::event::WindowEvent) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_PACKET;
-    use winit::event::{ElementState, TouchPhase, WindowEvent};
+    use winit::event::{ElementState, WindowEvent};
     use winit::keyboard::{Key, NativeKey};
 
-    let window = u64::from(window);
+    let window = window.into_raw() as u64;
     match event {
         WindowEvent::Focused(_)
         | WindowEvent::Destroyed
-        | WindowEvent::MouseInput {
+        | WindowEvent::PointerButton {
             state: ElementState::Pressed,
             ..
-        }
-        | WindowEvent::Touch(winit::event::Touch {
-            phase: TouchPhase::Started,
-            ..
-        }) => {
+        } => {
             INPUT.with_borrow_mut(|state| state.cancel(window));
         }
         WindowEvent::KeyboardInput {

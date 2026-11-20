@@ -332,7 +332,8 @@ fn run_viewer() -> anyhow::Result<()> {
     // and their emoji typed as two halves were lost (wide_chars.rs)
     #[cfg(windows)]
     raw_mouse::install(&mut event_loop);
-    let event_loop = event_loop.build()?;
+    use winit::event_loop::run_on_demand::EventLoopExtRunOnDemand;
+    let mut event_loop = event_loop.build()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     settings::shared_profile::enter()?;
     // Complete deferred update maintenance before opening the shared cache.
@@ -361,12 +362,13 @@ fn run_viewer() -> anyhow::Result<()> {
             .spawn(move || media::remove_misplaced_cache(&cache));
     }
     let mut app = app::App::new()?;
-    let result = event_loop.run_app(app.as_mut());
+    let result = event_loop.run_app_on_demand(app.as_mut());
     // a graphics card box still shown would outlive the viewer on macOS and
     // Linux (app/gpu_stall.rs)
     app::withdraw_gpu_notices(std::time::Duration::from_secs(1));
     // later launches no longer hand their link to this closing viewer
     slurl_handoff::release();
+    app.release_window();
     // the pipelines compiled since the last save (made after the start:
     // another anti-aliasing, the photo passes…)
     aurora_render::pipeline_cache::flush(std::time::Duration::from_secs(2));

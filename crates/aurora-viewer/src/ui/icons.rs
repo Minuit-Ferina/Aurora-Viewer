@@ -841,11 +841,11 @@ fn rasterize_mask(bytes: &[u8], px: u32, shortcut: bool) -> Option<egui::ColorIm
 /// Re-center an icon on its visible content (brand artwork does not sit in
 /// the middle of its canvas): crop to the alpha bounds and pad to a square.
 fn center_on_content(ci: egui::ColorImage) -> egui::ColorImage {
-    let [w, h] = ci.size;
+    let [w, h] = ci.resolution();
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
     for y in 0..h {
         for x in 0..w {
-            if ci.pixels[y * w + x].a() > 8 {
+            if ci.pixels()[y * w + x].a() > 8 {
                 x0 = x0.min(x);
                 y0 = y0.min(y);
                 x1 = x1.max(x);
@@ -862,7 +862,7 @@ fn center_on_content(ci: egui::ColorImage) -> egui::ColorImage {
     let mut out = egui::ColorImage::filled([side, side], egui::Color32::TRANSPARENT);
     for y in 0..ch {
         for x in 0..cw {
-            out.pixels[(y + oy) * side + x + ox] = ci.pixels[(y + y0) * w + x + x0];
+            out.pixels_mut()[(y + oy) * side + x + ox] = ci.pixels()[(y + y0) * w + x + x0];
         }
     }
     out
@@ -950,7 +950,7 @@ mod tests {
     fn every_embedded_svg_rasterizes() {
         for (name, bytes) in OUTLINE.iter().chain(FILLED) {
             let ci = rasterize_svg(bytes, 32).unwrap_or_else(|| panic!("{name} failed"));
-            assert!(ci.pixels.iter().any(|p| p.a() > 0), "{name} is empty");
+            assert!(ci.pixels().iter().any(|p| p.a() > 0), "{name} is empty");
         }
     }
 
@@ -961,11 +961,11 @@ mod tests {
         for (name, bytes) in INVENTORY_LINKS {
             assert!(icons.get(name).is_some(), "missing {name}");
             let image = rasterize_mask(bytes, 240, true).expect("shortcut SVG");
-            assert!(image.pixels.iter().any(|p| p.a() > 0), "empty {name}");
+            assert!(image.pixels().iter().any(|p| p.a() > 0), "empty {name}");
             // The template's upright shortcut stem occupies x=0.408..1.888.
             // Its dark outside edge must stay transparent, not become a solid blob.
-            assert_eq!(image.pixels[230 * 240 + 3].a(), 0, "outline {name}");
-            assert_eq!(image.pixels[230 * 240 + 10].a(), 255, "arrow {name}");
+            assert_eq!(image.pixels()[230 * 240 + 3].a(), 0, "outline {name}");
+            assert_eq!(image.pixels()[230 * 240 + 10].a(), 255, "arrow {name}");
         }
     }
 

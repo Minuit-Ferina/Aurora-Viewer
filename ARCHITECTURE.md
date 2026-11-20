@@ -16,6 +16,26 @@ for day, sky and water, so late asset responses cannot restore an older scene
 or erase newer independent halves. Clearing an unrelated experience leaves
 the active transition intact. `demo_experience` supplies the offline `scenes`
 sequence for two controller changes and return to shared lighting (#1805).
+`app/desktop_text_import.rs` owns desktop TXT/LSL imports for one inventory
+session. Its `files.rs` stages bounded immutable snapshots on at most two
+workers. `native.rs` tracks each native drag, captures the folder UUID on
+drop, and matches the subsequent path response to that transfer and inventory
+session. `view.rs` maps the results to inventory item UUIDs and queued rows.
+`ui/inventory/text_import.rs` records clipped inventory targets and resolves
+the folder on the top egui layer. Item rows supply their parent folder, as
+for internal moves. Both drag types use `drag_navigation::scroll` at list edges.
+During a native transfer gesture the event loop waits for the next frame
+deadline while remaining available to the OS drag source. An ambiguous
+drop offers an explicit choice through the folder context menu.
+The inventory folder command captures its folder before opening the native
+picker. Both submit to the same queue. Typed acknowledgements in
+`aurora-net/inventory/text_import.rs` preserve the saved asset and script
+compilation result. `session/asset_imports.rs` shares creation capacity and
+permission correction with other document creators. It uploads against the
+acknowledged new item, reports the save and compilation result immediately,
+and verifies inventory metadata and permissions separately. The controller
+allows up to four concurrent readbacks. An unconfirmed readback is shown in
+the row tooltip.
 
 Inventory Delete carries a `DeleteRequest` with its originating window and
 selection through the Marketplace guard. `app/inventory.rs` binds that intent

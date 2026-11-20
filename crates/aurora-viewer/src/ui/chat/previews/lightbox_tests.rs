@@ -364,8 +364,8 @@ fn hover_actions_copy_pixels_and_open_an_independent_image_window() {
     frame(vec![pointer(copy, true)]);
     frame(vec![pointer(copy, false)]);
     let copied = crate::ui::chat::previews::clipboard::take(&ctx).expect("Copy queues the picture, not its link");
-    assert_eq!(copied.size, expected.size);
-    assert_eq!(copied.pixels, expected.pixels);
+    assert_eq!(copied.resolution(), expected.resolution());
+    assert_eq!(copied.pixels(), expected.pixels());
     assert!(!pv.enlarged());
     assert!(!pv.image_window_open());
     let window = Pos2::new(239.0, 21.0);
