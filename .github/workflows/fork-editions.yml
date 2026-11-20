@@ -16,9 +16,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15]
+        os: [macos-26]
         edition: [ftrlv]
     runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +58,7 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then interpreter=python; else interpreter=python3; fi
           "$interpreter" - <<'PY'
-          import hashlib, json, os, pathlib, plistlib, subprocess, sys, tarfile, zipfile
+          import hashlib, json, os, pathlib, plistlib, re, subprocess, sys, tarfile, zipfile
           root = pathlib.Path(os.environ['DIST'])
           edition = os.environ['EDITION']
           version = os.environ['AURORA_VERSION_TAG'][1:]
@@ -101,6 +103,9 @@ jobs:
               app = apps[0]
               exe = app/'Contents/MacOS/aurora-viewer'
               subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+              build_info = subprocess.check_output(['xcrun','vtool','-show-build',str(exe)], text=True)
+              minimums = re.findall(r'^\s*minos\s+(\d+(?:\.\d+)*)\s*$', build_info, re.MULTILINE)
+              assert minimums == ['13.0'], build_info
               with (app/'Contents/Info.plist').open('rb') as stream:
                   info = plistlib.load(stream)
               expected = 'org.aurora-viewer.AuroraViewer' + ('.FTRLV' if edition == 'ftrlv' else '')
