@@ -1894,11 +1894,16 @@ mod tests {
             .collect(),
             ..Default::default()
         };
+        // This test has no renderer to apply the font atlas updates.
         for _ in 0..4 {
-            let _ = ctx.run_ui(input(root), |_| {});
+            ctx.run_ui(input(root), |_| {}).textures_delta.clear();
         }
         window_geometry_changed(&ctx);
-        let _ = ctx.run_ui(input(desktop), |ui| assert!(!dismiss_on_window_change(ui.ctx())));
-        let _ = ctx.run_ui(input(root), |ui| assert!(dismiss_on_window_change(ui.ctx())));
+        ctx.run_ui(input(desktop), |ui| assert!(!dismiss_on_window_change(ui.ctx())))
+            .textures_delta
+            .clear();
+        ctx.run_ui(input(root), |ui| assert!(dismiss_on_window_change(ui.ctx())))
+            .textures_delta
+            .clear();
     }
 }
