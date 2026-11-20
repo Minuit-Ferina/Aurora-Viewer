@@ -292,7 +292,7 @@ pub fn with_desktop_id(
 ) -> winit::window::WindowAttributes {
     #[cfg(target_os = "linux")]
     {
-        use wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+        use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
         match _event_loop.display_handle().map(|handle| handle.as_raw()) {
             Ok(RawDisplayHandle::Wayland(_)) => attrs.with_platform_attributes(Box::new(
                 winit::platform::wayland::WindowAttributesWayland::default().with_name(DESKTOP_ID, DESKTOP_ID),

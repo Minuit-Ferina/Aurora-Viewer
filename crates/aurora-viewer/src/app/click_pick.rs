@@ -326,7 +326,7 @@ impl App {
         let code = u16::from(button as u8);
         #[cfg(target_os = "linux")]
         {
-            use wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+            use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
             let backend = self
                 .gfx
                 .as_ref()
