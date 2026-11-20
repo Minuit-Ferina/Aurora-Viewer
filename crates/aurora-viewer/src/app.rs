@@ -13173,7 +13173,12 @@ impl App {
         let mut windows_ms = 0.0;
         self.publish_desktop_text_status(&ctx);
         let mut full = ctx.run_ui(raw, |ui| {
-            ui::inventory::text_import::begin(ui.ctx(), gfx.window.id(), gfx.window.surface_size(), gfx.window.scale_factor());
+            let window = gfx.window.id();
+            let drag = self
+                .desktop_text_drop_enabled()
+                .then(|| self.desktop_text_import.drag_pointer(window))
+                .flatten();
+            ui::inventory::text_import::begin(ui.ctx(), window, gfx.window.surface_size(), gfx.window.scale_factor(), drag);
             self.sound_cues.pass_start(ui.ctx());
             // before any field reads its keys: Ctrl+W is the frontmost window's
             ui::close_key::begin(ui.ctx());
@@ -13186,17 +13191,7 @@ impl App {
             // the second, or a click that changed a row's size is lost.
             actions.merge(self.draw_ui(ui, &projector, &gfx.renderer));
             self.studio_overlay(ui.ctx());
-            if let Some(position) = self.desktop_text_import.drag_position(gfx.window.id()) {
-                ui::inventory::text_import::draw_hover(
-                    ui.ctx(),
-                    gfx.window.id(),
-                    gfx.window.surface_size(),
-                    gfx.window.scale_factor(),
-                    position,
-                    &self.palette,
-                    &self.world.inventory,
-                );
-            }
+            ui::inventory::text_import::draw_hover(ui.ctx(), &self.palette, &self.world.inventory);
             actions.ui_scale_changed |= ui::options::scale_keyboard(ui.ctx(), &mut self.settings.ui_scale);
             if inventory_drop.is_empty() {
                 inventory_drop = self.inventory_drag_input(ui.ctx(), &gfx.renderer);
@@ -13771,7 +13766,9 @@ impl App {
         // frame limiter's wait (llperfstats.cpp subtracts RENDER_FPSLIMIT);
         // none while Windows holds the window
         let mut work = None;
-        if !crate::window_hold::paces(target) {
+        let desktop_drag =
+            self.desktop_text_drop_enabled() && self.desktop_text_import.pace_drag(gfx.window.id(), self.frame_start, target);
+        if !crate::window_hold::paces(target) && !desktop_drag {
             // frame pacing (aurora-render pacing.rs): when the GPU sets the
             // pace, the next frame reads its input once the GPU has finished
             // the frame before this one, instead of waiting behind it with
@@ -25053,6 +25050,18 @@ impl ApplicationHandler for App {
             // including when the render thread returns the previous frame.
             self.frame(event_loop);
         } else if let Some(g) = &self.gfx {
+            use winit::event_loop::ControlFlow;
+            if self.desktop_text_drop_enabled()
+                && let Some(next) = self.desktop_text_import.drag_frame_deadline(g.window.id())
+                && next > Instant::now()
+            {
+                // Wake on native input as well as the next paint deadline.
+                event_loop.set_control_flow(ControlFlow::WaitUntil(next));
+                return;
+            }
+            if !matches!(event_loop.control_flow(), ControlFlow::Poll) {
+                event_loop.set_control_flow(ControlFlow::Poll);
+            }
             g.window.request_redraw();
         }
     }

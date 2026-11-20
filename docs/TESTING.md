@@ -7378,9 +7378,14 @@ failure. Grid validation and any paid upload are performed by the human.
      sidebar and a real folder's empty list background. Check the exact
      destination at different display scales, with overlapping viewer
      floaters, and after moving quickly just before release.
-  2. Drop on an aggregate list without a destination. Choose a
-     folder from its menu, then repeat and cancel. Drop onto an item, the world,
-     object Contents, Trash and Library and check that no import starts.
+  2. Drop onto an item in a nested folder, including in search results.
+     The highlight names the item's folder and the file creates a new entry
+     there. Hold the drag near both list edges and check that the entered
+     inventory scrolls while the pointer stays still. Cross into a second
+     inventory window, check it scrolls instead, and cancel to stop scrolling.
+     Drop on the blank area of an aggregate list, choose a folder from its
+     menu, then repeat and cancel. Try the world, object Contents, Trash and
+     Library and check that no import starts.
      Open a real folder's **Import text files into this folder…** command
      and check the mixed batch and folder again.
   3. On the grid, use a disposable folder. Import a file whose name matches

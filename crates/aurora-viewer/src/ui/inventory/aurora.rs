@@ -378,7 +378,7 @@ fn compact(
     });
     let zone = ui.interact(out.inner_rect, ui.scope_id().with("aurora_list_zone"), Sense::hover());
     let target = list_destination(st, root);
-    text_import::record(ui, zone.rect, inv, (!filtered && !target.is_nil()).then_some(target), false);
+    text_import::record(ui, zone.rect, (!filtered && !target.is_nil()).then_some(target), false);
     task_drop::target(ui, p, &zone, inv, target, actions);
     drag::target(ui, p, &zone, inv, target, st, prefs, facts, actions);
     in_rect(ui, foot, "aurora_inventory_foot", |ui| {
@@ -521,7 +521,6 @@ fn explorer_list(
     text_import::record(
         ui,
         zone.rect,
-        inv,
         (!filtered && !native_target.is_nil()).then_some(native_target),
         false,
     );

@@ -6,6 +6,7 @@ use egui::{Context, Id, LayerId, Pos2, Rect, Ui};
 use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
 use winit::{
+    data_transfer::DataTransferId,
     dpi::{PhysicalPosition, PhysicalSize},
     window::WindowId,
 };
@@ -31,6 +32,7 @@ struct Layout {
     size: PhysicalSize<u32>,
     native_scale: f64,
     zones: Vec<Zone>,
+    pointer: Option<(DataTransferId, Pos2)>,
 }
 
 fn layout_id() -> Id {
@@ -38,7 +40,14 @@ fn layout_id() -> Id {
 }
 
 /// Start fresh on every egui pass, including a sizing pass that gets discarded.
-pub(crate) fn begin(ctx: &Context, window: WindowId, size: PhysicalSize<u32>, native_scale: f64) {
+pub(crate) fn begin(
+    ctx: &Context,
+    window: WindowId,
+    size: PhysicalSize<u32>,
+    native_scale: f64,
+    drag: Option<(DataTransferId, PhysicalPosition<f64>)>,
+) {
+    let pointer = drag.and_then(|(id, position)| surface_point(ctx, size, position).map(|pos| (id, pos)));
     ctx.data_mut(|data| {
         data.insert_temp(
             layout_id(),
@@ -47,17 +56,22 @@ pub(crate) fn begin(ctx: &Context, window: WindowId, size: PhysicalSize<u32>, na
                 size,
                 native_scale,
                 zones: Vec::new(),
+                pointer,
             })),
         )
     });
 }
 
-pub(super) fn record_row(ui: &Ui, rect: Rect, inv: &Inventory, folder: Option<Uuid>) {
-    let list = ui.clip_rect();
-    record(ui, Rect::from_x_y_ranges(list.x_range(), rect.y_range()), inv, folder, true);
+pub(super) fn pointer(ctx: &Context) -> Option<(DataTransferId, Pos2)> {
+    layout(ctx)?.pointer
 }
 
-pub(super) fn record(ui: &Ui, rect: Rect, inv: &Inventory, folder: Option<Uuid>, row: bool) {
+pub(super) fn record_row(ui: &Ui, rect: Rect, folder: Uuid) {
+    let list = ui.clip_rect();
+    record(ui, Rect::from_x_y_ranges(list.x_range(), rect.y_range()), Some(folder), true);
+}
+
+pub(super) fn record(ui: &Ui, rect: Rect, folder: Option<Uuid>, row: bool) {
     let Some(rect) = rect
         .is_positive()
         .then(|| rect.intersect(ui.clip_rect()))
@@ -65,12 +79,9 @@ pub(super) fn record(ui: &Ui, rect: Rect, inv: &Inventory, folder: Option<Uuid>,
     else {
         return;
     };
-    let target = match folder {
-        Some(id) if rules::text_import_destination(inv, id) => Target::Folder(id),
-        Some(_) => Target::Reject,
-        None if row => Target::Reject,
-        None => Target::Choose,
-    };
+    // Store geometry and folder ids only. Check permissions for the actual
+    // hover/release target, not every visible row on every frame.
+    let target = folder.map_or(Target::Choose, Target::Folder);
     ui.ctx().data_mut(|data| {
         if let Some(layout) = data.get_temp_mut_or_insert_with(layout_id(), || None::<Arc<Layout>>).as_mut() {
             Arc::make_mut(layout).zones.push(Zone {
@@ -89,23 +100,28 @@ pub(crate) fn hit(
     size: PhysicalSize<u32>,
     native_scale: f64,
     position: Option<PhysicalPosition<f64>>,
+    inv: &Inventory,
 ) -> Target {
-    resolve(ctx, window, size, native_scale, position).map_or_else(|target| target, |(zone, _)| zone.target)
+    let Some(layout) = layout(ctx).filter(|layout| layout.window == window && !layout.zones.is_empty()) else {
+        return Target::Reject;
+    };
+    let Some(position) = position.filter(|p| p.x.is_finite() && p.y.is_finite()) else {
+        return Target::Choose;
+    };
+    let Some(pos) = surface_point(ctx, size, position) else {
+        return Target::Reject;
+    };
+    if layout.size != size || layout.native_scale != native_scale {
+        return Target::Choose;
+    }
+    resolve(ctx, &layout, pos).map_or(Target::Reject, |zone| checked(zone.target, inv))
 }
 
-pub(crate) fn draw_hover(
-    ctx: &Context,
-    window: WindowId,
-    size: PhysicalSize<u32>,
-    native_scale: f64,
-    position: PhysicalPosition<f64>,
-    p: &Palette,
-    inv: &Inventory,
-) {
-    let Ok((zone, pos)) = resolve(ctx, window, size, native_scale, Some(position)) else {
-        return;
-    };
-    let (allowed, label) = match zone.target {
+pub(crate) fn draw_hover(ctx: &Context, p: &Palette, inv: &Inventory) {
+    let Some(layout) = layout(ctx) else { return };
+    let Some((_, pos)) = layout.pointer else { return };
+    let Some(zone) = resolve(ctx, &layout, pos) else { return };
+    let (allowed, label) = match checked(zone.target, inv) {
         Target::Folder(folder) => (true, tr!("desktop-text-import-into", folder = super::folder_name(inv, folder))),
         Target::Reject => (false, tr!("desktop-text-import-error-destination").to_owned()),
         Target::Choose => return,
@@ -120,31 +136,29 @@ pub(crate) fn draw_hover(
     super::drag::paint_badge(ctx, p, pos, label);
 }
 
-fn resolve(
-    ctx: &Context,
-    window: WindowId,
-    size: PhysicalSize<u32>,
-    native_scale: f64,
-    position: Option<PhysicalPosition<f64>>,
-) -> Result<(Zone, Pos2), Target> {
-    let layout = ctx
-        .data(|data| data.get_temp::<Option<Arc<Layout>>>(layout_id()).flatten())
-        .ok_or(Target::Reject)?;
-    if layout.window != window || layout.zones.is_empty() {
-        return Err(Target::Reject);
+fn checked(target: Target, inv: &Inventory) -> Target {
+    match target {
+        Target::Folder(id) if !rules::text_import_destination(inv, id) => Target::Reject,
+        _ => target,
     }
-    let position = position.filter(|p| p.x.is_finite() && p.y.is_finite()).ok_or(Target::Choose)?;
-    if position.x < 0.0 || position.y < 0.0 || position.x >= f64::from(size.width) || position.y >= f64::from(size.height) {
-        return Err(Target::Reject);
-    }
-    if layout.size != size || layout.native_scale != native_scale {
-        return Err(Target::Choose);
+}
+
+fn layout(ctx: &Context) -> Option<Arc<Layout>> {
+    ctx.data(|data| data.get_temp::<Option<Arc<Layout>>>(layout_id()).flatten())
+}
+
+fn surface_point(ctx: &Context, size: PhysicalSize<u32>, position: PhysicalPosition<f64>) -> Option<Pos2> {
+    if !(0.0..f64::from(size.width)).contains(&position.x) || !(0.0..f64::from(size.height)).contains(&position.y) {
+        return None;
     }
     let scale = f64::from(ctx.pixels_per_point());
-    let pos = Pos2::new((position.x / scale) as f32, (position.y / scale) as f32);
-    let layer = ctx.layer_id_at(pos).ok_or(Target::Reject)?;
+    Some(Pos2::new((position.x / scale) as f32, (position.y / scale) as f32))
+}
+
+fn resolve(ctx: &Context, layout: &Layout, pos: Pos2) -> Option<Zone> {
+    let layer = ctx.layer_id_at(pos)?;
     let local = ctx.layer_transform_from_global(layer).map_or(pos, |transform| transform * pos);
-    zone_at(&layout.zones, layer, local).map(|zone| (zone, pos)).ok_or(Target::Reject)
+    zone_at(&layout.zones, layer, local)
 }
 
 fn zone_at(zones: &[Zone], layer: LayerId, local: Pos2) -> Option<Zone> {

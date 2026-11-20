@@ -21,6 +21,8 @@ struct Drag {
     window: WindowId,
     id: DataTransferId,
     position: Option<PhysicalPosition<f64>>,
+    copy: Option<bool>,
+    next_frame: Instant,
 }
 
 struct Transfer {
@@ -59,8 +61,28 @@ impl DropState {
 }
 
 impl Controller {
-    pub(in crate::app) fn drag_position(&self, window: WindowId) -> Option<PhysicalPosition<f64>> {
-        self.native.drag.as_ref().filter(|drag| drag.window == window)?.position
+    pub(in crate::app) fn drag_pointer(&self, window: WindowId) -> Option<(DataTransferId, PhysicalPosition<f64>)> {
+        let drag = self.native.drag.as_ref().filter(|drag| drag.window == window)?;
+        Some((drag.id, drag.position?))
+    }
+
+    pub(in crate::app) fn drag_frame_deadline(&self, window: WindowId) -> Option<Instant> {
+        self.native
+            .drag
+            .as_ref()
+            .filter(|drag| drag.window == window)
+            .map(|drag| drag.next_frame)
+    }
+
+    /// Windows and Explorer exchange hover messages synchronously. Leave the
+    /// event loop available between frames, even at the unfocused frame cap.
+    pub(in crate::app) fn pace_drag(&mut self, window: WindowId, start: Instant, period: Option<Duration>) -> bool {
+        let Some(drag) = self.native.drag.as_mut().filter(|drag| drag.window == window) else {
+            return false;
+        };
+        let period = period.unwrap_or_default().max(Duration::from_millis(16));
+        drag.next_frame = (start + period).max(Instant::now() + Duration::from_millis(2));
+        true
     }
 }
 
@@ -75,16 +97,35 @@ impl App {
             gfx.window.surface_size(),
             gfx.window.scale_factor(),
             position,
+            &self.world.inventory,
         )
     }
 
-    pub(in crate::app) fn desktop_text_native(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, event: &WindowEvent) -> bool {
-        if self.desktop_text_import.exiting
-            || !matches!(self.screen, Screen::World)
-            || self.world.rlva.has("showinv")
-            || self.exit_prompt.open
-            || self.gfx.as_ref().is_none_or(|gfx| gfx.window.id() != window)
+    pub(in crate::app) fn desktop_text_drop_enabled(&self) -> bool {
+        !self.desktop_text_import.exiting
+            && matches!(self.screen, Screen::World)
+            && !self.world.rlva.has("showinv")
+            && !self.exit_prompt.open
+    }
+
+    fn reply_to_desktop_drag(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, position: Option<PhysicalPosition<f64>>) {
+        let copy = self.desktop_text_native_target(window, position) != Target::Reject;
+        if let Some(drag) = &mut self.desktop_text_import.native.drag
+            && drag.copy != Some(copy)
         {
+            let actions: &[DndAction] = if copy { &[DndAction::Copy] } else { &[] };
+            if event_loop.set_valid_dnd_actions(drag.id, actions).is_ok() {
+                drag.copy = Some(copy);
+            }
+        }
+    }
+
+    pub(in crate::app) fn desktop_text_native(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, event: &WindowEvent) -> bool {
+        if self.gfx.as_ref().is_none_or(|gfx| gfx.window.id() != window) {
+            return false;
+        }
+        if !self.desktop_text_drop_enabled() {
+            self.desktop_text_import.native.drag = None;
             return false;
         }
         match *event {
@@ -94,9 +135,14 @@ impl App {
                 {
                     return false;
                 }
-                self.desktop_text_import.native.drag = Some(Drag { window, id, position });
-                let target = self.desktop_text_native_target(window, position);
-                set_copy(event_loop, id, target);
+                self.desktop_text_import.native.drag = Some(Drag {
+                    window,
+                    id,
+                    position,
+                    copy: None,
+                    next_frame: Instant::now(),
+                });
+                self.reply_to_desktop_drag(event_loop, window, position);
             }
             WindowEvent::DragPosition { id, position, .. } => {
                 let native = &mut self.desktop_text_import.native;
@@ -106,8 +152,7 @@ impl App {
                 if let Some(drag) = &mut native.drag {
                     drag.position = Some(position);
                 }
-                let target = self.desktop_text_native_target(window, Some(position));
-                set_copy(event_loop, id, target);
+                self.reply_to_desktop_drag(event_loop, window, Some(position));
             }
             WindowEvent::DragLeft { id } => {
                 let native = &mut self.desktop_text_import.native;
@@ -177,15 +222,6 @@ impl App {
     pub(super) fn desktop_text_drop_unavailable(&mut self) {
         self.inventory_ui.message = aurora_i18n::tr!("desktop-text-import-error-transfer").into();
     }
-}
-
-fn set_copy(event_loop: &dyn ActiveEventLoop, id: DataTransferId, target: Target) {
-    let actions = if target == Target::Reject {
-        &[][..]
-    } else {
-        &[DndAction::Copy][..]
-    };
-    let _ = event_loop.set_valid_dnd_actions(id, actions);
 }
 
 fn request_paths(event_loop: &dyn ActiveEventLoop, id: DataTransferId) -> Result<AsyncRequestSerial, TransferError> {

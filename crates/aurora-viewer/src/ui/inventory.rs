@@ -1312,7 +1312,7 @@ fn item_response(
     actions: &mut Vec<InvAction>,
 ) -> egui::Response {
     let id = it.id;
-    text_import::record_row(ui, r.rect, inv, None);
+    text_import::record_row(ui, r.rect, it.parent);
     let r = if let Some(status) = text_import::item(ui.ctx(), id).filter(|status| !status.detail.is_empty()) {
         r.on_hover_text(status.detail)
     } else {
@@ -1441,7 +1441,7 @@ fn folder_response(
     if let Some(lead) = lead {
         destination.rect = destination.rect.union(lead);
     }
-    text_import::record_row(ui, destination.rect, inv, Some(id));
+    text_import::record_row(ui, destination.rect, id);
     drag::target(ui, p, &destination, inv, id, state, prefs, facts, actions);
     drag::navigation::folder(ui, &destination, state.ui_id, id, open);
     state.hover.record(&r, id, None);
@@ -1527,7 +1527,7 @@ fn folder_window_contents(
         }
         rows::scroll(ui, p, icons, inv, st, prefs, facts, actions, list_h, root, false);
     });
-    text_import::record(ui, zone.response.rect, inv, (!filtered).then_some(root), false);
+    text_import::record(ui, zone.response.rect, (!filtered).then_some(root), false);
     task_drop::target(ui, p, &zone.response, inv, root, actions);
     drag::target(ui, p, &zone.response, inv, root, st, prefs, facts, actions);
     status(ui, p, inv, st, prefs, facts, actions, filtered);
@@ -2265,13 +2265,7 @@ fn inventory_contents(
         list(ui, p, icons, inv, st, prefs, facts, actions, list_h, root, filtered, true);
     });
     let target = list_destination(st, root);
-    text_import::record(
-        ui,
-        zone.response.rect,
-        inv,
-        (!filtered && !target.is_nil()).then_some(target),
-        false,
-    );
+    text_import::record(ui, zone.response.rect, (!filtered && !target.is_nil()).then_some(target), false);
     task_drop::target(ui, p, &zone.response, inv, target, actions);
     drag::target(ui, p, &zone.response, inv, target, st, prefs, facts, actions);
     status(ui, p, inv, st, prefs, facts, actions, filtered);
