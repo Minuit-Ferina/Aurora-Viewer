@@ -1832,18 +1832,28 @@ struct FrameGroups {
     refl: [wgpu::BindGroup; 9],
 }
 
-/// What a frame draws into: the swapchain image, presented, or a photo's
-/// own texture (`Capture::Snapshot`), read back and dropped.
+/// A presented image, optionally composed at the live size before scaling,
+/// or an offscreen output such as a snapshot.
 enum FrameTarget {
-    Surface(wgpu::SurfaceTexture),
+    Surface {
+        image: wgpu::SurfaceTexture,
+        resize_source: Option<wgpu::Texture>,
+    },
     Offscreen(wgpu::Texture),
 }
 
 impl FrameTarget {
     fn texture(&self) -> &wgpu::Texture {
         match self {
-            FrameTarget::Surface(t) => &t.texture,
+            FrameTarget::Surface { image, resize_source } => resize_source.as_ref().unwrap_or(&image.texture),
             FrameTarget::Offscreen(t) => t,
+        }
+    }
+
+    fn into_surface(self) -> Option<wgpu::SurfaceTexture> {
+        match self {
+            FrameTarget::Surface { image, .. } => Some(image),
+            FrameTarget::Offscreen(_) => None,
         }
     }
 }
@@ -1863,11 +1873,19 @@ struct StInit {
 }
 
 pub(crate) struct Backend {
+    native_ui: crate::native_ui::Surfaces,
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     /// Destroyed by hand in `Drop`, unless the device is lost.
     surface: std::mem::ManuallyDrop<Arc<wgpu::Surface<'static>>>,
+    /// The render size follows the live client area even if the swapchain is retained.
     config: wgpu::SurfaceConfiguration,
+    resize_scaling: bool,
+    /// Full-resolution composition and when the client size last changed.
+    resize_source: Option<(wgpu::Texture, Instant)>,
+    resize_blitter: Option<wgpu::util::TextureBlitter>,
+    resize_refused: bool,
     external: bool,
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     vr: Arc<crate::vr_control::Control>,
@@ -2136,6 +2154,7 @@ impl Drop for Backend {
     /// to the process, which releases it with the driver's objects.
     fn drop(&mut self) {
         if self.lost.get() {
+            self.native_ui.abandon_lost_surfaces();
             log::warn!("GPU device lost: the window surface is left to the process");
             return;
         }
@@ -3792,8 +3811,18 @@ impl Backend {
             alpha_mode: caps.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
         };
+        let mut resize_scaling = false;
         if !external {
+            if format
+                .guaranteed_format_features(device.features())
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::FILTERABLE)
+            {
+                crate::present::request_resize_scaling(&surface);
+            }
             crate::present::configure(&surface, &device, &config);
+            resize_scaling = crate::present::resize_scaling_enabled(&surface);
+            log::debug!("main window resize scaling enabled={resize_scaling}");
         }
 
         // ---- layouts
@@ -4359,10 +4388,16 @@ impl Backend {
         let timer = timestamps.then(|| GpuTimer::new(&device, &queue));
 
         let mut r = Backend {
+            native_ui: Default::default(),
+            adapter,
             device,
             queue,
             surface: std::mem::ManuallyDrop::new(surface),
             config,
+            resize_scaling,
+            resize_source: None,
+            resize_blitter: None,
+            resize_refused: false,
             external,
             #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             vr,
@@ -6848,22 +6883,114 @@ impl Backend {
     }
     /// Follow the window: size and vsync wanted for the frame being drawn.
     fn apply_surface(&mut self, s: SurfaceState) {
+        let previous_mode = self.config.present_mode;
         self.set_vsync(s.vsync);
-        if (s.width, s.height) != (self.config.width, self.config.height) {
-            self.resize(s.width, s.height);
+        let mode_changed = previous_mode != self.config.present_mode;
+        let size_changed = s.width > 0 && s.height > 0 && (s.width, s.height) != (self.config.width, self.config.height);
+        if size_changed {
+            self.config.width = s.width;
+            self.config.height = s.height;
+        }
+        if !self.external {
+            let was_retained = self.resize_source.is_some();
+            if !s.resizing {
+                self.resize_refused = false;
+            }
+            let retain = s.resizing && self.resize_scaling && !mode_changed && !self.resize_refused;
+            if retain && size_changed {
+                self.prepare_resize_source();
+            }
+            // Wait out the changing sizes, then restore a sharp image even
+            // when Windows is still holding the border. The next size change
+            // will retain this new swapchain.
+            let settled = retain
+                && !size_changed
+                && self
+                    .resize_source
+                    .as_ref()
+                    .is_some_and(|(_, changed)| changed.elapsed() >= crate::present::RESIZE_SETTLE_DELAY);
+            if !retain || settled {
+                self.resize_source = None;
+            }
+            if self.resize_source.is_none() && (size_changed || mode_changed || was_retained) {
+                if settled {
+                    log::trace!("main window size {}x{} settled while held", s.width, s.height);
+                }
+                self.configure_surface();
+            }
+        }
+        if size_changed {
+            self.rebuild_targets();
         }
     }
 
-    fn resize(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
+    fn configure_surface(&mut self) {
+        self.resize_source = None;
+        crate::present::configure(&self.surface, &self.device, &self.config);
+        self.resize_scaling = crate::present::resize_scaling_enabled(&self.surface);
+        log::trace!(
+            "main window swapchain {}x{}, resize scaling enabled={}",
+            self.config.width,
+            self.config.height,
+            self.resize_scaling
+        );
+    }
+
+    fn prepare_resize_source(&mut self) {
+        let changed = Instant::now();
+        let [width, height] = [self.config.width, self.config.height];
+        // Give back the temporary image of the previous size before asking
+        // for the next one. This texture is used only during a border drag.
+        self.resize_source = None;
+        let ((source, blitter), refused) = crate::gpu_alloc::scoped(&self.device, || {
+            let blitter = self.resize_blitter.is_none().then(|| {
+                wgpu::util::TextureBlitterBuilder::new(&self.device, self.config.format)
+                    .sample_type(wgpu::FilterMode::Linear)
+                    .build()
+            });
+            let source = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("main window live resize"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            (source, blitter)
+        });
+        if refused {
+            self.resize_refused = true;
+            log::debug!("main window resize image refused; using exact-size presentation");
+        } else {
+            self.resize_blitter = blitter.or(self.resize_blitter.take());
+            self.resize_source = Some((source, changed));
+            log::trace!("main window live size {width}x{height}: retaining swapchain");
         }
-        self.config.width = width;
-        self.config.height = height;
-        if !self.external {
-            crate::present::configure(&self.surface, &self.device, &self.config);
+    }
+
+    fn encode_resize_presentation(&self, encoder: &mut wgpu::CommandEncoder, target: &FrameTarget) {
+        if let FrameTarget::Surface {
+            image,
+            resize_source: Some(source),
+        } = target
+            && let Some(blitter) = &self.resize_blitter
+        {
+            // The world and UI were drawn at the live size. Convert that
+            // image into the retained swapchain so Vulkan's stretch restores
+            // its proportions when it fills the client area.
+            blitter.copy(
+                &self.device,
+                encoder,
+                &source.create_view(&Default::default()),
+                &image.texture.create_view(&Default::default()),
+            );
         }
-        self.rebuild_targets();
     }
 
     /// Supported MSAA sample counts (besides 1).
@@ -7318,13 +7445,7 @@ impl Backend {
             crate::present::name(mode),
             if vsync { "on" } else { "off" }
         );
-        if mode == self.config.present_mode {
-            return;
-        }
         self.config.present_mode = mode;
-        if !self.external {
-            crate::present::configure(&self.surface, &self.device, &self.config);
-        }
     }
 
     // ---------------------------------------------------------------- frame
@@ -7582,6 +7703,14 @@ impl Backend {
     /// A frame with no render targets: the interface over black, none of
     /// the passes that need the targets, its glass and blur left out. Its
     /// markers are taken out as the full frame takes them.
+    pub(crate) fn native_ui(&mut self, task: crate::native_ui::NativeUiTask) {
+        if self.lost.get() {
+            (task.reply)(crate::native_ui::NativeUiResult::Failed);
+        } else {
+            self.native_ui.run(&self.adapter, &self.device, &self.queue, task);
+        }
+    }
+
     fn interface_alone(&mut self, target: &wgpu::Texture, ui: Option<crate::ui_frame::UiFrame>) -> Vec<wgpu::CommandBuffer> {
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -7888,7 +8017,7 @@ impl Backend {
                     self.vr.finish(false);
                 }
                 self.motion_cut = true;
-                crate::present::configure(&self.surface, &self.device, &self.config);
+                self.configure_surface();
                 return Err(Box::new(packet));
             }
         };
@@ -7985,6 +8114,8 @@ impl Backend {
         packet.picks.clear();
         packet.drawn.clear();
         let mirror_size = desktop_size;
+        // The VR mirror owns desktop presentation until the session ends.
+        self.resize_source = None;
         let mut first = world.backends[0].render_view(packet);
         let _second = world.backends[1].render_view(other);
         if let Some(grading) = grading.as_ref() {
@@ -8004,7 +8135,7 @@ impl Backend {
             self.adopt_eye_workers(&mut world);
             self.vr.finish(true);
             self.motion_cut = true;
-            crate::present::configure(&self.surface, &self.device, &self.config);
+            self.configure_surface();
         } else {
             self.xr_world = Some(world);
         }
@@ -8120,6 +8251,7 @@ impl Backend {
             Ok(mut fresh) if !fresh.remake => {
                 log::info!("renderer: made again, whole ({took} ms)");
                 fresh.egui.0 = self.egui.0.take();
+                fresh.native_ui = std::mem::take(&mut self.native_ui);
                 // (a set still compiling is the new one's to wait for: the
                 // old one's drop would hold this frame for it)
                 fresh.adopt_pipeline_workers(self);
@@ -8373,10 +8505,15 @@ impl Backend {
             })))
         } else {
             match self.surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => Some(FrameTarget::Surface(t)),
+                wgpu::CurrentSurfaceTexture::Success(image) | wgpu::CurrentSurfaceTexture::Suboptimal(image) => {
+                    Some(FrameTarget::Surface {
+                        image,
+                        resize_source: self.resize_source.as_ref().map(|(source, _)| source.clone()),
+                    })
+                }
                 wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                     if !self.external {
-                        crate::present::configure(&self.surface, &self.device, &self.config);
+                        self.configure_surface();
                     }
                     None
                 }
@@ -8398,9 +8535,10 @@ impl Backend {
             let capture = (wanted == Some(Capture::Full))
                 .then(|| self.encode_capture(&mut encoder, surface_tex.texture(), false))
                 .flatten();
+            self.encode_resize_presentation(&mut encoder, &surface_tex);
             cmds.push(encoder.finish());
             crate::device_lost::submit_tracked(&self.lost, &self.queue, index, upload_cmds.into_iter().chain(cmds));
-            if let FrameTarget::Surface(t) = surface_tex {
+            if let Some(t) = surface_tex.into_surface() {
                 self.queue.present(t);
                 stats.presented = true;
             }
@@ -12411,6 +12549,7 @@ impl Backend {
         } else if snapshot.is_some() {
             capture = self.encode_capture(&mut encoder, surface_tex.texture(), true);
         }
+        self.encode_resize_presentation(&mut encoder, &surface_tex);
         // finish() validates, tracks and encodes every command of its
         // encoder: the three run at once (wgpu-core only takes a shared
         // lock there), two on the helper threads and one here, then are
@@ -12492,7 +12631,7 @@ impl Backend {
         self.part_pick.after_submit();
         prof.mark("submit");
         let encode_ms = t0.elapsed().as_secs_f32() * 1000.0;
-        if let FrameTarget::Surface(t) = surface_tex {
+        if let Some(t) = surface_tex.into_surface() {
             self.queue.present(t);
             stats.presented = true;
             stats.input_ms = input_at.map(|at| at.elapsed().as_secs_f32() * 1000.0);

@@ -79,7 +79,31 @@ pub(crate) use workspace::{
 /// grips consume the press outside their window too, as LLResizeHandle and
 /// LLResizeBar::handleMouseDown do, and egui retains the subsequent drag.
 pub(crate) fn pointer_over_ui(ctx: &egui::Context, pos: egui::Pos2) -> bool {
-    ctx.is_pointer_over_egui() || ctx.egui_wants_pointer_input() || resize::contains_pointer(ctx, pos) || solid_background_at(ctx, pos)
+    // A motion and press can arrive between egui passes. Use the event's
+    // position as well so pressing a title action cannot pick the world.
+    ctx.is_pointer_over_egui()
+        || ctx.egui_wants_pointer_input()
+        || ctx.layer_id_at(pos).is_some_and(|layer| layer.order != egui::Order::Background)
+        || resize::contains_pointer(ctx, pos)
+        || solid_background_at(ctx, pos)
+}
+
+/// Capture the active viewport's hit regions before another viewport draws.
+pub(crate) fn pointer_regions(ctx: &egui::Context, panels: &mut Vec<egui::Rect>, grips: &mut Vec<egui::Rect>) {
+    let layers = ctx.memory(|memory| memory.areas().visible_layer_ids());
+    panels.clear();
+    panels.extend(layers.iter().filter_map(|&layer| {
+        if layer.order == egui::Order::Background {
+            return None;
+        }
+        let area = egui::AreaState::load(ctx, layer.id)?;
+        area.interactable.then(|| {
+            let rect = area.rect();
+            ctx.layer_transform_to_global(layer).map_or(rect, |transform| transform * rect)
+        })
+    }));
+    grips.clear();
+    grips.extend(resize::hit_rects(ctx, layers));
 }
 
 /// The background areas that are panels of their own, by layer id.
@@ -145,7 +169,13 @@ pub(crate) fn window_dragging(ctx: &egui::Context) -> bool {
 /// This adds the requested tolerance to LLDragHandle::handleHover's immediate
 /// movement (indra/llui/lldraghandle.cpp).
 fn window_click_tolerance(response: &egui::Response) {
-    let _ = response.interact(Sense::CLICK | Sense::DRAG);
+    // Area registers the move widget before dragging and returns the final
+    // bounds after layout. Change the sense on the registered rect so egui
+    // sees one widget, and keep the hit area at the displayed position.
+    if let Some(mut registered) = response.ctx.read_response(response.id) {
+        registered.interact_rect = response.interact_rect;
+        let _ = registered.interact(Sense::CLICK | Sense::DRAG);
+    }
 }
 
 /// Keep status suffixes at normal weight and slightly darker than the name.
@@ -569,6 +599,70 @@ pub(crate) fn step_buttons(ui: &mut egui::Ui, height: f32) -> i32 {
     step
 }
 
+pub(crate) struct DesktopPanels<K> {
+    pub live: Vec<K>,
+    pub requested: Vec<K>,
+}
+
+impl<K> Default for DesktopPanels<K> {
+    fn default() -> Self {
+        Self {
+            live: Vec::new(),
+            requested: Vec::new(),
+        }
+    }
+}
+
+/// Route one logical panel to its viewer floater or desktop body.
+pub(crate) enum PanelHost<'a, K> {
+    Embedded,
+    Viewer(&'a mut DesktopPanels<K>),
+    Desktop { ui: &'a mut egui::Ui, key: K },
+}
+
+impl<K: Copy + Eq> PanelHost<'_, K> {
+    pub fn draws(&self, key: K) -> bool {
+        match self {
+            Self::Embedded => true,
+            Self::Viewer(panels) => !panels.live.contains(&key),
+            Self::Desktop { key: target, .. } => *target == key,
+        }
+    }
+
+    pub fn window_width(&self) -> Option<f32> {
+        match self {
+            Self::Embedded | Self::Viewer(_) => None,
+            Self::Desktop { ui, .. } => Some(ui.available_width()),
+        }
+    }
+
+    pub fn show<R>(
+        &mut self,
+        key: K,
+        floater: Floater<'_>,
+        ctx: &egui::Context,
+        palette: &Palette,
+        open: &mut bool,
+        body: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> Option<R> {
+        if !self.draws(key) {
+            return None;
+        }
+        match self {
+            Self::Embedded => floater.show(ctx, palette, open, body),
+            Self::Viewer(panels) => {
+                let mut detach = false;
+                let result = floater.desktop_action(&mut detach).show(ctx, palette, open, body);
+                if detach && *open {
+                    panels.requested.push(key);
+                }
+                result
+            }
+            Self::Desktop { ui, .. } => (*open).then(|| floater.show_desktop(ui, palette, None, body)),
+        }
+    }
+}
+
 pub struct Floater<'a> {
     pub id: &'a str,
     pub title: String,
@@ -594,6 +688,7 @@ pub struct Floater<'a> {
     /// Extra title bar buttons: (Tabler icon, tooltip, set when clicked),
     /// the first one nearest "Collapse".
     pub actions: Vec<(&'a str, &'a str, &'a mut bool)>,
+    desktop_action: bool,
     /// No open / close sounds (sound_flags="0", e.g. floater_tools).
     pub silent: bool,
     /// An inset dark title bar and edge-to-edge body for inspector layouts.
@@ -633,6 +728,10 @@ pub struct Floater<'a> {
     chat: bool,
 }
 
+fn desktop_body_scope(id: &str) -> egui::Id {
+    egui::Id::unique(("desktop_floater_body", id))
+}
+
 impl<'a> Floater<'a> {
     pub fn new(id: &'a str, title: impl Into<String>, pos: egui::Pos2, size: Vec2) -> Floater<'a> {
         Floater {
@@ -652,6 +751,7 @@ impl<'a> Floater<'a> {
             height_only: false,
             help: None,
             actions: Vec::new(),
+            desktop_action: false,
             silent: false,
             framed_header: None,
             auto_height: false,
@@ -789,7 +889,81 @@ impl<'a> Floater<'a> {
     }
 
     /// Show the floater; `open` is cleared by the close button.
+    pub(crate) fn desktop_action(mut self, requested: &'a mut bool) -> Self {
+        self.desktop_action = true;
+        self.action("picture-in-picture-on", aurora_i18n::tr!("native-windows-detach"), requested)
+    }
+
+    /// Present the same body and panel-specific actions in a desktop client area.
+    pub(crate) fn show_desktop<R>(
+        mut self,
+        ui: &mut egui::Ui,
+        p: &Palette,
+        caption: Option<&mut egui::Ui>,
+        body: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> R {
+        if let Some(caption) = caption {
+            for (icon, tip, clicked) in self.actions.drain(..) {
+                let texture = super::icons::global(icon);
+                *clicked |= caption_button(caption, p, texture.as_ref(), tip).clicked();
+            }
+        }
+        let margin = if self.flush_body { egui::Margin::ZERO } else { FLOATER_MARGIN };
+        let title_divider = self.framed_header.is_some() || !self.flush_body;
+        desktop_client(ui, p, margin, title_divider, |ui| {
+            if !self.actions.is_empty() || self.title_note.is_some() || self.title_state.is_some() || self.help.is_some() {
+                ui.horizontal(|ui| {
+                    if let Some(note) = self.title_note {
+                        let response = ui.label(egui::RichText::new(note).color(p.muted));
+                        if let Some(tip) = self.title_note_tooltip {
+                            response.on_hover_text(tip);
+                        }
+                    }
+                    if let Some((color, label)) = self.title_state {
+                        ui.label(egui::RichText::new(label).color(color));
+                    }
+                    for (icon, tip, clicked) in self.actions {
+                        if title_button(ui, p, icon).on_hover_text(tip).clicked() {
+                            *clicked = true;
+                        }
+                    }
+                    if let Some(help) = self.help {
+                        title_button(ui, p, "help-circle-filled").on_hover_text(help);
+                    }
+                });
+            }
+            if !self.header_status.is_empty() || self.header_status_action.is_some() {
+                ui.horizontal_wrapped(|ui| {
+                    for (icon, label, role) in self.header_status {
+                        let _ = title_button(ui, p, icon);
+                        ui.label(egui::RichText::new(label).color(role));
+                    }
+                    if let Some((icon, label, tip, clicked)) = self.header_status_action {
+                        *clicked |= title_button(ui, p, icon).on_hover_text(format!("{label}\n{tip}")).clicked();
+                    }
+                });
+            }
+            if let Some(summary) = self.header_summary {
+                if let Some(clicked) = self.header_summary_action {
+                    *clicked |= ui.add(egui::Label::new(summary).sense(egui::Sense::click())).clicked();
+                } else {
+                    ui.label(summary);
+                }
+            }
+            let id = desktop_body_scope(self.id);
+            let scope = ui.ctx().data(|d| d.get_temp::<egui::Id>(id)).unwrap_or(id);
+            ui.scope_builder(egui::UiBuilder::new().scope_id(scope), body).inner
+        })
+    }
+
     pub fn show<R>(mut self, ctx: &egui::Context, p: &Palette, open: &mut bool, body: impl FnOnce(&mut egui::Ui) -> R) -> Option<R> {
+        let desktop_scope = self.desktop_action.then(|| desktop_body_scope(self.id));
+        let body = move |ui: &mut egui::Ui| {
+            if let Some(id) = desktop_scope {
+                ui.ctx().data_mut(|d| d.insert_temp(id, ui.scope_id()));
+            }
+            body(ui)
+        };
         super::layout::set_partial_outside(ctx, egui::Id::unique(self.id), self.partial_outside);
         let role = if self.chat { HideKeep::Chat } else { HideKeep::None };
         if window_hidden(ctx, egui::Id::unique(self.id), *open, role) {
@@ -1442,6 +1616,13 @@ pub fn interface_hidden(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<HiddenWindows>(hidden_windows_id()).is_some())
 }
 
+pub(crate) fn chat_windows_hidden(ctx: &egui::Context) -> bool {
+    ctx.data(|d| {
+        d.get_temp::<HiddenWindows>(hidden_windows_id())
+            .is_some_and(|state| state.keep != HideKeep::Chat)
+    })
+}
+
 /// Hide the windows open now (on the next frame), or show them back; `keep`
 /// leaves the chat windows (immersive mode) or the mini-map (mouselook).
 /// Called between two frames.
@@ -1820,6 +2001,27 @@ fn title_button_sized(ui: &mut egui::Ui, p: &Palette, icon: &str, size: Vec2) ->
     resp
 }
 
+/// A title-bar action whose texture belongs to the active presentation.
+pub(crate) fn caption_button(ui: &mut egui::Ui, p: &Palette, texture: Option<&egui::TextureHandle>, label: &str) -> egui::Response {
+    let (_, response) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    if let Some(texture) = texture {
+        paint_caption_icon(ui, p, texture, &response);
+    }
+    response.on_hover_text(label)
+}
+
+fn paint_caption_icon(ui: &egui::Ui, p: &Palette, texture: &egui::TextureHandle, response: &egui::Response) {
+    let rect = egui::Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    let color = if response.hovered() { p.ink } else { p.muted };
+    ui.painter().image(
+        texture.id(),
+        rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        color,
+    );
+}
+
 fn paint_title_button(ui: &egui::Ui, p: &Palette, icon: &str, resp: &egui::Response) {
     let rect = resp.rect;
     let col = if resp.hovered() { p.ink } else { p.muted };
@@ -1911,6 +2113,29 @@ pub fn scroll_strip(ui: &egui::Ui) -> f32 {
 /// hardly lighter than the panels (a light one in high contrast).
 pub fn divider_stroke(p: &Palette) -> Stroke {
     border_stroke(p, Stroke::new(1.0, p.raised))
+}
+
+/// A desktop client fills the OS window below the caption. Its divider
+/// follows the same content margins as an embedded floater.
+pub(crate) fn desktop_client<R>(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    margin: egui::Margin,
+    title_divider: bool,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let bounds = ui.available_rect_before_wrap();
+    let frame = overlay_frame(ui.ctx(), p);
+    let inset = margin + egui::Margin::same(frame.stroke.width as i8);
+    let frame = frame.inner_margin(inset).stroke(Stroke::NONE).shadow(egui::Shadow::NONE);
+    let result = egui::CentralPanel::default().frame(frame).show(ui, body).inner;
+    if title_divider {
+        let stroke = divider_stroke(p);
+        let painter = ui.painter();
+        let y = painter.round_to_pixel_center(bounds.top() + stroke.width * 0.5);
+        painter.hline((bounds - inset).x_range(), y, stroke);
+    }
+    result
 }
 
 /// The border of a window, panel, island or divider: `usual`, or in high

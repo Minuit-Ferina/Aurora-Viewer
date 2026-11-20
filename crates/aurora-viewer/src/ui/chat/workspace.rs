@@ -325,7 +325,7 @@ pub(super) fn pane(
     let cap = compose::field_cap(pane.bottom() - ui.cursor().top(), recent);
     let lines_h = (pane.bottom() - ui.cursor().top() - compose::height(ui.ctx(), st.selected, recent, cap)).max(60.0);
     // ---- the messages, and the members beside them
-    let read = mark_read(world, st.selected);
+    let read = mark_read(ui.ctx(), world, st.selected);
     note_new_line(ui, world, st, read);
     let w: &World = world;
     let own_name = w.own_name();

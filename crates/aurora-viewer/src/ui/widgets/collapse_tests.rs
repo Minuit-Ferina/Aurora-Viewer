@@ -189,6 +189,71 @@ fn minimized_title_can_be_dragged_and_does_not_expand_on_single_click() {
 }
 
 #[test]
+fn moving_an_embedded_window_keeps_one_widget_id() {
+    let p = crate::theme::Theme::default().palette();
+    let default = egui::Rect::from_min_size(egui::pos2(300.0, 200.0), egui::vec2(440.0, 300.0));
+    let id = egui::Id::unique("drag_fixture");
+    for bare in [false, true] {
+        let mut frames = elide_tests::Frames::new();
+        frames.ctx.options_mut(|o| o.warn_on_id_clash = true);
+        let show = |ui: &mut egui::Ui| {
+            if bare {
+                let frame = egui::Frame::window(ui.style());
+                bare_window(
+                    ui.ctx(),
+                    &p,
+                    "drag_fixture",
+                    "Drag window",
+                    frame,
+                    default,
+                    egui::vec2(240.0, 160.0),
+                    false,
+                    false,
+                    |_| {},
+                );
+            } else {
+                Floater::new("drag_fixture", "Drag window", default.min, default.size())
+                    .desktop_action(&mut false)
+                    .show(ui.ctx(), &p, &mut true, |_| {});
+            }
+        };
+        for _ in 0..8 {
+            frames.run(vec![], show);
+        }
+        let rect = |frames: &elide_tests::Frames| frames.ctx.memory(|m| m.area_rect(id).unwrap());
+        let before = rect(&frames);
+        let start = before.min + egui::vec2(170.0, 16.0);
+        let target = start + egui::vec2(80.0, 60.0);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            pressed,
+            button: egui::PointerButton::Primary,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let run = |frames: &mut elide_tests::Frames, event| {
+            let warnings: Vec<_> = frames
+                .run(vec![event], show)
+                .into_iter()
+                .filter(|text| text.source.contains("use of widget ID"))
+                .map(|text| text.source)
+                .collect();
+            assert!(warnings.is_empty(), "bare={bare}: {warnings:?}");
+        };
+        run(&mut frames, egui::Event::PointerMoved(start));
+        run(&mut frames, button(start, true));
+        run(&mut frames, egui::Event::PointerMoved(start + egui::vec2(2.0, 1.0)));
+        assert_eq!(rect(&frames), before, "small pointer jitter keeps the window in place");
+        run(&mut frames, egui::Event::PointerMoved(target));
+        run(&mut frames, egui::Event::PointerMoved(target + egui::vec2(2.0, 1.0)));
+        run(&mut frames, button(target + egui::vec2(2.0, 1.0), false));
+        assert!(
+            (rect(&frames).min - before.min - egui::vec2(82.0, 61.0)).length() < 1.0,
+            "bare={bare}"
+        );
+    }
+}
+
+#[test]
 fn inspector_header_restores_geometry_and_preserves_hidden_contents() {
     let mut f = Fixture::with_header(false, true);
     f.details = true;
@@ -517,6 +582,48 @@ fn a_floater_paints_between_the_bars_only() {
         clip.top() >= room().top() - 0.5 && clip.bottom() <= room().bottom() + 0.5,
         "{clip:?}"
     );
+}
+
+#[test]
+fn desktop_title_divider_follows_the_floater_layout_and_content_width() {
+    let palette = crate::theme::Theme::default().palette();
+    for (flush, framed, has_divider) in [(true, false, false), (false, false, true), (true, true, true)] {
+        let mut frames = elide_tests::Frames::new();
+        let mut bounds = egui::Rect::NOTHING;
+        let mut content = egui::Rect::NOTHING;
+        let shapes = frames.shapes(Vec::new(), |ui| {
+            ui.add_space(32.0);
+            bounds = ui.available_rect_before_wrap();
+            let mut floater = Floater::new("desktop-test", "Window", egui::Pos2::ZERO, egui::vec2(400.0, 350.0));
+            if flush {
+                floater = floater.flush_body();
+            } else {
+                floater = floater.compact_header();
+            }
+            if framed {
+                floater = floater.framed_header("app-window-filled");
+            }
+            floater.show_desktop(ui, &palette, None, |ui| content = ui.available_rect_before_wrap());
+        });
+
+        assert!(
+            shapes
+                .iter()
+                .all(|shape| !matches!(shape, egui::Shape::Rect(rect) if rect.stroke.width > 0.0))
+        );
+        let dividers: Vec<_> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { points, stroke } if *stroke == divider_stroke(&palette) => Some(points),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dividers.len(), usize::from(has_divider));
+        if let Some(line) = dividers.first() {
+            assert_eq!(line[0], egui::pos2(content.left(), bounds.top() + 0.5));
+            assert_eq!(line[1], egui::pos2(content.right(), bounds.top() + 0.5));
+        }
+    }
 }
 
 #[test]

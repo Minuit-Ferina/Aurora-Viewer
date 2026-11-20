@@ -51,21 +51,33 @@ impl PendingTransfer {
 /// enclosing surfaces, so the first hovered target owns the feedback this pass.
 /// Firestorm: LLToolDragAndDrop::acceptanceToCursor / handleHover.
 pub fn cursor(ctx: &egui::Context) -> Option<egui::CursorIcon> {
-    if !egui::DragAndDrop::has_payload_of_type::<TaskDrag>(ctx) || !ctx.input(|i| i.pointer.primary_down()) {
+    if !ctx.input(|i| i.pointer.primary_down()) {
+        return None;
+    }
+    hover_cursor(ctx)
+}
+
+pub(crate) fn hover_cursor(ctx: &egui::Context) -> Option<egui::CursorIcon> {
+    if !egui::DragAndDrop::has_payload_of_type::<TaskDrag>(ctx) {
         return None;
     }
     let pass = ctx.cumulative_pass_nr();
-    Some(ctx.data_mut(|data| {
-        data.get_temp::<(u64, egui::CursorIcon)>(egui::Id::unique("task_inventory_drag_cursor"))
+    let id = cursor_id(ctx);
+    Some(ctx.data(|data| {
+        data.get_temp::<(u64, egui::CursorIcon)>(id)
             .filter(|(at, _)| *at == pass)
             .map_or(egui::CursorIcon::NotAllowed, |(_, cursor)| cursor)
     }))
 }
 
+fn cursor_id(ctx: &egui::Context) -> egui::Id {
+    egui::Id::unique(("task_inventory_drag_cursor", ctx.viewport_id()))
+}
+
 fn target_cursor(ctx: &egui::Context, cursor: egui::CursorIcon) -> bool {
     let pass = ctx.cumulative_pass_nr();
+    let id = cursor_id(ctx);
     ctx.data_mut(|data| {
-        let id = egui::Id::unique("task_inventory_drag_cursor");
         if data.get_temp::<(u64, egui::CursorIcon)>(id).is_none_or(|(at, _)| at != pass) {
             data.insert_temp(id, (pass, cursor));
             true

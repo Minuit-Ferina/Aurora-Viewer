@@ -570,6 +570,8 @@ impl App {
     }
 
     pub(super) fn open_script_from(&mut self, target: ScriptTarget, owner: Option<egui::Id>) {
+        self.native_windows
+            .reveal(super::native_windows::Panel::Script(target.object, target.item));
         if self.world.rlva.has("viewscript") {
             return;
         }
@@ -623,7 +625,7 @@ impl App {
         }
     }
 
-    pub(super) fn show_scripts(&mut self, ctx: &egui::Context, p: &Palette) {
+    pub(super) fn refresh_script_presenters(&mut self) {
         self.script_editors.agent = self.world.agent_id;
         self.script_editors.agent_name = self.world.social.name_of(&self.world.agent_id);
         // shortcut: the agent's region, not the object's (have_lua_enabled); fine
@@ -645,11 +647,30 @@ impl App {
                 }
             }
         }
-        for action in self
-            .script_editors
-            .show(ctx, p, &mut self.settings.script_editor, &mut self.settings.build.color_picker)
-        {
+    }
+
+    pub(super) fn show_scripts(&mut self, ctx: &egui::Context, p: &Palette) {
+        self.refresh_script_presenters();
+        let mut desktop = self.native_windows.script_windows();
+        let actions = self.script_editors.show_placed(
+            ctx,
+            p,
+            &mut self.settings.script_editor,
+            &mut self.settings.build.color_picker,
+            crate::ui::scripts::EditorHost {
+                placement: crate::ui::widgets::PanelHost::Viewer(&mut desktop),
+                parent: None,
+                close: None,
+            },
+        );
+        for action in actions {
             self.apply_script_action(action);
+        }
+        for target in desktop.requested {
+            self.native_windows.detach(
+                super::native_windows::Panel::Script(target.object, target.item),
+                aurora_i18n::tr!("inventory-kind-script").to_owned(),
+            );
         }
         // the copies of the unsaved scripts (ui/scripts/backup.rs)
         self.sync_script_backup_dir();

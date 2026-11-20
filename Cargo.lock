@@ -797,6 +797,7 @@ dependencies = [
  "unicode-bidi-mirroring",
  "uuid",
  "wayland-client",
+ "wgpu",
  "windows",
  "windows-sys 0.61.2",
  "winit",
@@ -1713,7 +1714,7 @@ checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 
 [[package]]
 name = "drm"
@@ -3485,7 +3486,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "arrayvec",
  "bit-set 0.10.0",
@@ -3510,7 +3511,7 @@ dependencies = [
 [[package]]
 name = "naga-types"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -7061,7 +7062,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 [[package]]
 name = "wgpu"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
@@ -7090,7 +7091,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "arrayvec",
  "bit-set 0.10.0",
@@ -7124,7 +7125,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "wgpu-hal",
 ]
@@ -7132,7 +7133,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "wgpu-hal",
 ]
@@ -7140,7 +7141,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-wasm"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "wgpu-hal",
 ]
@@ -7148,7 +7149,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "wgpu-hal",
 ]
@@ -7156,7 +7157,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -7211,7 +7212,7 @@ dependencies = [
 [[package]]
 name = "wgpu-naga-bridge"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "naga",
  "wgpu-types",
@@ -7220,7 +7221,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "30.0.1"
-source = "git+https://github.com/Aurora-Viewer/wgpu?rev=3bad1916ef435277b8edb3252941020a09779ce9#3bad1916ef435277b8edb3252941020a09779ce9"
+source = "git+https://github.com/Minuit-Ferina/wgpu?rev=c3713c3b2c948110b58329656e1ef474e8e736bf#c3713c3b2c948110b58329656e1ef474e8e736bf"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
@@ -7490,7 +7491,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cfg_aliases",
@@ -7516,7 +7517,7 @@ dependencies = [
 [[package]]
 name = "winit-android"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "android-activity",
  "bitflags 2.13.2",
@@ -7531,7 +7532,7 @@ dependencies = [
 [[package]]
 name = "winit-appkit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "block2",
@@ -7553,7 +7554,7 @@ dependencies = [
 [[package]]
 name = "winit-common"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "block2",
  "dpi",
@@ -7571,7 +7572,7 @@ dependencies = [
 [[package]]
 name = "winit-core"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cursor-icon",
@@ -7585,7 +7586,7 @@ dependencies = [
 [[package]]
 name = "winit-orbital"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "dpi",
@@ -7601,7 +7602,7 @@ dependencies = [
 [[package]]
 name = "winit-uikit"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "block2",
@@ -7621,7 +7622,7 @@ dependencies = [
 [[package]]
 name = "winit-wayland"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "calloop",
@@ -7649,7 +7650,7 @@ dependencies = [
 [[package]]
 name = "winit-web"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "atomic-waker",
  "bitflags 2.13.2",
@@ -7671,7 +7672,7 @@ dependencies = [
 [[package]]
 name = "winit-win32"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "cursor-icon",
@@ -7689,7 +7690,7 @@ dependencies = [
 [[package]]
 name = "winit-x11"
 version = "0.31.0-beta.3"
-source = "git+https://github.com/mockydevs/winit?rev=4c38d2fe338245fb7a20602466cab94973313792#4c38d2fe338245fb7a20602466cab94973313792"
+source = "git+https://github.com/Minuit-Ferina/winit?rev=1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5#1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",

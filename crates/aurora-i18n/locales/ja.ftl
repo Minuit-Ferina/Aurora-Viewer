@@ -15617,6 +15617,19 @@ joystick-layout-positional = 位置に基づく
 joystick-layout-auto = 自動
 joystick-layout-xinput = XInput
 
+# Offline native window fixture
+native-windows-demo = ネイティブウィンドウのテスト
+native-windows-demo-document = テスト文書 { $number }
+native-windows-demo-text = このオフライン文書は編集でき、ウィンドウ間を移動できます。
+native-windows-demo-reopen = テスト文書を開き直す
+native-windows-detach = 別ウィンドウで開く
+native-windows-return = ビューア内に戻す
+native-windows-return-all = すべてのウィンドウをビューア内に戻す
+native-windows-open-failed = 別ウィンドウを開けませんでした。文書は引き続きビューア内で利用できます。
+native-windows-minimize = 別ウィンドウを最小化
+native-windows-maximize = 別ウィンドウを最大化
+native-windows-restore = 別ウィンドウのサイズを元に戻す
+
 about-edition = エディション
 edition-classic = クラシック
 edition-ftrlv = FTRLV（Full Time RLV）

@@ -15740,6 +15740,19 @@ joystick-layout-positional = Positionnelle
 joystick-layout-auto = Automatique
 joystick-layout-xinput = XInput
 
+# Offline native window fixture
+native-windows-demo = Test des fenêtres natives
+native-windows-demo-document = Document de test { $number }
+native-windows-demo-text = Ce document hors ligne peut être modifié et déplacé entre les fenêtres.
+native-windows-demo-reopen = Rouvrir les documents de test
+native-windows-detach = Ouvrir dans une fenêtre séparée
+native-windows-return = Ramener dans le viewer
+native-windows-return-all = Ramener toutes les fenêtres dans le viewer
+native-windows-open-failed = La fenêtre séparée n’a pas pu être ouverte. Le document reste disponible dans le viewer.
+native-windows-minimize = Réduire la fenêtre séparée
+native-windows-maximize = Agrandir la fenêtre séparée
+native-windows-restore = Restaurer la fenêtre séparée
+
 about-edition = Édition
 edition-classic = Classique
 edition-ftrlv = FTRLV (Full Time RLV)

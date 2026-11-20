@@ -6,12 +6,11 @@
 //! longer of the two, not their sum.
 //!
 //! The hand-off ([`handoff`]) is a rendezvous, not a queue: the worker
-//! holds at most one job and nothing waits behind it. When the main thread
-//! comes with frame N+1 while frame N is still being drawn, it waits
-//! (back-pressure) until N is presented, then hands N+1 over. A queued
-//! frame would only add a frame of latency: the rate is bounded by the
-//! slower thread either way. Each side measures its wait, reported by the
-//! frame profile.
+//! holds one foreground frame at a time. Frame N+1 waits for N to be
+//! presented before it can be handed over. The separate native UI slot
+//! can hold one pending job. A foreground frame may wait behind a native
+//! job in progress, and takes priority over pending native work. Each side
+//! measures its wait, reported by the frame profile.
 //!
 //! Nothing here can block for ever: when the worker goes away (it
 //! returned, or it panicked and its guard is dropped), every wait of the
@@ -35,8 +34,10 @@ pub struct WorkerGone;
 struct State<J, R> {
     /// Handed over, not taken by the worker yet.
     job: Option<J>,
+    background: Option<J>,
     /// The worker is on a job it took.
     busy: bool,
+    background_running: bool,
     /// Result of the last finished job, until the owner takes it.
     result: Option<R>,
     /// The owner asked the worker to stop.
@@ -53,6 +54,12 @@ struct State<J, R> {
     worker_waiting: usize,
 }
 
+impl<J, R> State<J, R> {
+    fn foreground_pending(&self) -> bool {
+        self.job.is_some() || (self.busy && !self.background_running)
+    }
+}
+
 struct Shared<J, R> {
     state: Mutex<State<J, R>>,
     to_worker: Condvar,
@@ -65,7 +72,9 @@ pub fn handoff<J, R>() -> (Owner<J, R>, Worker<J, R>) {
     let shared = Arc::new(Shared {
         state: Mutex::new(State {
             job: None,
+            background: None,
             busy: false,
+            background_running: false,
             result: None,
             closed: false,
             worker_gone: false,
@@ -93,16 +102,16 @@ pub struct Submitted<R> {
 pub struct Owner<J, R>(Arc<Shared<J, R>>);
 
 impl<J, R> Owner<J, R> {
-    /// Wait until the worker holds nothing; the time it took.
+    /// Wait until the worker holds no foreground work; the time it took.
     fn wait_free(&self, s: &mut parking_lot::MutexGuard<'_, State<J, R>>) -> Result<Duration, WorkerGone> {
         let mut waited = Duration::ZERO;
-        if (s.busy || s.job.is_some()) && !s.worker_gone {
+        if s.foreground_pending() && !s.worker_gone {
             let t = Instant::now();
             #[cfg(test)]
             {
                 s.owner_waiting += 1;
             }
-            while (s.busy || s.job.is_some()) && !s.worker_gone {
+            while s.foreground_pending() && !s.worker_gone {
                 self.0.to_owner.wait(s);
             }
             #[cfg(test)]
@@ -126,6 +135,18 @@ impl<J, R> Owner<J, R> {
         Ok(Submitted { previous, waited })
     }
 
+    // There is one background slot. Foreground frames take precedence
+    // if both are pending when the worker becomes free.
+    pub fn submit_background(&self, job: J) -> Result<(), J> {
+        let mut state = self.0.state.lock();
+        if state.closed || state.worker_gone || state.background.is_some() {
+            return Err(job);
+        }
+        state.background = Some(job);
+        self.0.to_worker.notify_one();
+        Ok(())
+    }
+
     /// Wait for the job handed over to be done; its result unless already
     /// taken (None also when nothing was submitted).
     pub fn finish(&self) -> Result<Option<R>, WorkerGone> {
@@ -134,13 +155,13 @@ impl<J, R> Owner<J, R> {
         Ok(s.result.take())
     }
 
-    /// Wait until the worker holds nothing, but not past `deadline`: false
+    /// Wait for foreground work, but not past `deadline`: false
     /// when it still holds its job then (a GPU that stopped answering keeps
     /// the render thread in a driver call; the main thread must not wait
     /// with it, or the window stops answering too). Nothing is handed over.
     pub fn wait_until_free(&self, deadline: Instant) -> Result<bool, WorkerGone> {
         let mut s = self.0.state.lock();
-        while (s.busy || s.job.is_some()) && !s.worker_gone {
+        while s.foreground_pending() && !s.worker_gone {
             if self.0.to_owner.wait_until(&mut s, deadline).timed_out() {
                 break;
             }
@@ -148,7 +169,7 @@ impl<J, R> Owner<J, R> {
         if s.worker_gone {
             return Err(WorkerGone);
         }
-        Ok(!(s.busy || s.job.is_some()))
+        Ok(!s.foreground_pending())
     }
 
     /// Like [`Self::finish`], but not past `deadline`: Ok(None) also when
@@ -174,7 +195,7 @@ impl<J, R> Owner<J, R> {
         if s.worker_gone {
             return Err(WorkerGone);
         }
-        if s.busy || s.job.is_some() {
+        if s.foreground_pending() {
             return Ok(None);
         }
         Ok(s.result.take())
@@ -186,6 +207,7 @@ impl<J, R> Owner<J, R> {
         let mut s = self.0.state.lock();
         s.closed = true;
         s.job = None;
+        s.background = None;
         self.0.to_worker.notify_all();
     }
 }
@@ -208,7 +230,7 @@ impl<J, R> Worker<J, R> {
         {
             s.worker_waiting += 1;
         }
-        while s.job.is_none() && !s.closed {
+        while s.job.is_none() && s.background.is_none() && !s.closed {
             self.0.to_worker.wait(&mut s);
         }
         #[cfg(test)]
@@ -218,17 +240,34 @@ impl<J, R> Worker<J, R> {
         if s.closed {
             return None;
         }
-        let job = s.job.take()?;
+        let job = if let Some(job) = s.job.take() {
+            s.handed.get_or_insert_with(Instant::now);
+            job
+        } else {
+            let job = s.background.take()?;
+            s.background_running = true;
+            s.handed = Some(Instant::now());
+            job
+        };
         s.busy = true;
         Some((job, t.elapsed()))
     }
 
     /// The job taken is done: the owner may hand the next one over.
     pub fn complete(&self, result: R) {
+        self.complete_job(Some(result));
+    }
+
+    fn complete_job(&self, result: Option<R>) {
         let mut s = self.0.state.lock();
-        s.result = Some(result);
+        if result.is_some() {
+            s.result = result;
+        }
         s.busy = false;
-        s.handed = None;
+        s.background_running = false;
+        if s.job.is_none() {
+            s.handed = None;
+        }
         self.0.to_owner.notify_all();
     }
 }
@@ -241,6 +280,7 @@ impl<J, R> Drop for Worker<J, R> {
         s.worker_gone = true;
         s.busy = false;
         s.job = None;
+        s.background = None;
         self.0.to_owner.notify_all();
     }
 }
@@ -248,6 +288,7 @@ impl<J, R> Drop for Worker<J, R> {
 /// What the render thread is asked to do.
 pub(crate) enum Job {
     Frame(Box<FramePacket>),
+    NativeUi(Box<crate::native_ui::NativeUiTask>),
     /// Depth under a pixel of the last frame drawn, waiting for the GPU
     /// (clicks). Handed over like a frame, so it runs after the frame in
     /// flight: the depth and the camera are those of the last frame built.
@@ -384,6 +425,11 @@ fn run(mut backend: Backend, worker: Worker<Job, Done>) -> Backend {
         crate::frame_priority::apply();
         let mut presented = None;
         let done = match job {
+            Job::NativeUi(task) => {
+                backend.native_ui(*task);
+                worker.complete_job(None);
+                continue;
+            }
             Job::Frame(packet) => {
                 presented = Some(packet.index);
                 // the frame before already done: the main thread hears it now
@@ -418,6 +464,33 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc;
+
+    #[test]
+    fn native_ui_jobs_do_not_replace_foreground_results() {
+        let (owner, worker) = handoff();
+        assert_eq!(owner.submit_background("native"), Ok(()));
+        assert_eq!(owner.submit_background("extra"), Err("extra"));
+        assert!(owner.submit("world").expect("world submitted").previous.is_none());
+        assert_eq!(worker.next().expect("world first").0, "world");
+        worker.complete(42);
+        assert_eq!(worker.next().expect("native second").0, "native");
+        assert_eq!(
+            owner.submit("next world").expect("world queued during native work").previous,
+            Some(42)
+        );
+        worker.complete_job(None);
+        assert_eq!(worker.next().expect("next world").0, "next world");
+        worker.complete(43);
+        assert_eq!(owner.finish().expect("worker alive"), Some(43));
+
+        assert_eq!(owner.submit("last world").expect("last world submitted").previous, None);
+        assert_eq!(worker.next().expect("last world").0, "last world");
+        worker.complete(44);
+        assert_eq!(owner.submit_background("last native"), Ok(()));
+        assert_eq!(worker.next().expect("last native").0, "last native");
+        assert_eq!(owner.take_ready().expect("worker alive"), Some(44));
+        worker.complete_job(None);
+    }
 
     const TICK: Duration = Duration::from_millis(40);
 

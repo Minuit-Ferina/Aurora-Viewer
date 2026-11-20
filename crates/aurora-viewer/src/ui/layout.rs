@@ -248,14 +248,15 @@ pub(crate) fn default_work_area(screen: Rect) -> Rect {
     )
 }
 
-fn work_area_id() -> Id {
-    Id::unique("layout_work_area")
+fn work_area_id(viewport: egui::ViewportId) -> Id {
+    Id::unique(("layout_work_area", viewport))
 }
 
 /// The room left by the bars this frame: call it once they are drawn,
 /// before the windows are shown.
 pub(crate) fn set_work_area(ctx: &egui::Context, area: Rect) {
-    ctx.data_mut(|d| d.insert_temp(work_area_id(), area));
+    let id = work_area_id(ctx.viewport_id());
+    ctx.data_mut(|d| d.insert_temp(id, area));
 }
 
 /// The room the bars leave this frame, from `left` (what the panels of
@@ -272,12 +273,19 @@ pub(crate) fn bars_room(left: Rect, bottom_top: f32, classic_bars: bool) -> Rect
 
 /// Where the windows are laid out: the screen without the bars.
 pub(crate) fn work_area(ctx: &egui::Context) -> Rect {
-    ctx.data(|d| d.get_temp::<Rect>(work_area_id()))
-        .unwrap_or_else(|| default_work_area(ctx.content_rect()))
+    let viewport = ctx.viewport_id();
+    ctx.data(|d| d.get_temp::<Rect>(work_area_id(viewport))).unwrap_or_else(|| {
+        let client = ctx.content_rect();
+        if viewport == egui::ViewportId::ROOT {
+            default_work_area(client)
+        } else {
+            client
+        }
+    })
 }
 
-fn move_area_id() -> Id {
-    Id::unique("layout_move_area")
+fn move_area_id(ctx: &egui::Context) -> Id {
+    Id::unique(("layout_move_area", ctx.viewport_id()))
 }
 
 /// Where the windows can be moved this frame: with the islands the whole
@@ -285,13 +293,15 @@ fn move_area_id() -> Id {
 /// with the Legacy Viewer's full-width bars, the room between them. Call
 /// it with `set_work_area`.
 pub(crate) fn set_move_area(ctx: &egui::Context, area: Rect) {
-    ctx.data_mut(|d| d.insert_temp(move_area_id(), area));
+    let id = move_area_id(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, area));
 }
 
 /// Where the windows can be moved (`set_move_area`); the work area when
 /// nothing set it.
 pub(crate) fn move_area(ctx: &egui::Context) -> Rect {
-    ctx.data(|d| d.get_temp::<Rect>(move_area_id())).unwrap_or_else(|| work_area(ctx))
+    let id = move_area_id(ctx);
+    ctx.data(|d| d.get_temp::<Rect>(id)).unwrap_or_else(|| work_area(ctx))
 }
 
 /// Height of a floater's title bar, and the width of it that stays in the
@@ -329,20 +339,22 @@ impl Edges {
     };
 }
 
-fn edges_id() -> Id {
-    Id::unique("layout_window_edges")
+fn edges_id(ctx: &egui::Context) -> Id {
+    Id::unique(("layout_window_edges", ctx.viewport_id()))
 }
 
 /// The edges that stop the windows this frame (the user's settings): call
 /// it with `set_move_area`.
 pub(crate) fn set_window_edges(ctx: &egui::Context, edges: Edges) {
-    ctx.data_mut(|d| d.insert_temp(edges_id(), edges));
+    let id = edges_id(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, edges));
 }
 
 /// The edges that stop the windows (`set_window_edges`); all of them when
 /// nothing set it.
 pub(crate) fn window_edges(ctx: &egui::Context) -> Edges {
-    ctx.data(|d| d.get_temp::<Edges>(edges_id())).unwrap_or_default()
+    let id = edges_id(ctx);
+    ctx.data(|d| d.get_temp::<Edges>(id)).unwrap_or_default()
 }
 
 /// Per-window exception to the edge stops, retaining the shared title grip.
@@ -818,6 +830,47 @@ mod tests {
 
     fn screen(width: f32, height: f32) -> Rect {
         Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height))
+    }
+
+    #[test]
+    fn detached_layout_uses_its_client_area_instead_of_the_root_bars() {
+        use crate::ui::widgets::elide_tests::Frames;
+        let mut frames = Frames::new();
+        let root = screen(1000.0, 720.0).shrink(44.0);
+        let client = screen(480.0, 340.0);
+        let child = egui::ViewportId::from_hash_of("detached layout");
+        frames.run(Vec::new(), |ui| {
+            set_work_area(ui.ctx(), root);
+            set_move_area(ui.ctx(), root);
+            set_window_edges(ui.ctx(), Edges::OPEN);
+            let raw = egui::RawInput {
+                viewport_id: child,
+                viewports: [
+                    (egui::ViewportId::ROOT, egui::ViewportInfo::default()),
+                    (
+                        child,
+                        egui::ViewportInfo {
+                            parent: Some(egui::ViewportId::ROOT),
+                            ..Default::default()
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                screen_rect: Some(client),
+                ..Default::default()
+            };
+            let mut child_frame = ui.ctx().run_ui(raw, |ui| {
+                assert_eq!(work_area(ui.ctx()), client);
+                assert_eq!(move_area(ui.ctx()), client);
+                assert_eq!(window_edges(ui.ctx()), Edges::default());
+                set_work_area(ui.ctx(), client.shrink(20.0));
+            });
+            child_frame.textures_delta.clear();
+            assert_eq!(work_area(ui.ctx()), root);
+            assert_eq!(move_area(ui.ctx()), root);
+            assert_eq!(window_edges(ui.ctx()), Edges::OPEN);
+        });
     }
 
     /// Frames of the windows of a session: a floater against the left edge,

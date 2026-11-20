@@ -33,24 +33,44 @@ impl App {
 
     /// The Group titles window, while open.
     pub(super) fn group_titles_window(&mut self, ctx: &egui::Context, p: &crate::theme::Palette) {
-        let mut open = self.panels.group_titles;
-        // the region's name stays hidden under @showloc
-        let region = self.world.region_name();
-        let region = (!region.is_empty() && !self.world.rlva.has("showloc")).then_some(region);
-        let view = View {
-            groups: &self.world.groups.groups,
-            active: self.world.groups.active,
-            titles: &self.world.region_titles,
-            region: region.as_deref(),
-        };
-        let actions = self.group_titles_ui.show(ctx, p, &view, &mut open);
-        self.panels.group_titles = open;
+        let panel = native_windows::Panel::GroupTitles;
+        if self.native_windows.is_native(panel) {
+            return;
+        }
+        let region = Self::group_titles_region(&self.world);
+        let view = Self::group_titles_view(&self.world, region.as_deref());
+        let mut desktop = ui::widgets::DesktopPanels::default();
+        let actions = self.group_titles_ui.show(
+            ctx,
+            p,
+            &view,
+            &mut self.panels.group_titles,
+            ui::widgets::PanelHost::Viewer(&mut desktop),
+        );
+        if !desktop.requested.is_empty() {
+            self.native_windows
+                .detach(panel, aurora_i18n::tr!("toolbar-command-group-titles").to_owned());
+        }
         for action in actions {
             self.on_group_titles_action(action, region.as_deref());
         }
     }
 
-    fn on_group_titles_action(&mut self, action: TitlesAction, region: Option<&str>) {
+    pub(super) fn group_titles_region(world: &World) -> Option<String> {
+        let region = world.region_name();
+        (!region.is_empty() && !world.rlva.has("showloc")).then_some(region)
+    }
+
+    pub(super) fn group_titles_view<'a>(world: &'a World, region: Option<&'a str>) -> View<'a> {
+        View {
+            groups: &world.groups.groups,
+            active: world.groups.active,
+            titles: &world.region_titles,
+            region,
+        }
+    }
+
+    pub(super) fn on_group_titles_action(&mut self, action: TitlesAction, region: Option<&str>) {
         let titles = &mut self.world.region_titles;
         match action {
             // FSFloaterGroupTitles::activateGroupTitle

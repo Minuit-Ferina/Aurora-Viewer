@@ -170,6 +170,12 @@ impl Editor {
     }
 }
 
+pub(crate) struct EditorHost<'a> {
+    pub placement: super::widgets::PanelHost<'a, ScriptTarget>,
+    pub parent: Option<&'a std::sync::Arc<dyn winit::window::Window>>,
+    pub close: Option<ScriptTarget>,
+}
+
 #[derive(Default)]
 pub struct Editors {
     pub rlva_hidden: bool,
@@ -761,18 +767,46 @@ impl Editors {
         settings: &mut settings::ScriptSettings,
         color_prefs: &mut super::color_picker::Preferences,
     ) -> Vec<Action> {
+        self.show_placed(
+            ctx,
+            p,
+            settings,
+            color_prefs,
+            EditorHost {
+                placement: super::widgets::PanelHost::Embedded,
+                parent: None,
+                close: None,
+            },
+        )
+    }
+
+    pub(crate) fn file_picker_open(&self, target: ScriptTarget) -> bool {
+        self.documents
+            .iter()
+            .any(|document| document.target == target && document.tools.file_job.as_ref().is_some_and(|job| job.1))
+    }
+
+    pub(crate) fn show_placed(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Palette,
+        settings: &mut settings::ScriptSettings,
+        color_prefs: &mut super::color_picker::Preferences,
+        mut host: EditorHost<'_>,
+    ) -> Vec<Action> {
         if self.rlva_hidden {
             return Vec::new();
         }
         let colors_before = color_prefs.clone();
         let mut actions = Vec::new();
-        if self.panels.preferences.show(ctx, p, settings) {
+        if host.placement.window_width().is_none() && self.panels.preferences.show(ctx, p, settings) {
             actions.push(Action::SettingsChanged);
         }
         for e in &mut self.documents {
-            if e.closed {
+            if e.closed || !host.placement.draws(e.target) {
                 continue;
             }
+            e.tools.file_parent = host.parent.map(std::sync::Arc::downgrade);
             let id = format!("script_editor_{}_{}", e.target.object, e.target.item);
             e.recompile_allowed = settings.preprocessor && settings.recompile;
             if e.processor_settings != *settings {
@@ -842,22 +876,22 @@ impl Editors {
             if std::mem::take(&mut e.raise) {
                 super::widgets::expand_floater(ctx, &id);
             }
-            let mut open = true;
+            let mut open = host.close != Some(e.target);
             let title = format!("{}{}", e.name, if e.dirty() { " *" } else { "" });
             focus::claim(
                 ctx,
                 egui::LayerId::new(egui::Order::Middle, egui::Id::unique(&id)),
                 egui::Id::unique((&id, "source_text")),
             );
-            Floater::new(
+            let floater = Floater::new(
                 &id,
                 title,
                 ctx.content_rect().center() - Vec2::new(330.0, 260.0),
                 Vec2::new(660.0, 520.0),
             )
             .cascade(super::widgets::CascadeGroup::Script)
-            .allow_partial_outside()
-            .show(ctx, p, &mut open, |ui| {
+            .allow_partial_outside();
+            host.placement.show(e.target, floater, ctx, p, &mut open, |ui| {
                 view::body(
                     ui,
                     p,
@@ -957,10 +991,21 @@ impl Editors {
             let id = egui::Id::unique((&window, "source_text"));
             if search.owns(id) {
                 bound = true;
+                if !host.placement.draws(e.target) {
+                    break;
+                }
                 let minimized = ctx
                     .data_mut(|d| d.get_persisted::<bool>(egui::Id::unique((&window, "minimized"))))
                     .unwrap_or(false);
-                if !minimized && let Some(parent) = ctx.memory(|m| m.area_rect(egui::Id::unique(&window))) {
+                let desktop = host.placement.window_width().is_some();
+                let parent = if desktop {
+                    Some(ctx.content_rect().shrink(6.0))
+                } else {
+                    ctx.memory(|m| m.area_rect(egui::Id::unique(&window)))
+                };
+                if (desktop || !minimized)
+                    && let Some(parent) = parent
+                {
                     view::search(
                         ctx,
                         p,
@@ -979,7 +1024,7 @@ impl Editors {
         }
         // An owner can change while a later editor handles Ctrl+F. Drop its
         // unused reserved UI within this pass, without drawing another search.
-        for e in &mut self.documents {
+        for e in self.documents.iter_mut().filter(|e| host.placement.draws(e.target)) {
             e.tools.search_slot = None;
         }
         if *color_prefs != colors_before {

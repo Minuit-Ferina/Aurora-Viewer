@@ -180,9 +180,12 @@ pub fn prepare(st: &mut ChatUi, world: &World, place: ChatThumbnails, flash: boo
 /// or its own window (`popout.rs`) shown?
 fn shown(ctx: &egui::Context, st: &ChatUi, conversations_open: bool, id: Uuid) -> bool {
     if st.popped.contains(Some(id)) {
-        super::popout::in_sight(ctx, &st.popped).any(|conversation| conversation == Some(id))
+        super::popout::in_sight(ctx, &st.popped, &super::desktop_presence(ctx)).any(|conversation| conversation == Some(id))
     } else {
-        conversations_open && !crate::ui::widgets::floater_minimized(ctx, "conversations") && st.selected == Some(id) && !st.contacts
+        let visible = super::desktop_presence(ctx)
+            .container
+            .unwrap_or_else(|| !crate::ui::widgets::floater_minimized(ctx, "conversations"));
+        conversations_open && visible && st.selected == Some(id) && !st.contacts
     }
 }
 

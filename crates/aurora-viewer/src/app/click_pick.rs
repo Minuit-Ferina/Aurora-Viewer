@@ -317,7 +317,28 @@ impl App {
             return true;
         }
         let ppp = self.egui_ctx.pixels_per_point();
-        ui::widgets::pointer_over_ui(&self.egui_ctx, egui::pos2(self.cursor_pos.0 / ppp, self.cursor_pos.1 / ppp))
+        let position = egui::pos2(self.cursor_pos.0 / ppp, self.cursor_pos.1 / ppp);
+        self.native_windows
+            .root_pointer(position)
+            .unwrap_or_else(|| ui::widgets::pointer_over_ui(&self.egui_ctx, position))
+    }
+
+    pub(super) fn root_gui_wants_keyboard(&self) -> bool {
+        self.native_windows
+            .root_keyboard()
+            .map_or_else(|| self.egui_ctx.egui_wants_keyboard_input(), |keyboard| keyboard.wants)
+    }
+
+    pub(super) fn root_gui_popup_open(&self) -> bool {
+        self.native_windows
+            .root_keyboard()
+            .map_or_else(|| egui::Popup::is_any_open(&self.egui_ctx), |keyboard| keyboard.popup)
+    }
+
+    pub(super) fn root_text_edit_focused(&self) -> bool {
+        self.native_windows
+            .root_keyboard()
+            .map_or_else(|| self.egui_ctx.text_edit_focused(), |keyboard| keyboard.text_edit)
     }
 
     /// A mouse button of the window, pressed or released: handled now, or

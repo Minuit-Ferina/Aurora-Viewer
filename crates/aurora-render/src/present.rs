@@ -13,8 +13,12 @@
 //! crash reports.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use wgpu::PresentMode;
+
+/// Restore native resolution once the client size has stopped changing.
+pub(crate) const RESIZE_SETTLE_DELAY: Duration = Duration::from_millis(150);
 
 /// Mode to configure the surface with, among those the surface supports.
 ///
@@ -60,6 +64,35 @@ pub(crate) fn forced() -> Option<PresentMode> {
         }
         mode
     })
+}
+
+/// Request Vulkan presentation scaling when configuring a Windows surface.
+pub(crate) fn request_resize_scaling(surface: &wgpu::Surface<'_>) {
+    #[cfg(windows)]
+    {
+        // SAFETY: This only sets an optional request on the live HAL surface.
+        // The render worker still owns all surface configuration.
+        if let Some(native) = unsafe { surface.as_hal::<wgpu::hal::api::Vulkan>() } {
+            native.set_resize_scaling(true);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = surface;
+}
+
+/// Whether the configured swapchain can fill the client area as it changes.
+pub(crate) fn resize_scaling_enabled(surface: &wgpu::Surface<'_>) -> bool {
+    #[cfg(windows)]
+    {
+        // SAFETY: The live surface is owned by the render worker. This
+        // queries presentation state without changing it.
+        unsafe { surface.as_hal::<wgpu::hal::api::Vulkan>() }.is_some_and(|native| native.resize_scaling_enabled())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = surface;
+        false
+    }
 }
 
 /// Swapchain recreations since the start (every `configure` below).

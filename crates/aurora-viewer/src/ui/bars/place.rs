@@ -718,7 +718,7 @@ fn place_menu(ui: &mut egui::Ui, p: &Palette, icons: &Icons, panels: &mut Panels
         action = Some(BarAction::TeleportHome);
     }
     if menu::item(ui, p, "map-pin-filled", aurora_i18n::tr!("common-places")) {
-        crate::ui::widgets::toggle_floater(ui.ctx(), "places", &mut panels.places);
+        action = Some(BarAction::TogglePlaces);
     }
     if !st.recent.is_empty() {
         menu::heading(ui, p, aurora_i18n::tr!("ui-bars-recent-places"));

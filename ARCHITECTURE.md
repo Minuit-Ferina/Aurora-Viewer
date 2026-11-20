@@ -4353,6 +4353,62 @@ at 200/255. Fuller mips keep their plain alpha, while foliage still receives
 the coverage boost. `scene/texture_cache.rs` uses mask code 4 to regenerate
 the old adjusted chains (code 3) without invalidating opaque/blended ones.
 
+### Native UI presentation
+
+The manager in app/native_windows.rs creates top-level windows on the event
+loop. A logical panel retains its embedded presentation until the worker
+accepts its surface. Closing a panel runs its existing close flow. Returning
+it to the viewer preserves its model and widget state, hides the desktop
+presentation and waits for render-side retirement before dropping the handle.
+
+The child and root passes share the egui context, with separate viewport input,
+platform output, bounds and repaint timing. The snapshot in
+app/native_windows/input.rs retains the root's hit regions and focus while
+egui memory is using the last child viewport. Each renderer owns its transient
+buffers and preview cache. The egui texture shadow carries managed texture
+updates between passes in order. A child uploads only the complete textures it
+uses whose revisions changed. The render worker accepts one outstanding native
+job and gives root frames priority. GPU recovery rehosts the logical panels in
+the root. The shared caption in app/native_windows/chrome uses native drag
+and resize hit testing and themed title controls. On macOS, the AppKit adapter
+in app/native_windows/chrome/macos.rs resizes within the current display's
+visible frame without changing the native style. AppKit manages the stacking
+of the top-level windows. Explicit panel actions can focus a detached window.
+
+The conversation action dispatcher and viewer panel presenters borrow the
+canonical application models. Placement in app/native_windows/placement.rs
+keeps desktop bounds separate from the embedded layout. The application
+remembers the workspace's general-purpose placements in ui_layout.ron and
+uses in-memory geometry for individual conversations and documents. Geometry
+never opens a panel. Windows restores against monitor work areas. Sizing
+and positioning on other platforms follow their window manager.
+
+| Logical panel or floater type | Desktop integration |
+|---|---|
+| `Conversations` and `Conversation` | Shared chat models, layouts, drafts and the existing reattach action. |
+| `Inventory` and `Build` | Shared selections, model updates, actions and owner dialogs. The native drag bridge in app/native_windows/drag.rs uses viewport-local pointer positions and the existing Inventory and Build drop rules. |
+| `Script` and `Notecard` | Shared editor state, saves and close prompts. Script file dialogs retain their initiating window while open. |
+| `About` and `GridStatus` | Shared panel models and platform clipboard or external browser output. |
+| `GroupTitles` and `Bumps` | Shared rows, filter or selection, actions, and region privacy checks. |
+| `WorldMap` | Both styles use the same tiles, camera, actions and RLVa checks. The minimap remains attached to the world. |
+| `RegionTracker` and `AvatarRenderSettings` | Shared tracker and display-exception state. The resident picker opens in the editor's viewport and the tracker opens the shared World Map. |
+| `People` | Both styles share the radar, map, detail sheets and contacts model. People-owned contacts dialogs follow the panel. The standalone minimap remains in the viewer. |
+| `Places` | Both styles share favorites, landmarks, the teleport history, inline place profiles and confirmations. The native drag bridge routes place payloads to the existing destination checks on Windows, macOS, Wayland and X11. |
+| Area Search | Object actions use viewer-level confirmations and secondary windows that need a route to the initiating host. |
+| World, login, loading, HUDs and world overlays | Root window. |
+| Menus, tooltips and modal dialogs | Follow the panel or application that owns them. |
+| Avatar, group and place profiles | Profile inventory drops and child dialogs need an owner route. The avatar feed also needs native web-surface placement. |
+| `web_browser`, `marketplace` and embedded web tabs | Web-view placement and focus still depend on the root window. |
+| Preferences and other file-oriented floaters | Binding capture and native file pickers require host ownership. |
+| About Land and `region_estate` | Attach world selection and panel-specific dialogs to the logical owner. |
+| `photo` and `photo_classic` | Scene capture, frame freezing and native file jobs need to remain coordinated with the world window. |
+| Gesture manager and `gesture_<item>` | The editor's save and discard dialogs and preview playback still follow the root owner. |
+| Appearance, material and environment editors, asset imports, animation tools | Verify scene and preview resources, owner dialogs and asset permissions in each host. |
+| Remaining shared floaters | Individual action, rendering, and lifecycle checks are pending. |
+
+The synthetic document and preview fixture remains available through
+AURORA_DEMO_NATIVE_WINDOWS.
+
 ## Threads and data ownership
 
 A frame costs the longer of the two threads, not their sum: the main thread

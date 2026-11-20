@@ -90,9 +90,44 @@ const RECENT_TAB: usize = 2;
 /// Firestorm's (floater_my_inventory.xml, 333 x 570 with its smaller font).
 const DEFAULT_SIZE: Vec2 = Vec2::new(440.0, 570.0);
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct NotecardKey {
+    pub editor: Uuid,
+    pub item: Uuid,
+}
+
+pub(crate) struct DesktopNotecard<'a> {
+    pub ui: &'a mut egui::Ui,
+    pub key: NotecardKey,
+    pub close: bool,
+}
+
+pub(crate) fn set_desktop_notecards(ctx: &egui::Context, keys: Vec<(NotecardKey, egui::ViewportId)>) {
+    ctx.data_mut(|data| data.insert_temp(egui::Id::unique("desktop_notecards"), keys));
+}
+
+pub(crate) fn take_desktop_notecard_requests(ctx: &egui::Context) -> Vec<NotecardKey> {
+    ctx.data_mut(|data| data.remove_temp(egui::Id::unique("desktop_notecard_requests")))
+        .unwrap_or_default()
+}
+
+fn notecard_is_native(ctx: &egui::Context, key: NotecardKey) -> bool {
+    let viewport = ctx.viewport_id();
+    ctx.data(|data| data.get_temp::<Vec<(NotecardKey, egui::ViewportId)>>(egui::Id::unique("desktop_notecards")))
+        .is_some_and(|keys| keys.iter().any(|(found, host)| *found == key && *host != viewport))
+}
+
+fn note_dialog(dialog: &EditDialog) -> Option<Uuid> {
+    match dialog {
+        EditDialog::Discard(id) | EditDialog::SaveEmbedded(id) | EditDialog::CopyEmbedded(id, _) => Some(*id),
+        _ => None,
+    }
+}
+
 /// The shared editor and unsaved-changes confirmation, without an inventory
 /// tree. Object notecards keep their own item model and document state.
-pub fn show_document(
+#[cfg(test)]
+pub(crate) fn show_document(
     ctx: &egui::Context,
     p: &Palette,
     icons: &Icons,
@@ -102,6 +137,22 @@ pub fn show_document(
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
     prefs: &mut InventoryPreferences,
     script_settings: &super::scripts::settings::ScriptSettings,
+) -> Vec<InvAction> {
+    show_document_placed(ctx, p, icons, inv, st, drag_inventory, images, prefs, script_settings, 0, None)
+}
+
+pub(crate) fn show_document_placed(
+    ctx: &egui::Context,
+    p: &Palette,
+    icons: &Icons,
+    inv: &Inventory,
+    st: &mut InventoryUi,
+    drag_inventory: &Inventory,
+    images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    prefs: &mut InventoryPreferences,
+    script_settings: &super::scripts::settings::ScriptSettings,
+    god_level: u8,
+    desktop: Option<DesktopNotecard<'_>>,
 ) -> Vec<InvAction> {
     let mut actions = Vec::new();
     let facts = Facts {
@@ -114,9 +165,11 @@ pub fn show_document(
         appearance_busy: false,
         touchable: Default::default(),
         names: Default::default(),
+        god_level,
         ..Default::default()
     };
-    dialogs::preview(
+    let desktop_key = desktop.as_ref().map(|host| host.key);
+    dialogs::preview_placed(
         ctx,
         p,
         icons,
@@ -128,8 +181,12 @@ pub fn show_document(
         script_settings,
         facts.god_level,
         &mut actions,
+        desktop,
     );
-    dialogs::show(ctx, p, icons, inv, st, prefs, &facts, images, &mut actions);
+    let dialog_item = st.dialog.as_ref().and_then(note_dialog);
+    if desktop_key.is_none_or(|key| dialog_item == Some(key.item)) {
+        dialogs::show(ctx, p, icons, inv, st, prefs, &facts, images, &mut actions);
+    }
     actions
 }
 
@@ -429,6 +486,16 @@ impl From<&aurora_net::inventory::InvItem> for PropertyEdit {
             commit_desc: false,
             commit_price: false,
         }
+    }
+}
+
+pub(crate) fn desktop_window_open(state: &InventoryUi, id: Uuid) -> bool {
+    id != listings::PANEL && state.windows.iter().any(|window| window.id == id && window.open)
+}
+
+pub(crate) fn close_desktop_window(state: &mut InventoryUi, id: Uuid) {
+    if let Some(window) = state.windows.iter_mut().find(|window| window.id == id) {
+        window.open = false;
     }
 }
 
@@ -2298,7 +2365,8 @@ fn additional_window_pos(ctx: &egui::Context, screen: egui::Rect) -> egui::Pos2 
     }
 }
 
-pub fn show(
+#[cfg(test)]
+pub(crate) fn show(
     ctx: &egui::Context,
     p: &Palette,
     icons: &Icons,
@@ -2314,7 +2382,60 @@ pub fn show(
     script_settings: &super::scripts::settings::ScriptSettings,
     classic: bool,
 ) -> Vec<InvAction> {
+    show_placed(
+        ctx,
+        p,
+        icons,
+        world,
+        st,
+        dual,
+        prefs,
+        open,
+        appearance_busy,
+        images,
+        hover_images,
+        pics,
+        script_settings,
+        classic,
+        widgets::PanelHost::Embedded,
+    )
+}
+
+pub(crate) fn show_placed(
+    ctx: &egui::Context,
+    p: &Palette,
+    icons: &Icons,
+    world: &mut World,
+    st: &mut InventoryUi,
+    dual: Option<&mut InventoryUi>,
+    prefs: &mut InventoryPreferences,
+    open: &mut bool,
+    appearance_busy: bool,
+    images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    hover_images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    pics: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    script_settings: &super::scripts::settings::ScriptSettings,
+    classic: bool,
+    mut host: widgets::PanelHost<'_, Option<Uuid>>,
+) -> Vec<InvAction> {
     let mut actions = Vec::new();
+    let main_here = host.draws(None);
+    let placed_layout = |host: &widgets::PanelHost<'_, Option<Uuid>>, id: &str| {
+        host.window_width().map_or_else(
+            || aurora::Layout::of_window(ctx, id),
+            |width| aurora::Layout::for_width(width - 20.0),
+        )
+    };
+    let widen_window = |host: &widgets::PanelHost<'_, Option<Uuid>>, id: &str| {
+        if host.window_width().is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                aurora::WIDE_SIZE,
+                ctx.content_rect().height(),
+            )));
+        } else {
+            aurora::widen(ctx, id);
+        }
+    };
     let mut dual_actions = Vec::new();
     st.dual_layout = dual.is_some();
     if std::mem::take(&mut st.dual_clicked) {
@@ -2471,8 +2592,10 @@ pub fn show(
         fetch_whole_inventory(inv, dual);
     }
     context_catalog::process_deferred(inv, st, prefs, &facts, &mut actions);
-    bulk_permissions::show(ctx, p, inv, st, world.agent_id, &mut actions);
-    st.visible.clear();
+    if main_here {
+        bulk_permissions::show(ctx, p, inv, st, world.agent_id, &mut actions);
+        st.visible.clear();
+    }
     fetch_whole_inventory(inv, st);
     // Copied folders load their whole tree for the paste; once loaded, they
     // are not walked again every frame until the inventory changes.
@@ -2490,182 +2613,187 @@ pub fn show(
         st.clipboard_loaded = loaded.then(|| (inv.generation, st.clipboard.clone()));
     }
     let screen = ctx.content_rect();
-    let default_size = if dual.is_some() { DUAL_SIZE } else { DEFAULT_SIZE };
-    let default_position = if dual.is_some() {
-        egui::pos2(screen.center().x - default_size.x * 0.5, 56.0)
-    } else {
-        egui::pos2(screen.right() - DEFAULT_SIZE.x - 20.0, 56.0)
-    };
-    let mut floater = super::widgets::Floater::new("inventory", aurora_i18n::tr!("common-inventory"), default_position, default_size)
-        .compact_header()
-        .help(aurora_i18n::tr!("ui-inventory-right-click-item-actions-ctrl-shift-multi-select"));
-    let mut widen = false;
-    if !classic {
-        // The title bar follows the width the window had last frame.
-        let layout = aurora::Layout::of_window(ctx, "inventory");
-        floater = floater
-            .title_note(aurora::item_count(inv, layout))
-            .title_note_tooltip(count_tooltip(inv));
-        if layout != aurora::Layout::Compact {
-            let (dot, text) = aurora::sync_state(p, inv, st);
-            floater = floater.title_state(dot, text);
+    if main_here {
+        let default_size = if dual.is_some() { DUAL_SIZE } else { DEFAULT_SIZE };
+        let default_position = if dual.is_some() {
+            egui::pos2(screen.center().x - default_size.x * 0.5, 56.0)
+        } else {
+            egui::pos2(screen.right() - DEFAULT_SIZE.x - 20.0, 56.0)
+        };
+        let mut floater = super::widgets::Floater::new("inventory", aurora_i18n::tr!("common-inventory"), default_position, default_size)
+            .compact_header()
+            .help(aurora_i18n::tr!("ui-inventory-right-click-item-actions-ctrl-shift-multi-select"));
+        let mut widen = false;
+        if !classic {
+            // The title bar follows the width the window had last frame.
+            let layout = placed_layout(&host, "inventory");
+            floater = floater
+                .title_note(aurora::item_count(inv, layout))
+                .title_note_tooltip(count_tooltip(inv));
+            if layout != aurora::Layout::Compact {
+                let (dot, text) = aurora::sync_state(p, inv, st);
+                floater = floater.title_state(dot, text);
+            }
+            if layout == aurora::Layout::Compact {
+                floater = floater.action("arrow-autofit-width-filled", aurora_i18n::tr!("inventory-widen"), &mut widen);
+            }
         }
-        if layout == aurora::Layout::Compact {
-            floater = floater.action("arrow-autofit-width-filled", aurora_i18n::tr!("inventory-widen"), &mut widen);
-        }
-    }
-    floater.show(ctx, p, open, |ui| {
-        if let Some(dual) = dual.as_deref_mut() {
-            let available = ui.available_size();
-            let separator_width = 8.0;
-            let usable_width = (available.x - separator_width).max(1.0);
-            let minimum_ratio = (220.0 / usable_width).min(0.45);
-            let ratio = st.dual_split.unwrap_or(0.5).clamp(minimum_ratio, 1.0 - minimum_ratio);
-            let left_width = usable_width * ratio;
-            let mut next_ratio = ratio;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.allocate_ui_with_layout(Vec2::new(left_width, available.y), egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.push_id(("inventory_pane", st.ui_id), |ui| {
-                        if classic {
-                            st.aurora = None;
-                            inventory_contents(ui, p, icons, inv, st, prefs, &facts, &mut actions);
-                        } else {
-                            aurora::contents(ui, p, icons, inv, st, prefs, &facts, images, &mut actions);
-                        }
-                    });
-                });
-                let (handle, response) = ui.allocate_exact_size(Vec2::new(separator_width, available.y), egui::Sense::drag());
-                let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-                if response.dragged() {
-                    next_ratio =
-                        (ratio + ui.input(|input| input.pointer.delta().x) / usable_width).clamp(minimum_ratio, 1.0 - minimum_ratio);
-                }
-                if ui.is_rect_visible(handle) {
-                    ui.painter()
-                        .vline(handle.center().x, handle.y_range(), super::widgets::divider_stroke(p));
-                }
-                let right_width = (usable_width - left_width).max(1.0);
-                ui.allocate_ui_with_layout(
-                    Vec2::new(right_width, available.y),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.push_id(("inventory_pane", dual.ui_id), |ui| {
+        host.show(None, floater, ctx, p, open, |ui| {
+            if let Some(dual) = dual.as_deref_mut() {
+                let available = ui.available_size();
+                let separator_width = 8.0;
+                let usable_width = (available.x - separator_width).max(1.0);
+                let minimum_ratio = (220.0 / usable_width).min(0.45);
+                let ratio = st.dual_split.unwrap_or(0.5).clamp(minimum_ratio, 1.0 - minimum_ratio);
+                let left_width = usable_width * ratio;
+                let mut next_ratio = ratio;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.allocate_ui_with_layout(Vec2::new(left_width, available.y), egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.push_id(("inventory_pane", st.ui_id), |ui| {
                             if classic {
-                                dual.aurora = None;
-                                inventory_contents(ui, p, icons, inv, dual, prefs, &facts, &mut dual_actions);
+                                st.aurora = None;
+                                inventory_contents(ui, p, icons, inv, st, prefs, &facts, &mut actions);
                             } else {
-                                aurora::contents(ui, p, icons, inv, dual, prefs, &facts, images, &mut dual_actions);
+                                aurora::contents(ui, p, icons, inv, st, prefs, &facts, images, &mut actions);
                             }
                         });
-                    },
-                );
-            });
-            st.dual_split = Some(next_ratio);
-        } else if classic {
-            st.aurora = None;
-            inventory_contents(ui, p, icons, inv, st, prefs, &facts, &mut actions);
-        } else {
-            aurora::contents(ui, p, icons, inv, st, prefs, &facts, images, &mut actions);
+                    });
+                    let (handle, response) = ui.allocate_exact_size(Vec2::new(separator_width, available.y), egui::Sense::drag());
+                    let response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                    if response.dragged() {
+                        next_ratio =
+                            (ratio + ui.input(|input| input.pointer.delta().x) / usable_width).clamp(minimum_ratio, 1.0 - minimum_ratio);
+                    }
+                    if ui.is_rect_visible(handle) {
+                        ui.painter()
+                            .vline(handle.center().x, handle.y_range(), super::widgets::divider_stroke(p));
+                    }
+                    let right_width = (usable_width - left_width).max(1.0);
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(right_width, available.y),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            ui.push_id(("inventory_pane", dual.ui_id), |ui| {
+                                if classic {
+                                    dual.aurora = None;
+                                    inventory_contents(ui, p, icons, inv, dual, prefs, &facts, &mut dual_actions);
+                                } else {
+                                    aurora::contents(ui, p, icons, inv, dual, prefs, &facts, images, &mut dual_actions);
+                                }
+                            });
+                        },
+                    );
+                });
+                st.dual_split = Some(next_ratio);
+            } else if classic {
+                st.aurora = None;
+                inventory_contents(ui, p, icons, inv, st, prefs, &facts, &mut actions);
+            } else {
+                aurora::contents(ui, p, icons, inv, st, prefs, &facts, images, &mut actions);
+            }
+        });
+        if widen {
+            widen_window(&host, "inventory");
         }
-    });
-    if widen {
-        aurora::widen(ctx, "inventory");
-    }
-    st.hover.show(p, inv, prefs, hover_images, &mut st.wanted_hover_images);
-    st.was_open = *open && !super::widgets::floater_minimized(ctx, "inventory");
-    controls::dialogs(ctx, p, st, prefs);
-    folder_colors::show(ctx, p, inv, st, prefs);
-    finish_hidden_rename(inv, st, &mut actions);
-    dialogs::show(ctx, p, icons, inv, st, prefs, &facts, images, &mut actions);
-    move_to::show(ctx, p, icons, inv, st, prefs, &facts, &mut actions);
-    dialogs::preview(
-        ctx,
-        p,
-        icons,
-        inv,
-        inv,
-        st,
-        images,
-        prefs,
-        script_settings,
-        facts.god_level,
-        &mut actions,
-    );
-    st.thumbnail.show(
-        ctx,
-        p,
-        icons,
-        world,
-        prefs,
-        st.ui_id,
-        images,
-        &mut st.wanted_images,
-        st.pending.is_some(),
-        &mut actions,
-    );
-    if let Some(residents) = st.share_picker.show(ctx, p, world)
-        && !residents.is_empty()
-    {
-        st.dialog = Some(EditDialog::Share(std::mem::take(&mut st.share_items), residents));
-    }
-    if let Some(dual) = dual {
-        dual.hover
-            .show(p, &world.inventory, prefs, hover_images, &mut dual.wanted_hover_images);
-        dual.was_open = *open && !super::widgets::floater_minimized(ctx, "inventory");
-        controls::dialogs(ctx, p, dual, prefs);
-        folder_colors::show(ctx, p, &world.inventory, dual, prefs);
-        finish_hidden_rename(&world.inventory, dual, &mut dual_actions);
-        dialogs::show(ctx, p, icons, &world.inventory, dual, prefs, &facts, images, &mut dual_actions);
-        move_to::show(ctx, p, icons, &mut world.inventory, dual, prefs, &facts, &mut dual_actions);
+        st.hover.show(p, inv, prefs, hover_images, &mut st.wanted_hover_images);
+        st.was_open = *open && (host.window_width().is_some() || !super::widgets::floater_minimized(ctx, "inventory"));
+        controls::dialogs(ctx, p, st, prefs);
+        folder_colors::show(ctx, p, inv, st, prefs);
+        finish_hidden_rename(inv, st, &mut actions);
+        dialogs::show(ctx, p, icons, inv, st, prefs, &facts, images, &mut actions);
+        move_to::show(ctx, p, icons, inv, st, prefs, &facts, &mut actions);
         dialogs::preview(
             ctx,
             p,
             icons,
-            &world.inventory,
-            &world.inventory,
-            dual,
+            inv,
+            inv,
+            st,
             images,
             prefs,
             script_settings,
             facts.god_level,
-            &mut dual_actions,
+            &mut actions,
         );
-        dual.thumbnail.show(
+        st.thumbnail.show(
             ctx,
             p,
             icons,
             world,
             prefs,
-            dual.ui_id,
+            st.ui_id,
             images,
-            &mut dual.wanted_images,
+            &mut st.wanted_images,
             st.pending.is_some(),
-            &mut dual_actions,
+            &mut actions,
         );
-        if let Some(residents) = dual.share_picker.show(ctx, p, world)
+        if let Some(residents) = st.share_picker.show(ctx, p, world)
             && !residents.is_empty()
         {
-            dual.dialog = Some(EditDialog::Share(std::mem::take(&mut dual.share_items), residents));
+            st.dialog = Some(EditDialog::Share(std::mem::take(&mut st.share_items), residents));
         }
-        st.wanted_images.extend(dual.wanted_images.drain());
-        st.wanted_hover_images.extend(dual.wanted_hover_images.drain());
-        st.preferences_dirty |= dual.preferences_dirty;
-        dual.preferences_dirty = false;
-        st.consume_clipboard |= dual.consume_clipboard;
-        dual.consume_clipboard = false;
-        st.windows.append(&mut dual.windows);
-        dual.menu_editor.finish_inventory_frame(ctx, &mut prefs.context_menus);
-        remember_recent_filters(dual, prefs);
-        context_notecards::show(ctx, p, &mut world.inventory, dual, prefs, &mut dual_actions);
-        actions.extend(dual_actions.into_iter().map(|action| InvAction::Panel {
-            editor: dual.ui_id,
-            action: Box::new(action),
-        }));
+        if let Some(dual) = dual {
+            dual.hover
+                .show(p, &world.inventory, prefs, hover_images, &mut dual.wanted_hover_images);
+            dual.was_open = *open && (host.window_width().is_some() || !super::widgets::floater_minimized(ctx, "inventory"));
+            controls::dialogs(ctx, p, dual, prefs);
+            folder_colors::show(ctx, p, &world.inventory, dual, prefs);
+            finish_hidden_rename(&world.inventory, dual, &mut dual_actions);
+            dialogs::show(ctx, p, icons, &world.inventory, dual, prefs, &facts, images, &mut dual_actions);
+            move_to::show(ctx, p, icons, &mut world.inventory, dual, prefs, &facts, &mut dual_actions);
+            dialogs::preview(
+                ctx,
+                p,
+                icons,
+                &world.inventory,
+                &world.inventory,
+                dual,
+                images,
+                prefs,
+                script_settings,
+                facts.god_level,
+                &mut dual_actions,
+            );
+            dual.thumbnail.show(
+                ctx,
+                p,
+                icons,
+                world,
+                prefs,
+                dual.ui_id,
+                images,
+                &mut dual.wanted_images,
+                st.pending.is_some(),
+                &mut dual_actions,
+            );
+            if let Some(residents) = dual.share_picker.show(ctx, p, world)
+                && !residents.is_empty()
+            {
+                dual.dialog = Some(EditDialog::Share(std::mem::take(&mut dual.share_items), residents));
+            }
+            st.wanted_images.extend(dual.wanted_images.drain());
+            st.wanted_hover_images.extend(dual.wanted_hover_images.drain());
+            st.preferences_dirty |= dual.preferences_dirty;
+            dual.preferences_dirty = false;
+            st.consume_clipboard |= dual.consume_clipboard;
+            dual.consume_clipboard = false;
+            st.windows.append(&mut dual.windows);
+            dual.menu_editor.finish_inventory_frame(ctx, &mut prefs.context_menus);
+            remember_recent_filters(dual, prefs);
+            context_notecards::show(ctx, p, &mut world.inventory, dual, prefs, &mut dual_actions);
+            actions.extend(dual_actions.into_iter().map(|action| InvAction::Panel {
+                editor: dual.ui_id,
+                action: Box::new(action),
+            }));
+        }
     }
     let mut windows = std::mem::take(&mut st.windows);
     let mut spawned = Vec::new();
     for w in &mut windows {
+        if !host.draws(Some(w.id)) {
+            continue;
+        }
         if !w.open {
             w.state.pending_delete = None;
         }
@@ -2715,7 +2843,7 @@ pub fn show(
         .compact_header();
         if classic {
             w.state.aurora = None;
-            floater.show(ctx, p, &mut w.open, |ui| {
+            host.show(Some(w.id), floater, ctx, p, &mut w.open, |ui| {
                 if w.additional {
                     inventory_contents(ui, p, icons, &mut world.inventory, &mut w.state, prefs, &facts, &mut actions);
                 } else {
@@ -2737,7 +2865,7 @@ pub fn show(
             // for the additional window).
             w.state.scope = w.root;
             let mut widen = false;
-            let layout = aurora::Layout::of_window(ctx, &window_id);
+            let layout = placed_layout(&host, &window_id);
             let mut floater = floater;
             if w.additional {
                 floater = floater
@@ -2751,7 +2879,7 @@ pub fn show(
             if layout == aurora::Layout::Compact {
                 floater = floater.action("arrow-autofit-width-filled", aurora_i18n::tr!("inventory-widen"), &mut widen);
             }
-            floater.show(ctx, p, &mut w.open, |ui| {
+            host.show(Some(w.id), floater, ctx, p, &mut w.open, |ui| {
                 aurora::contents(
                     ui,
                     p,
@@ -2765,13 +2893,13 @@ pub fn show(
                 )
             });
             if widen {
-                aurora::widen(ctx, &window_id);
+                widen_window(&host, &window_id);
             }
         }
         w.state
             .hover
             .show(p, &world.inventory, prefs, hover_images, &mut w.state.wanted_hover_images);
-        w.state.was_open = w.open && !super::widgets::floater_minimized(ctx, &window_id);
+        w.state.was_open = w.open && (host.window_width().is_some() || !super::widgets::floater_minimized(ctx, &window_id));
         if let Some(root) = w.state.navigate_to.take() {
             w.root = root;
             w.state.scope = root;
@@ -2843,6 +2971,9 @@ pub fn show(
     });
     windows.append(&mut spawned);
     st.windows = windows;
+    if !main_here {
+        return actions;
+    }
     if let Some(id) = st.demo_menu {
         let mut menu_open = true;
         super::menu::popup_at(

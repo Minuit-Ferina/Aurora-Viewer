@@ -368,6 +368,10 @@ impl App {
     /// at end-pass. Wants-pointer stays true during a drag from a widget;
     /// only the actual destination area decides whether the world gets it.
     pub(super) fn inventory_drag_input(&mut self, ctx: &egui::Context, renderer: &Renderer) -> Vec<InventoryDrop> {
+        // Scene raycasts interpret pointer positions from the world viewport.
+        if ctx.viewport_id() != egui::ViewportId::ROOT {
+            return Vec::new();
+        }
         self.inventory_drag.cursor = ui::inventory::task_drop::cursor(ctx).or_else(|| ui::inventory::drag::cursor(ctx));
         ui::inventory::drag::badge(ctx, &self.palette);
         ui::places::drag::ghost(ctx, &self.palette);

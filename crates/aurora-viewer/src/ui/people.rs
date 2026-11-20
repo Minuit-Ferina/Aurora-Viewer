@@ -443,8 +443,12 @@ pub fn people_window(
     map: &mut dyn FnMut(&mut egui::Ui, Vec2),
     // Aurora's look (`Settings::classic_people` off)
     aurora: bool,
+    mut host: widgets::PanelHost<'_, ()>,
 ) -> Vec<PeopleAction> {
     let mut actions = Vec::new();
+    if !host.draws(()) {
+        return actions;
+    }
     // (the sheet of a row names it: none either while @shownames makes the
     // list anonymous)
     if (radar::nearby_hidden(world) || radar::names_hidden(world)) && panels.people_tab == TAB_NEARBY {
@@ -465,10 +469,10 @@ pub fn people_window(
     if aurora {
         st.tab_shown(panels.people_tab);
     }
-    nearby::fit_window(ctx, st);
-    // Hold the body in the floater's exact rect so the Legacy radar table
-    // (and Aurora nearby) cannot ratchet the window wider while an edge is
-    // dragged, then refuse to shrink (#3033). Same pattern as Imports.
+    if host.window_width().is_none() {
+        nearby::fit_window(ctx, st);
+    }
+    // Give the embedded radar a fixed body so it can shrink on the next drag.
     let mut floater = Floater::new(WINDOW, aurora_i18n::tr!("common-people"), pos, size)
         .help(help)
         .steady_size();
@@ -476,7 +480,7 @@ pub fn people_window(
         // the mock-up's tabs right under the title
         floater = floater.compact_header();
     }
-    floater.show(ctx, p, &mut open, |ui| {
+    host.show((), floater, ctx, p, &mut open, |ui| {
         if aurora {
             panels.people_tab = aurora_tabs(ui, p, world, radar, panels.people_tab);
             let mut c = Ctx {

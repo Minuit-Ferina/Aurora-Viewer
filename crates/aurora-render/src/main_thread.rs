@@ -181,6 +181,7 @@ pub struct Renderer {
     /// Where the backend runs. First field: dropped first, so the render
     /// thread has left before the scene's stores go.
     host: Host,
+    instance: wgpu::Instance,
     vr: Arc<crate::vr_control::Control>,
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     _xr_graphics: Option<crate::xr_device::Graphics>,
@@ -225,6 +226,7 @@ pub struct Renderer {
     /// The device can draw the GPU lists (and AURORA_CPU_CULL is not set).
     gpu_cull: bool,
     size: (u32, u32),
+    resizing: bool,
     vsync: bool,
     settings: RenderSettings,
     msaa_supported: Vec<u32>,
@@ -753,6 +755,7 @@ impl Renderer {
         crate::pipeline_cache::log_start();
         Ok(Renderer {
             host,
+            instance,
             vr,
             #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
             _xr_graphics: xr_graphics,
@@ -777,6 +780,7 @@ impl Renderer {
             bind_generation: 0,
             gpu_cull,
             size: (width.max(1), height.max(1)),
+            resizing: false,
             vsync,
             settings: RenderSettings::default(),
             msaa_supported,
@@ -1063,6 +1067,25 @@ impl Renderer {
     /// The size the next frame is drawn at: the photo's when one is asked
     /// (its projection, levels of detail and HUD are laid out for it), the
     /// window's otherwise.
+    /// Create the surface on the event loop, where the window belongs.
+    /// The backend configures it and submits all of its GPU work.
+    pub fn create_native_ui_surface(
+        &self,
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+    ) -> Result<wgpu::Surface<'static>, wgpu::CreateSurfaceError> {
+        self.instance.create_surface(target)
+    }
+
+    pub fn queue_native_ui(&mut self, task: crate::native_ui::NativeUiTask) -> bool {
+        match &mut self.host {
+            Host::Inline(backend, _) => {
+                backend.native_ui(task);
+                true
+            }
+            Host::Thread { owner, .. } => owner.submit_background(Job::NativeUi(Box::new(task))).is_ok(),
+        }
+    }
+
     pub fn frame_size(&self) -> (u32, u32) {
         self.snapshot_request.map_or(self.size, |s| (s.width, s.height))
     }
@@ -1086,6 +1109,11 @@ impl Renderer {
             return;
         }
         self.size = (width, height);
+    }
+
+    /// Whether Windows is still tracking an interactive resize of the main window.
+    pub fn set_resizing(&mut self, resizing: bool) {
+        self.resizing = resizing;
     }
 
     /// The draw lists can be culled on the GPU (`DrawLists::gpu`).
@@ -1591,6 +1619,7 @@ impl Renderer {
                 width: self.size.0,
                 height: self.size.1,
                 vsync: self.vsync,
+                resizing: self.resizing,
             },
             settings: self.settings,
             hover: self.hover_request.take(),

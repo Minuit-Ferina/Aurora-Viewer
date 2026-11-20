@@ -44,6 +44,7 @@ pub mod looks;
 pub mod main_thread;
 mod motion_debug;
 mod motion_history;
+pub mod native_ui;
 mod occlusion;
 pub mod oit_stochastic;
 pub mod pacing;

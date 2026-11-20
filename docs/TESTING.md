@@ -6473,6 +6473,7 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_RECENT_EMOJIS=1\|<emojis>` | Recent emojis over the chat fields (under them with the Legacy chat style): a full row, or the emojis given |
 | `AURORA_DEMO_FAVORITE_EMOJIS=<emojis>` | Favourite emojis: first in that row, the picker opening on their tab |
 | `AURORA_DEMO_CHAT_INPUT=1\|long\|ime` | Paragraph drafts or Japanese IME composition in chat inputs |
+| `AURORA_DEMO_NATIVE_WINDOWS=<count>` | Native UI presentation fixture with synthetic documents |
 | `AURORA_DEMO_SPELLING=1\|menu\|replace` | Misspelled words underlined in the chat bar and Conversations; their suggestions; auto-replace while typing |
 | `AURORA_DEMO_CONV_EMOJI=1` | Messages of emoji alone in the friend's conversation, drawn large (with `AURORA_DEMO_CONV`) |
 | `AURORA_DEMO_CONV_PREVIEWS=1\|states\|videos\|clips\|services\|links\|net` | Picture, GIF and YouTube cards; `clips` shows video files and an animated WebP; `links[:gif\|image\|video]` isolates URL actions; `services[:gyazo,…]` shows service pages and social posts; `net` uses real sites |
@@ -6554,6 +6555,77 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_POSE_STAND=open\|cycle` | The toolbar's pose stand: its window and the poses it plays |
 
 ### Details
+
+- **`AURORA_DEMO_NATIVE_WINDOWS=0..6`**: with `AURORA_DEMO=1`, opens
+  synthetic editable documents after the demo starts. Zero shows one
+  embedded document that can be detached manually. A positive value opens
+  that many desktop windows. The paired window-and-arrow icons in the top
+  right detach and return a document. On Windows, drag the compact title
+  bar across displays, including to a monitor to the left of the primary
+  one if available. Resize at the window edges and check focus, typing,
+  clipboard and the compact window controls. Return to viewer and
+  Return All should keep the draft, while native Close and Ctrl/Cmd+W should
+  close the selected test document. Minimize the main window and verify a
+  child still responds. Detached panels offer Close, Maximize/Restore and
+  Return to viewer. On macOS, overlap a detached panel with the main viewer.
+  Click an exposed part of the viewer twice. The first click brings the
+  viewer forward and the second leaves the panel behind. Click a visible
+  part of the panel to bring it forward again. Repeat with Inventory and
+  use the viewer's Inventory action to bring the detached panel forward.
+  Capture the actual desktop windows and include the
+  test-title automation marker on unattended runs. Only synthetic documents
+  participate in this fixture. Add `:preview` to the count to include the
+  standard 3D asset preview with a synthetic texture. With two windows,
+  orbit or resize one preview, then expose the idle window and check that
+  its preview and independent camera state are intact.
+  For a short pacing sample, use 0, 1, 3 and 6 idle child windows with
+  `AURORA_PROFILE=1` and `RUST_LOG=warn,aurora_viewer=info,aurora_render=info`.
+  Compare settled root `perf summary` lines with the same root size and
+  graphics settings. Read the native surface's present mode from the log.
+  With `AURORA_DEMO_GPU_LOST=600` and `AURORA_GPU_RECOVERY=1`, the test
+  documents should return to the rebuilt root window.
+  For a packaged Linux build, run the extracted executable with
+  `AURORA_DEMO=1 AURORA_DEMO_NATIVE_WINDOWS=2 ./aurora-viewer --title "Test native-detachable-windows"`.
+  For macOS, set the same variables and arguments when running
+  `"./Aurora Viewer.app/Contents/MacOS/aurora-viewer"` from the extracted bundle.
+  Check the actual desktop windows with the root minimized. On macOS and
+  on Linux, check that the compact caption moves the window, its buttons
+  maximize, restore or close it, and its edges can still resize it. Run the
+  Linux demo on X11 and Wayland separately.
+  For People, use `AURORA_DEMO_PEOPLE=sheet` or `legacy`. Detach People,
+  use the radar and a resident's detail sheet, open a contact confirmation,
+  then return the panel and check the selected tab and filter. For Places,
+  use `AURORA_DEMO_PLACES=favorites:wide` or `history:classic`; check the
+  selected tab, inline profile, map action and confirmation in both hosts.
+  Drag a landmark or history entry from the detached Places window to the
+  viewer and check the drop preview. On Linux, repeat in native Wayland and
+  X11 sessions. On XWayland, keep the mouse button held as the pointer crosses
+  into the viewer, then release at the destination.
+
+- In the offline demo, the window-and-arrow icon
+  moves the current panel to the desktop. The inverse icon returns it to
+  its viewer floater. The viewer's Me menu returns all desktop panels.
+  Use `AURORA_DEMO_CONV_POPOUT=1` to test the Conversations container and a
+  group popout. Type an unsent draft, return the window, and check the draft.
+  The conversation's Attach to Conversations command still docks it as a tab.
+  Open both Inventory styles and open an additional Inventory. Detach the
+  construction inspector with a selected demo object, check Contents and
+  textures, and drop a test item between windows on Windows. In an offline
+  script or notecard editor, edit the document, then close the desktop window.
+  Try Cancel, a successful save, and a failed save. Verify that returning all
+  panels with a draft does not open a save prompt. In a script, open the OS
+  file picker and check that its owner is kept until the picker closes.
+  Check the app-wide close prompt and the Return All command with more
+  than one desktop window. About and Grid Status use the same controls.
+  With `AURORA_DEMO_MAP=1` and `AURORA_DEMO_MAP=legacy`, pan and zoom the
+  detached map and check its view on return. The demos `AURORA_DEMO_GROUP_REGION=1`
+  and `AURORA_DEMO_COLLISIONS=1` populate Group Titles and Bumps, Pushes & Hits.
+  Open Region Tracker from the toolbar or the World Map and check that the
+  label and selection survive a round trip to the desktop. Use its World Map
+  button from the desktop. With `AURORA_DEMO_AVATAR_RENDER_SETTINGS=1`, filter
+  the synthetic exceptions, detach the editor, then open Add and confirm
+  that the resident picker appears in the editor. Ctrl/Cmd+W closes the
+  picker first. Check that the filter and changes survive Return to viewer.
 
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers
@@ -12383,7 +12455,7 @@ What the inventory must show with these scenarios:
 | `AURORA_MSAA_PREPASS=0` or `alt` | MSAA without the prepass of its depth, or both alternately |
 | `AURORA_NOVSYNC=1` | Turns off vertical sync |
 | `AURORA_PRESENT_MODE=<mode>` | Forces the present mode of the swapchain |
-| `AURORA_WINDOW_HOLD=0` | No frames while a mouse button is held on the window frame or the system menu is open, as before (Windows) |
+| `AURORA_WINDOW_HOLD=0` | Disable the helper redraws during a Windows move, resize or system menu |
 | `AURORA_CPU_CULL=1` | Draw lists built on the CPU |
 | `AURORA_LIST_INDEX=0` or `check` | Draw lists that walk all the objects as before, or check of their index |
 | `AURORA_TEXTURE_TODO=0` or `check` | Texture streaming that walks every texture as before, or check of its to-do list |
@@ -13484,7 +13556,29 @@ What the inventory must show with these scenarios:
   loop: the helper waits between two frames, and spaces them out (60 a
   second at most) while the cursor moves, so that a dragged or resized
   window keeps following the cursor.
-  - `0`: no helper, as before: the image stays still for the whole hold,
+  Detached panels also use the helper during an edge resize. In the native
+  windows demo, hold a border and drag it slowly, then pause before releasing.
+  On Windows, a supported Vulkan driver enables explicit swapchain STRETCH
+  for the main viewer and detached panels. The previous image fills the
+  client area during resizing, while the layout continues to update. The
+  main viewer draws the scene and interface at the live size, then scales
+  the composed image on the GPU into the retained swapchain. The main viewer
+  and detached panels restore the exact client size after 150 ms at the
+  same size, or on release. Drivers without scaling support use the
+  exact-size resize path.
+  In the main offline demo, resize from the side and bottom, pause with the
+  border held, resume, then release. Check that the scene and interface fill
+  the window, that text sharpens while held, and that the transition does not
+  flash black. With `RUST_LOG=warn,aurora_render::renderer=trace`, look for
+  live sizes retaining the swapchain and one exact-size configuration on
+  each pause and after the final movement.
+  Check growing and shrinking from every edge, pausing while held, release,
+  maximize/restore, and the native preview fixture. In a detached Inventory,
+  confirm that the text sharpens while the border is held still, and that
+  stretching resumes when the border moves again. With
+  `RUST_LOG=warn,aurora_render::native_ui=trace`, the log records the panel
+  frame size, settlement during a hold, configuration and presentation time.
+  - `0`: no helper. On the main window the image stays still for the whole hold,
     which `perf summary` shows as one long `between` in `max:`.
   - It needs real mouse input, there is no demo scenario: hold the button
     for a second or two on each of those spots with `AURORA_PROFILE=1` and

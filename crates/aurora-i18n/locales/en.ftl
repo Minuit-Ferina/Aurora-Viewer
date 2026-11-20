@@ -15734,6 +15734,19 @@ joystick-layout-positional = Positional
 joystick-layout-auto = Automatic
 joystick-layout-xinput = XInput
 
+# Offline native window fixture
+native-windows-demo = Native window test
+native-windows-demo-document = Test document { $number }
+native-windows-demo-text = This offline document can be edited and moved between windows.
+native-windows-demo-reopen = Reopen test documents
+native-windows-detach = Move to desktop window
+native-windows-return = Return to viewer
+native-windows-return-all = Return all windows to viewer
+native-windows-open-failed = The desktop window could not be opened. The document is still available in the viewer.
+native-windows-minimize = Minimize desktop window
+native-windows-maximize = Maximize desktop window
+native-windows-restore = Restore desktop window
+
 about-edition = Edition
 edition-classic = Classic
 edition-ftrlv = FTRLV (Full Time RLV)

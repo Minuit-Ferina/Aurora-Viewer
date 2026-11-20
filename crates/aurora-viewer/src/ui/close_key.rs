@@ -59,8 +59,8 @@ struct State {
     all: bool,
 }
 
-fn state_id() -> Id {
-    Id::unique("close_key_state")
+fn state_id(ctx: &egui::Context) -> Id {
+    Id::unique(("close_key_state", ctx.viewport_id()))
 }
 
 /// The window `id` is drawn this frame: Ctrl+W can close it on the next,
@@ -79,18 +79,20 @@ pub fn shown_extra(ctx: &egui::Context, id: Id) {
 /// visible one, over the windows behind it, and Ctrl+Shift+W all of them.
 /// `order` tells the newest (the notification id).
 pub fn shown_prompt(ctx: &egui::Context, id: Id, order: u64) {
+    let id_state = state_id(ctx);
     let frame = ctx.cumulative_frame_nr();
     ctx.data_mut(|d| {
-        let state = d.get_temp_mut_or_default::<State>(state_id());
+        let state = d.get_temp_mut_or_default::<State>(id_state);
         state.prompts.retain(|(other, at, _)| *other != id && at + 1 >= frame);
         state.prompts.push((id, frame, order));
     });
 }
 
 fn note(ctx: &egui::Context, id: Id, extra: bool) {
+    let id_state = state_id(ctx);
     let frame = ctx.cumulative_frame_nr();
     ctx.data_mut(|d| {
-        let state = d.get_temp_mut_or_default::<State>(state_id());
+        let state = d.get_temp_mut_or_default::<State>(id_state);
         let list = if extra { &mut state.extra } else { &mut state.shown };
         list.retain(|(other, at)| *other != id && at + 1 >= frame);
         list.push((id, frame));
@@ -99,6 +101,24 @@ fn note(ctx: &egui::Context, id: Id, extra: bool) {
 
 fn listed(list: &[(Id, u64)], id: Id, frame: u64) -> bool {
     list.iter().any(|(other, at)| *other == id && at + 1 >= frame)
+}
+
+fn root_close_all_id() -> Id {
+    Id::unique("desktop_close_all_requested")
+}
+
+pub(crate) fn queue_root_close_all(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(root_close_all_id(), true));
+}
+
+pub(crate) fn desktop_close_all(ctx: &egui::Context) -> bool {
+    let shift = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    if ctx.memory(|m| m.top_modal_layer()).is_none() && pressed_alone(ctx, egui::Key::W, shift) {
+        ctx.input_mut(|i| i.consume_key(shift, egui::Key::W));
+        true
+    } else {
+        false
+    }
 }
 
 fn listed_prompt(list: &[(Id, u64, u64)], id: Id, frame: u64) -> bool {
@@ -110,18 +130,21 @@ fn listed_prompt(list: &[(Id, u64, u64)], id: Id, frame: u64) -> bool {
 /// is taken. Nothing with a dialog open (the menu entry is disabled while
 /// an alert shows), nor without a window: a field keeps the key then.
 pub fn begin(ctx: &egui::Context) {
+    let id_state = state_id(ctx);
     let frame = ctx.cumulative_frame_nr();
-    let mut state = ctx.data(|d| d.get_temp::<State>(state_id())).unwrap_or_default();
+    let mut state = ctx.data(|d| d.get_temp::<State>(id_state)).unwrap_or_default();
     state.shown.retain(|(_, at)| at + 1 >= frame);
     state.extra.retain(|(_, at)| at + 1 >= frame);
     state.prompts.retain(|(_, at, _)| at + 1 >= frame);
     state.target = None;
     state.all = false;
+    let requested =
+        ctx.viewport_id() == egui::ViewportId::ROOT && ctx.data_mut(|d| d.remove_temp::<bool>(root_close_all_id())).unwrap_or_default();
     // held down, it closes once, not on each repeat
     if ctx.memory(|m| m.top_modal_layer()).is_none() {
         let shift = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
         let any = !state.shown.is_empty() || !state.extra.is_empty() || !state.prompts.is_empty();
-        if pressed_alone(ctx, egui::Key::W, shift) && any {
+        if requested || (pressed_alone(ctx, egui::Key::W, shift) && any) {
             ctx.input_mut(|i| i.consume_key(shift, egui::Key::W));
             state.all = true;
         } else if pressed_alone(ctx, egui::Key::W, egui::Modifiers::COMMAND) {
@@ -149,13 +172,14 @@ pub fn begin(ctx: &egui::Context) {
             }
         }
     }
-    ctx.data_mut(|d| d.insert_temp(state_id(), state));
+    ctx.data_mut(|d| d.insert_temp(id_state, state));
 }
 
 /// Ctrl+Shift+W is closing every window this frame. Conversations uses it
 /// to close the window instead of the one conversation Ctrl+W closes.
 pub fn closes_every_window(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<State>(state_id()).is_some_and(|state| state.all))
+    let id_state = state_id(ctx);
+    ctx.data(|d| d.get_temp::<State>(id_state).is_some_and(|state| state.all))
 }
 
 /// `key` was pressed this frame with exactly `modifiers` (Ctrl+Shift+W is
@@ -171,9 +195,10 @@ fn pressed_alone(ctx: &egui::Context, key: egui::Key, modifiers: egui::Modifiers
 /// Ctrl+W asks the window `id` to close on this frame, once. Ctrl+Shift+W
 /// asks every window drawn on the last frame; each of them hears it.
 pub fn take(ctx: &egui::Context, id: Id) -> bool {
+    let id_state = state_id(ctx);
     let frame = ctx.cumulative_frame_nr();
     ctx.data_mut(|d| {
-        let state = d.get_temp_mut_or_default::<State>(state_id());
+        let state = d.get_temp_mut_or_default::<State>(id_state);
         if state.all {
             return listed(&state.shown, id, frame) || listed(&state.extra, id, frame) || listed_prompt(&state.prompts, id, frame);
         }
@@ -349,6 +374,47 @@ mod tests {
         frame(&mut frames, events, &mut closed, &mut left_to_fields);
         frame(&mut frames, Vec::new(), &mut closed, &mut left_to_fields);
         (closed, left_to_fields)
+    }
+
+    #[test]
+    fn native_viewport_draw_does_not_replace_the_root_close_list() {
+        let mut frames = Frames::new();
+        let child = egui::ViewportId::from_hash_of("child");
+        let root_window = Id::unique("root window");
+        let child_window = Id::unique("child window");
+        let chord = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+        frames.run(Vec::new(), |ui| {
+            let ctx = ui.ctx().clone();
+            begin(&ctx);
+            shown(&ctx, root_window);
+            let input = egui::RawInput {
+                viewport_id: child,
+                viewports: [
+                    (egui::ViewportId::ROOT, egui::ViewportInfo::default()),
+                    (
+                        child,
+                        egui::ViewportInfo {
+                            parent: Some(egui::ViewportId::ROOT),
+                            ..Default::default()
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                begin(ui.ctx());
+                shown(ui.ctx(), child_window);
+            });
+            output.textures_delta.clear();
+        });
+        frames.run(vec![key(egui::Key::W, chord)], |ui| {
+            let ctx = ui.ctx();
+            begin(ctx);
+            assert!(take(ctx, root_window));
+            assert!(!take(ctx, child_window));
+        });
     }
 
     #[test]

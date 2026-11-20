@@ -302,6 +302,7 @@ pub struct PlacesUi {
     /// History sections closed by the user (isAccordionCollapsedByUser).
     collapsed: HashSet<usize>,
     confirm: Option<Confirm>,
+    confirm_from_viewer: bool,
     /// The box "Do not show again" of the teleport confirmation on screen.
     dont_ask: bool,
     /// Landmark assets to load / resolve (the app calls Landmarks::resolve).
@@ -376,12 +377,19 @@ impl PlacesUi {
     /// TeleportFromLandmark from elsewhere (a standalone landmark window).
     pub fn confirm_landmark(&mut self, asset: Uuid, name: String) {
         self.confirm = Some(Confirm::Landmark { asset, name });
+        self.confirm_from_viewer = true;
+    }
+
+    fn ask_confirm(&mut self, confirm: Confirm) {
+        self.confirm = Some(confirm);
+        self.confirm_from_viewer = false;
     }
 
     /// `confirm_teleports`: `Settings::confirm_teleports`, off once the box
     /// "Do not show again" of a teleport confirmation was ticked.
     /// `aurora`: Aurora's look and what it needs, None for the Legacy
     /// Viewer's tabs.
+    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -390,14 +398,26 @@ impl PlacesUi {
         by_date: bool,
         confirm_teleports: bool,
         aurora: Option<&aurora::Env>,
+        mut host: widgets::PanelHost<'_, ()>,
     ) -> Vec<PlacesAction> {
         let mut actions = Vec::new();
-        self.show_confirm(ctx, c.p, confirm_teleports, &mut actions);
+        let desktop_ui = match &host {
+            widgets::PanelHost::Desktop { ui, .. } => Some(ui),
+            _ => None,
+        };
+        let desktop = desktop_ui.is_some();
+        let owns_confirmation = if self.confirm_from_viewer { !desktop } else { host.draws(()) };
+        if owns_confirmation && desktop_ui.is_none_or(|ui| ui.is_enabled()) {
+            self.show_confirm(ctx, c.p, confirm_teleports, &mut actions);
+        }
+        if !host.draws(()) {
+            return actions;
+        }
         if !*open {
             self.aurora.pending_click = None;
             return actions;
         }
-        if std::mem::take(&mut self.raise) {
+        if std::mem::take(&mut self.raise) && !desktop {
             widgets::expand_floater(ctx, "places");
         }
         let screen = ctx.content_rect();
@@ -410,7 +430,7 @@ impl PlacesUi {
             // the mockup's panes reach the window's edges
             floater.flush_body = true;
             floater.min_size = Vec2::new(320.0, 360.0);
-            floater.show(ctx, c.p, open, |ui| {
+            host.show((), floater, ctx, c.p, open, |ui| {
                 let body = egui::Rect::from_min_max(ui.cursor().min, ui.max_rect().max);
                 let mut child = ui.new_child(
                     egui::UiBuilder::new()
@@ -432,7 +452,7 @@ impl PlacesUi {
         // 260 points, so the window keeps at least what they need (#2641
         // checked them up to text × 1)
         floater.min_size.x = floater.min_size.x.max(self.legacy_bar_width + widgets::floater_chrome(ctx).x);
-        floater.show(ctx, c.p, open, |ui| {
+        host.show((), floater, ctx, c.p, open, |ui| {
             let body = egui::Rect::from_min_max(ui.cursor().min, ui.max_rect().max);
             ui.allocate_rect(body, Sense::hover());
             let mut child = ui.new_child(
@@ -512,6 +532,7 @@ impl PlacesUi {
                 });
             }
             self.confirm = None;
+            self.confirm_from_viewer = false;
         }
     }
 
@@ -715,7 +736,7 @@ impl PlacesUi {
                     if r.response.double_clicked()
                         && let Some(it) = world.inventory.items.get(&row.id)
                     {
-                        self.confirm = Some(Confirm::Landmark {
+                        self.ask_confirm(Confirm::Landmark {
                             asset: it.asset_id,
                             name: it.name.clone(),
                         });
@@ -828,7 +849,7 @@ impl PlacesUi {
             _ => None,
         };
         if super::menu::item(ui, p, "location-filled", aurora_i18n::tr!("common-teleport-3")) {
-            self.confirm = Some(Confirm::Landmark {
+            self.ask_confirm(Confirm::Landmark {
                 asset: it.asset_id,
                 name: it.name.clone(),
             });
@@ -988,7 +1009,7 @@ impl PlacesUi {
                     actions.push(history_profile(it));
                 }
                 if r.response.double_clicked() {
-                    self.confirm = Some(Confirm::History {
+                    self.ask_confirm(Confirm::History {
                         global: it.global,
                         title: it.title.clone(),
                     });
@@ -1014,7 +1035,7 @@ impl PlacesUi {
         if super::menu::item_if(ui, p, "location-filled", aurora_i18n::tr!("common-teleport-3"), some)
             && let Some((_, it)) = &sel
         {
-            self.confirm = Some(Confirm::History {
+            self.ask_confirm(Confirm::History {
                 global: it.global,
                 title: it.title.clone(),
             });
@@ -1082,7 +1103,7 @@ impl PlacesUi {
             aurora_i18n::tr!("ui-places-clear-teleport-history"),
             !world.tp_storage.items.is_empty(),
         ) {
-            self.confirm = Some(Confirm::Clear);
+            self.ask_confirm(Confirm::Clear);
         }
     }
 
@@ -1119,6 +1140,7 @@ impl PlacesUi {
                 any,
                 w,
             )) {
+                self.confirm_from_viewer = false;
                 self.confirm = match (&landmark, &history) {
                     (Some(it), _) => Some(Confirm::Landmark {
                         asset: it.asset_id,
@@ -1210,7 +1232,7 @@ impl PlacesUi {
                 {
                     match a {
                         place_details::PlaceAction::TeleportLandmark { asset, name } => {
-                            self.confirm = Some(Confirm::Landmark { asset, name });
+                            self.ask_confirm(Confirm::Landmark { asset, name });
                         }
                         place_details::PlaceAction::Teleport(g) => actions.push(PlacesAction::Teleport(g)),
                         _ => {}
@@ -1465,7 +1487,7 @@ mod tests {
                 wanted_images: &mut wanted_images,
                 want_groups: &mut groups,
             };
-            places.show(ui.ctx(), &mut c, &mut true, false, false, None);
+            places.show(ui.ctx(), &mut c, &mut true, false, false, None, widgets::PanelHost::Embedded);
         });
         output.textures_delta.clear();
         assert!(!places.aurora.opened);
@@ -1498,7 +1520,7 @@ mod tests {
             wanted_images: &mut wanted,
             want_groups: &mut groups,
         };
-        places.show(ctx, &mut c, &mut true, false, false, None);
+        places.show(ctx, &mut c, &mut true, false, false, None, widgets::PanelHost::Embedded);
     }
 
     /// #2641: in the Legacy Viewer's tabs, Teleport / Map / Profile stay

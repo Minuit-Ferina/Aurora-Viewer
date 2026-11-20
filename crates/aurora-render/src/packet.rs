@@ -61,13 +61,13 @@ pub(crate) fn capture_for(scene: bool, full: bool, can_capture: bool) -> Option<
     }
 }
 
-/// Window surface as the main thread wants it for a frame; the render
-/// thread reconfigures the swapchain when it differs from what it has.
+/// Window size and presentation settings as known by the main thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SurfaceState {
     pub width: u32,
     pub height: u32,
     pub vsync: bool,
+    pub resizing: bool,
 }
 
 /// The scene's data on the GPU for one frame: handles (reference counted)

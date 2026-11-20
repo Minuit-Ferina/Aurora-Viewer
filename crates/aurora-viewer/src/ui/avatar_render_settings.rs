@@ -4,7 +4,7 @@
 
 use super::avatar_picker::AvatarPicker;
 use super::menu;
-use super::widgets::{self, ActionKind, Floater};
+use super::widgets::{self, ActionKind, Floater, PanelHost};
 use crate::theme::Palette;
 use crate::world::World;
 use egui::{RichText, Sense, Vec2};
@@ -108,7 +108,15 @@ impl AvatarRenderSettings {
         }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, rows: &[Row], world: &mut World, open: &mut bool) -> Option<Change> {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        p: &Palette,
+        rows: &[Row],
+        world: &mut World,
+        open: &mut bool,
+        mut host: PanelHost<'_, ()>,
+    ) -> Option<Change> {
         if !*open {
             self.picker.open = false;
             return None;
@@ -121,7 +129,7 @@ impl AvatarRenderSettings {
             Vec2::new(620.0, 420.0),
         );
         floater.min_size = Vec2::new(460.0, 260.0);
-        floater.show(ctx, p, open, |ui| {
+        host.show((), floater, ctx, p, open, |ui| {
             ui.horizontal(|ui| {
                 let add_label = aurora_i18n::tr!("common-add");
                 let add_width = widgets::action_button_fit(ui, "plus", add_label);

@@ -73,7 +73,7 @@ pub struct Frame {
 }
 
 /// The wide width the "Widen" button of the title bar gives the window.
-const WIDE_SIZE: f32 = 1180.0;
+pub(super) const WIDE_SIZE: f32 = 1180.0;
 
 /// "Widen the window": the explorer with its details pane, as tall as it is.
 pub fn widen(ctx: &egui::Context, id: &str) {
