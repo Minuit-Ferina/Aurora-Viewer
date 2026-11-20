@@ -1,60 +1,59 @@
 name: Fork editions
-# One-off publication of a pre-verified distribution on the fork.
 on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'scripts/**'
+      - 'packaging/**'
+      - '.github/workflows/fork-editions.yml'
   workflow_dispatch:
-permissions: {}
-concurrency:
-  group: release-patch-0-3-0
-  cancel-in-progress: false
+permissions:
+  contents: read
 jobs:
-  publish:
-    if: github.repository == 'Minuit-Ferina/Aurora-Viewer' && github.ref == 'refs/heads/chore/release-patch-0-3-0'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      SOURCE: cd924ed4098f48e7abfd6d9d735ecd391f9a3a58
-      TAG: v0.9.11+patch.0.3.0
-      RELEASE_ID: '452932829'
-      GH_TOKEN: ${{ github.token }}
+  editions:
+    if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
+    name: ${{ matrix.edition }} on ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15]
+        edition: [classic, ftrlv]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: cd924ed4098f48e7abfd6d9d735ecd391f9a3a58
-          fetch-depth: 1
-          persist-credentials: true
-      - name: Verify the exact draft and uploaded assets
-        shell: bash
+          fetch-depth: 0
+          persist-credentials: false
+      - name: System libraries
+        if: runner.os == 'Linux'
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$SOURCE"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" |
-            jq -e --arg tag "$TAG" --arg source "$SOURCE" \
-              '.draft and (.prerelease | not) and .tag_name == $tag and .target_commitish == $source' >/dev/null
-          cat > "$RUNNER_TEMP/expected-assets.json" <<'JSON'
-          [{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-windows-x64.zip","size":95046396,"digest":"sha256:5ea044d570c4b19393647a7ca86cf5cc2bcdf11417fc968fac5a1ea3608e2350"},{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-windows-x64.zip.sha256","size":124,"digest":"sha256:891b88d1cdf4d1e5730497351caccf5bbed46e08328fd7eb03bc0bcf08944377"},{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-linux-x64.tar.gz","size":223771002,"digest":"sha256:2387b6d5e75f6994db5300b8bacbb8f095297c4ede3dc62bdbd1ef1bebf06eb2"},{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-linux-x64.tar.gz.sha256","size":125,"digest":"sha256:7aecbe59679ac9d75d8aa56cdc9e302cf825f7818fee86770293db986c27ca68"},{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-macos-arm64.zip","size":89436029,"digest":"sha256:57fb761cf5260ab73b08978cd7629f53241dd139bf7a926278f9a8e50d650046"},{"name":"Aurora-Viewer-Classic-v0.9.11+patch.0.3.0-macos-arm64.zip.sha256","size":124,"digest":"sha256:dad9e97493179f6707c61753b31f6b69c6693df0feae30fdeab5d16a1d960b82"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-windows-x64.zip","size":95057999,"digest":"sha256:a2790306acb8996fd71a546fbc35c8e30ddfac5e7dbd19f6432e1f1c9a7ee7c6"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-windows-x64.zip.sha256","size":122,"digest":"sha256:c87b82b4d6d2c0d8b9cafa649a7a7fba19e1d9bbabc9e886a399e56361d27ec9"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-linux-x64.tar.gz","size":224003580,"digest":"sha256:c6c490c1ae9dabdc7f9b7276f321b16b278683057cfcffb28bc43f61f76b0040"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-linux-x64.tar.gz.sha256","size":123,"digest":"sha256:02b0d63867c23e004f412292a492a5914c4a8816a3c891d45e8bf226da835213"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-macos-arm64.zip","size":89444931,"digest":"sha256:88f1f763d8acf17a3ee26e16e2a0f15333f021ecf1735dd4592b1d627e8c1fb9"},{"name":"Aurora-Viewer-FTRLV-v0.9.11+patch.0.3.0-macos-arm64.zip.sha256","size":122,"digest":"sha256:dccef0e777d5ea5b89bdf2ab4241d2b817d44bb89fac5440e79080aee1efe33f"}]
-          JSON
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" |
-            jq -ec 'if length == 12 and all(.[]; .state == "uploaded") then
-                map({name,size,digest}) | sort_by(.name)
-              else error("Unexpected draft asset list") end' > "$RUNNER_TEMP/actual-assets.json"
-          jq -ec 'sort_by(.name)' "$RUNNER_TEMP/expected-assets.json" > "$RUNNER_TEMP/sorted-assets.json"
-          cmp "$RUNNER_TEMP/sorted-assets.json" "$RUNNER_TEMP/actual-assets.json"
-      - name: Tag the tested source and publish
-        shell: bash
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev
+      - name: Rust stable
         run: |
-          set -euo pipefail
-          tag_ref="refs/tags/$TAG"
-          existing="$(git ls-remote origin "$tag_ref" "$tag_ref^{}")"
-          if [[ -z "$existing" ]]; then
-            git -c user.name='github-actions[bot]' \
-                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                tag -a "$TAG" "$SOURCE" -m 'Aurora Viewer 0.9.11 - Patch 0.3.0'
-            git push origin "$tag_ref"
-          fi
-          tagged="$(git ls-remote origin "$tag_ref^{}" | cut -f1)"
-          test "$tagged" = "$SOURCE"
-          gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" |
-            jq -e --arg tag "$TAG" '(.draft | not) and (.prerelease | not) and .tag_name == $tag' >/dev/null
+          rustup update stable --no-self-update
+          rustup component add clippy rustfmt
+      - uses: ./.github/actions/rust-cache
+        with:
+          name: fork-edition-${{ matrix.edition }}
+      - name: Check compiled edition
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: ./scripts/check.ps1 -CI -Edition ${{ matrix.edition }}
+      - name: Build archive
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: ./scripts/build-edition.ps1 -Edition ${{ matrix.edition }} -Out "${{ runner.temp }}/dist" -Release
+      - name: Upload archive and checksum
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aurora-${{ matrix.edition }}-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/dist/*.zip
+            ${{ runner.temp }}/dist/*.tar.gz
+            ${{ runner.temp }}/dist/*.sha256
+          if-no-files-found: error
