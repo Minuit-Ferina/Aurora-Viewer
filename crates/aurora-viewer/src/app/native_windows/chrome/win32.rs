@@ -8,7 +8,7 @@ use windows_sys::Win32::{
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
             GetClientRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IsZoomed,
-            WM_NCDESTROY, WM_NCHITTEST,
+            WM_EXITSIZEMOVE, WM_NCDESTROY, WM_NCHITTEST, WM_SIZING,
         },
     },
 };
@@ -61,6 +61,11 @@ impl Caption {
 
 unsafe extern "system" fn subclass(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM, id: usize, reference: usize) -> LRESULT {
     let geometry = reference as *const Cell<Geometry>;
+    match message {
+        WM_SIZING => crate::window_hold::native_resize(hwnd, true),
+        WM_EXITSIZEMOVE | WM_NCDESTROY => crate::window_hold::native_resize(hwnd, false),
+        _ => {}
+    }
     if message == WM_NCDESTROY {
         // SAFETY: This callback is installed once per window and is being
         // removed on its owning thread before releasing its one Rc reference.

@@ -1,5 +1,5 @@
 //! Preferences › RLVa: the scripted restrictions (RestrainedLove API), their
-//! global switch, their options and the restrictions active in the session.
+//! activation, their options and the restrictions active in the session.
 //! The page opens on a notice: RLVa is still very experimental.
 //! Rows participate in preference search, modified settings and page reset.
 
@@ -9,9 +9,17 @@ pub fn page(cx: &mut Cx) {
     use aurora_i18n::tr;
     cx.experimental_notice(tr!("ui-options-rlva-experimental"));
     cx.group(tr!("rlva-title"), |cx| {
-        cx.keywords("RLVa RLV RestrainedLove")
-            .toggle(tr!("rlva-enable"), tr!("rlva-enable-hint"), &field!(rlva_enabled));
-        cx.note(tr!("rlva-session-hint"));
+        if aurora_version::edition::CURRENT.always_on() {
+            cx.keywords("RLVa RLV RestrainedLove FTRLV")
+                .row(tr!("rlva-activation"), tr!("rlva-always-enabled"), &Nothing, |ui, _| {
+                    ui.label(tr!("rlva-always-enabled"));
+                    false
+                });
+        } else {
+            cx.keywords("RLVa RLV RestrainedLove")
+                .toggle(tr!("rlva-enable"), tr!("rlva-enable-hint"), &field!(rlva_enabled));
+            cx.note(tr!("rlva-session-hint"));
+        }
         cx.keywords("RLVa RLV console locks exceptions modifiers").row_with(
             tr!("rlva-tools-title"),
             tr!("rlva-tools-hint"),
@@ -23,7 +31,7 @@ pub fn page(cx: &mut Cx) {
                 false
             },
         );
-        cx.greyed(!cx.s.rlva_enabled);
+        cx.greyed(!cx.s.effective_rlva_enabled());
         cx.toggle(tr!("rlva-ooc"), tr!("rlva-ooc-hint"), &field!(rlva.allow_ooc));
         cx.toggle(tr!("rlva-ellipsis"), tr!("rlva-ellipsis-hint"), &field!(rlva.show_ellipsis));
         cx.toggle(
@@ -75,7 +83,7 @@ pub fn page(cx: &mut Cx) {
             tr!("rlva-temp-controllers-hint"),
             &field!(rlva.temporary_controllers),
         );
-        cx.greyed(!cx.s.rlva_enabled || !cx.s.rlva.temporary_controllers);
+        cx.greyed(!cx.s.effective_rlva_enabled() || !cx.s.rlva.temporary_controllers);
         cx.combo(
             tr!("rlva-experience-maturity"),
             tr!("rlva-experience-maturity-hint"),
@@ -96,7 +104,7 @@ pub fn page(cx: &mut Cx) {
                     .changed()
             },
         );
-        cx.greyed(!cx.s.rlva_enabled);
+        cx.greyed(!cx.s.effective_rlva_enabled());
         cx.toggle(
             tr!("rlva-shared-offers"),
             tr!("rlva-shared-offers-hint"),
@@ -109,9 +117,9 @@ pub fn page(cx: &mut Cx) {
             &field!(rlva.im_queries_auto_share),
         );
         cx.toggle(tr!("rlva-shared-wear"), tr!("rlva-shared-wear-hint"), &field!(rlva.shared_wear));
-        cx.greyed(!cx.s.rlva_enabled || cx.s.rlva.shared_wear);
+        cx.greyed(!cx.s.effective_rlva_enabled() || cx.s.rlva.shared_wear);
         cx.toggle(tr!("rlva-auto-rename"), tr!("rlva-auto-rename-hint"), &field!(rlva.auto_rename));
-        cx.greyed(!cx.s.rlva_enabled);
+        cx.greyed(!cx.s.effective_rlva_enabled());
         cx.toggle(
             tr!("rlva-legacy-naming"),
             tr!("rlva-legacy-naming-hint"),

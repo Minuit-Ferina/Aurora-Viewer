@@ -77,6 +77,44 @@ pub fn install(window: &dyn Window) {
     let _ = window;
 }
 
+/// Follow a detached panel's resize loop with the same synchronous redraws
+/// as the main window. Called on the window thread by its chrome subclass.
+#[cfg(windows)]
+pub(crate) fn native_resize(hwnd: windows_sys::Win32::Foundation::HWND, active: bool) {
+    imp::native_resize(hwnd as isize, active);
+}
+
+/// Whether the main window is inside a native resize gesture.
+pub(crate) fn root_resizing(window: &dyn Window) -> bool {
+    #[cfg(windows)]
+    return hwnd(window).is_some_and(imp::root_resizing);
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
+    }
+}
+
+/// Whether this panel is inside the native resize gesture that the helper follows.
+pub(crate) fn native_resizing(window: &dyn Window) -> bool {
+    #[cfg(windows)]
+    return hwnd(window).is_some_and(imp::native_resizing);
+    #[cfg(not(windows))]
+    {
+        let _ = window;
+        false
+    }
+}
+
+#[cfg(windows)]
+fn hwnd(window: &dyn Window) -> Option<isize> {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match window.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
+        _ => None,
+    }
+}
+
 #[cfg(windows)]
 mod imp {
     use std::{
@@ -93,7 +131,7 @@ mod imp {
         Graphics::Gdi::{RDW_INTERNALPAINT, RDW_UPDATENOW, RedrawWindow},
         UI::WindowsAndMessaging::{
             CallWindowProcW, GWLP_WNDPROC, GetCursorPos, SC_MOVE, SC_SIZE, SetWindowLongPtrW, WM_ENTERMENULOOP, WM_EXITMENULOOP,
-            WM_NCLBUTTONDOWN, WM_SYSCOMMAND, WNDPROC,
+            WM_EXITSIZEMOVE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_SIZING, WM_SYSCOMMAND, WNDPROC,
         },
     };
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -104,6 +142,10 @@ mod imp {
     /// The window the helper repaints: the last one installed (a GPU
     /// recovery opens a new window, app/gpu_recovery.rs).
     static TARGET: AtomicIsize = AtomicIsize::new(0);
+    /// The main window whose border is currently being resized.
+    static ROOT_RESIZING: AtomicIsize = AtomicIsize::new(0);
+    /// The detached window currently being resized, or zero between gestures.
+    static NATIVE_TARGET: AtomicIsize = AtomicIsize::new(0);
     /// Messages being handled that Windows may follow in a loop of its own
     /// (one inside the other: a press on the title bar starts a move).
     static HOLDS: AtomicU32 = AtomicU32::new(0);
@@ -115,12 +157,36 @@ mod imp {
     /// The cursor counts as moving for this long after its last move.
     const MOVING_FOR: Duration = Duration::from_millis(150);
 
-    fn held() -> bool {
+    fn root_held() -> bool {
         HOLDS.load(Ordering::Acquire) > 0 || MENU.load(Ordering::Acquire)
     }
 
+    pub(super) fn root_resizing(hwnd: isize) -> bool {
+        ROOT_RESIZING.load(Ordering::Acquire) == hwnd
+    }
+
+    pub(super) fn native_resizing(hwnd: isize) -> bool {
+        NATIVE_TARGET.load(Ordering::Acquire) == hwnd
+    }
+
+    pub(super) fn native_resize(hwnd: isize, active: bool) {
+        let Some(helper) = HELPER.get() else { return };
+        if active {
+            if NATIVE_TARGET.swap(hwnd, Ordering::Release) != hwnd {
+                helper.unpark();
+            }
+        } else if NATIVE_TARGET
+            .compare_exchange(hwnd, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
+            // SAFETY: Queue the final exact-size paint on this live window,
+            // after WM_EXITSIZEMOVE, without re-entering the application.
+            unsafe { RedrawWindow(hwnd as HWND, std::ptr::null(), std::ptr::null_mut(), RDW_INTERNALPAINT) };
+        }
+    }
+
     pub fn paces(period: Duration) -> bool {
-        if !held() {
+        if !root_held() && NATIVE_TARGET.load(Ordering::Acquire) == 0 {
             return false;
         }
         PERIOD.store(period.as_micros().min(u32::MAX as u128) as u32, Ordering::Release);
@@ -153,12 +219,14 @@ mod imp {
             let mut at = cursor();
             let mut moved = None;
             loop {
-                while !held() {
+                let native = NATIVE_TARGET.load(Ordering::Acquire);
+                if native == 0 && !root_held() {
                     thread::park();
                     moved = None;
+                    continue;
                 }
                 let start = Instant::now();
-                let hwnd = TARGET.load(Ordering::Acquire);
+                let hwnd = if native != 0 { native } else { TARGET.load(Ordering::Acquire) };
                 // SAFETY: `RedrawWindow` takes a window handle and flags; the
                 // handle of a destroyed window makes it fail, nothing more.
                 // The call returns once the window's thread has painted.
@@ -177,7 +245,11 @@ mod imp {
                     moved = Some(Instant::now());
                 }
                 let moving = moved.is_some_and(|t: Instant| t.elapsed() < MOVING_FOR);
-                let period = Duration::from_micros(PERIOD.load(Ordering::Acquire).into());
+                let period = if native != 0 {
+                    super::MOVING_MIN
+                } else {
+                    Duration::from_micros(PERIOD.load(Ordering::Acquire).into())
+                };
                 let pause = super::pause(work, period, moving);
                 if !pause.is_zero() {
                     thread::sleep(pause);
@@ -241,6 +313,17 @@ mod imp {
                 wake();
             }
             WM_EXITMENULOOP => MENU.store(false, Ordering::Release),
+            WM_SIZING => ROOT_RESIZING.store(hwnd as isize, Ordering::Release),
+            WM_EXITSIZEMOVE | WM_NCDESTROY => {
+                let was_resizing = ROOT_RESIZING
+                    .compare_exchange(hwnd as isize, 0, Ordering::Release, Ordering::Relaxed)
+                    .is_ok();
+                if was_resizing && msg == WM_EXITSIZEMOVE {
+                    // SAFETY: Schedule the final exact-size frame on the live
+                    // window without re-entering its paint handler.
+                    unsafe { RedrawWindow(hwnd, std::ptr::null(), std::ptr::null_mut(), RDW_INTERNALPAINT) };
+                }
+            }
             _ => {}
         }
         if hold {

@@ -208,6 +208,7 @@ fn moving_an_embedded_window_keeps_one_widget_id() {
                     default,
                     egui::vec2(240.0, 160.0),
                     false,
+                    false,
                     |_| {},
                 );
             } else {
@@ -345,7 +346,7 @@ fn a_close_asked_of_a_window_not_drawn_is_forgotten() {
 #[test]
 fn a_close_asked_of_a_hidden_window_closes_it() {
     let mut f = Fixture::new(false);
-    hide_windows(&f.ctx, true, false);
+    hide_windows(&f.ctx, true, HideKeep::None);
     f.show(vec![]);
     let bodies = f.bodies;
     f.show(vec![]);
@@ -354,7 +355,7 @@ fn a_close_asked_of_a_hidden_window_closes_it() {
     close_floater(&f.ctx, "collapse_fixture");
     f.show(vec![]);
     assert!(!f.open);
-    hide_windows(&f.ctx, false, false);
+    hide_windows(&f.ctx, false, HideKeep::None);
     f.show(vec![]);
     assert!(!f.open, "it does not come back with the interface");
 }
@@ -623,4 +624,12 @@ fn desktop_title_divider_follows_the_floater_layout_and_content_width() {
             assert_eq!(line[1], egui::pos2(content.right(), bounds.top() + 0.5));
         }
     }
+}
+
+#[test]
+fn ordinary_floater_title_icon_is_square_when_minimized_and_minus_when_expanded() {
+    assert_eq!(minimize_title_icon(false, true), "square");
+    assert_eq!(minimize_title_icon(false, false), "minus");
+    assert_eq!(minimize_title_icon(true, true), "arrows-maximize");
+    assert_eq!(minimize_title_icon(true, false), "arrows-minimize");
 }

@@ -163,6 +163,20 @@ impl Popped {
         });
     }
 
+    pub(super) fn rekey(&mut self, from: Uuid, to: Uuid) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.conversation == Some(from)) {
+            // Keep the floater's identity, geometry and minimized state.
+            w.conversation = Some(to);
+            w.view.selected = Some(to);
+            if w.view.selection.0 == Some(from) {
+                w.view.selection.0 = Some(to);
+            }
+            if w.view.reveal == Some(from) {
+                w.view.reveal = Some(to);
+            }
+        }
+    }
+
     /// The window of `conversation` waits for the next frame to draw: the
     /// Conversations window drew that conversation in this one (one field,
     /// one selection in a frame).
@@ -465,7 +479,7 @@ pub(super) fn show(
         }
         let (title, unread) = match w.conversation {
             None => (aurora_i18n::tr!("common-nearby-chat").to_owned(), world.chat_badge),
-            Some(id) => (world.session_title(&id), sessions.get(&id).copied().unwrap_or(0)),
+            Some(id) => (super::sidebar::tab_title(world, &id), sessions.get(&id).copied().unwrap_or(0)),
         };
         let mut open = true;
         let mut dock = desktop.is_none() && super::docking::title_drop(ctx, p, &w.floater);
@@ -698,6 +712,8 @@ mod tests {
                         kind: crate::world::ChatKind::Im,
                         source: JANE,
                         origin: crate::world::Origin::Live,
+                        blocked: false,
+                        beyond_range: false,
                     },
                 );
             }
@@ -823,6 +839,8 @@ mod tests {
                         kind: crate::world::ChatKind::Im,
                         source: id,
                         origin: crate::world::Origin::Live,
+                        blocked: false,
+                        beyond_range: false,
                     },
                 );
                 kit.st.popped.pop_out(Some(id), false, false, false);
@@ -1108,6 +1126,8 @@ mod tests {
                             kind: crate::world::ChatKind::Im,
                             source: JANE,
                             origin: crate::world::Origin::Live,
+                            blocked: false,
+                            beyond_range: false,
                         },
                     );
                     kit.world.social.focus_im = Some(JANE);
@@ -1219,6 +1239,8 @@ mod tests {
                     kind: crate::world::ChatKind::Im,
                     source: BOB,
                     origin: crate::world::Origin::Live,
+                    blocked: false,
+                    beyond_range: false,
                 },
             );
             kit.main_open = true;

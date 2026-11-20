@@ -2,6 +2,8 @@
 //! Like LLVersionInfo (indra/newview/llversioninfo.cpp), every consumer
 //! reads the same build information. Aurora's release tag is authoritative.
 
+pub mod edition;
+
 /// Release tag without `v`, with commit distance/hash metadata between tags.
 pub const fn version() -> &'static str {
     env!("AURORA_COMPILED_VERSION")

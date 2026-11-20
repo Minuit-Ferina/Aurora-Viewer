@@ -46,6 +46,11 @@ impl App {
                     self.settings.places_sort = by;
                     self.settings.save();
                 }
+                PlacesAction::HistoryZone(zone) => {
+                    self.places_ui.demo_zone = None;
+                    self.settings.tp_history_zone = zone;
+                    self.settings.save();
+                }
             }
         }
     }

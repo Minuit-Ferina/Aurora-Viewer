@@ -137,6 +137,9 @@ pub struct Updater {
     rx: crossbeam_channel::Receiver<Event>,
     manual: bool,
     rollback_notice: bool,
+    /// Why the update that restored this version failed, from its helper
+    /// (`install::failed_update`); none from an older helper.
+    pub rollback_reason: Option<aurora_updater::install::FailedUpdate>,
     policy_pending: bool,
     cancel: Cancel,
     prepared: Option<Workspace>,
@@ -159,13 +162,14 @@ pub struct Updater {
 }
 
 pub fn checks_enabled() -> bool {
-    std::env::var_os("AURORA_DEMO").is_none()
-        && (aurora_updater::test_environment().is_some()
-            || (env!("AURORA_BUILD_PROFILE") == "release" && published_version(aurora_version::version())))
+    // The fork distributes edition-specific archives manually until it has
+    // a feed for both editions. Keep the isolated loopback fixtures available.
+    std::env::var_os("AURORA_DEMO").is_none() && aurora_updater::test_environment().is_some()
 }
 
 /// A version the Release workflow published: a stable one, or a beta. A
 /// development build (Git distance and commit after the tag) never updates.
+#[cfg(test)]
 fn published_version(version: &str) -> bool {
     aurora_updater::feed::version(version).is_some_and(|v| Channel::Beta.accepts(&v))
 }
@@ -175,7 +179,8 @@ impl Updater {
         let (tx, rx) = crossbeam_channel::unbounded();
         let test = aurora_updater::test_environment();
         let enabled = checks_enabled();
-        let rollback = std::env::var_os("AURORA_UPDATE_ROLLBACK").is_some();
+        let rollback = std::env::var_os(aurora_updater::install::ROLLBACK_ENV).is_some();
+        let rollback_reason = if rollback { aurora_updater::install::failed_update() } else { None };
         let source = test.map(|t| t.source.clone()).unwrap_or_default();
         let mut this = Self {
             state: if rollback { State::Rollback } else { State::Idle },
@@ -188,6 +193,7 @@ impl Updater {
             rx,
             manual: false,
             rollback_notice: rollback,
+            rollback_reason,
             policy_pending: false,
             cancel: Cancel::default(),
             prepared: None,

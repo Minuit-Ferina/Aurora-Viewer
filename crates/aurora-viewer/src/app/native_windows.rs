@@ -107,6 +107,10 @@ impl Host {
         self.stage == Stage::Live && !self.occluded && self.window.is_minimized() != Some(true)
     }
 
+    fn repaint_due(&self, now: Instant) -> bool {
+        self.repaint.is_some_and(|at| at <= now) && self.visible()
+    }
+
     fn set_repaint(&mut self, delay: Duration) {
         if let Some(at) = Instant::now().checked_add(delay) {
             self.repaint = Some(self.repaint.map_or(at, |existing| existing.min(at)));
@@ -554,7 +558,12 @@ impl NativeWindows {
         }
         let repaint = host.input.on_window_event(host.window.as_ref(), event_loop, event).repaint;
 
-        if repaint || matches!(event, WindowEvent::RedrawRequested | WindowEvent::Occluded(false)) {
+        if repaint
+            || matches!(
+                event,
+                WindowEvent::SurfaceResized(_) | WindowEvent::RedrawRequested | WindowEvent::Occluded(false)
+            )
+        {
             host.set_repaint(Duration::ZERO);
         }
         Some(matches!(
@@ -569,6 +578,11 @@ impl NativeWindows {
 
     pub(super) fn any_visible(&self) -> bool {
         self.hosts.iter().any(Host::visible)
+    }
+
+    pub(super) fn repaint_due(&self) -> bool {
+        let now = Instant::now();
+        self.hosts.iter().any(|host| host.repaint_due(now))
     }
 
     pub(super) fn owns_focus(&self) -> bool {
@@ -747,7 +761,7 @@ impl NativeWindows {
             .map(|offset| (self.next_draw + offset) % self.hosts.len())
             .find(|index| {
                 let host = &self.hosts[*index];
-                host.close_requested || (host.repaint.is_some_and(|at| at <= now) && host.visible())
+                host.close_requested || host.repaint_due(now)
             })?;
         self.next_draw = index + 1;
         Some(self.hosts[index].panel)
@@ -1041,7 +1055,17 @@ impl NativeWindows {
         });
         // One in-flight operation across these windows. No new egui pass
         // runs until its predecessor was consumed, including its deltas.
-        if renderer.queue_native_ui(NativeUiTask { id, command, reply }) {
+        let resizing = self
+            .hosts
+            .iter()
+            .find(|host| host.id == id)
+            .is_some_and(|host| crate::window_hold::native_resizing(host.window.as_ref()));
+        if renderer.queue_native_ui(NativeUiTask {
+            id,
+            command,
+            resizing,
+            reply,
+        }) {
             self.pending = Some((id, receiver));
         } else {
             self.failed = true;

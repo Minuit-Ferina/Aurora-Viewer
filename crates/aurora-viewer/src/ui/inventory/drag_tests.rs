@@ -1,6 +1,13 @@
 //! Real row selection/drag/release, including nested and cross-window targets.
 use super::*;
 use aurora_net::inventory::operations::Operation;
+use winit::{
+    data_transfer::DataTransferId,
+    dpi::{PhysicalPosition, PhysicalSize},
+    window::WindowId,
+};
+
+const TEST_SURFACE: PhysicalSize<u32> = PhysicalSize::new(1200, 900);
 
 struct Fixture {
     ctx: egui::Context,
@@ -13,6 +20,7 @@ struct Fixture {
     actions: Vec<InvAction>,
     two_windows: bool,
     scrolling: Option<bool>,
+    desktop: Option<egui::Pos2>,
 }
 
 impl Fixture {
@@ -86,6 +94,7 @@ impl Fixture {
             actions: Vec::new(),
             two_windows: false,
             scrolling: None,
+            desktop: None,
         };
         f.settle();
         f
@@ -104,6 +113,8 @@ impl Fixture {
                 ..Default::default()
             },
             |ui| {
+                let desktop = self.desktop.map(|pos| (DataTransferId::from_raw(1), physical(pos)));
+                text_import::begin(ui.ctx(), WindowId::from_raw(1), TEST_SURFACE, 1.0, desktop);
                 ui.horizontal_top(|ui| {
                     draw_tree(
                         ui,
@@ -141,6 +152,10 @@ impl Fixture {
         output.textures_delta.clear();
         output.platform_output.cursor_icon
     }
+    fn desktop_target(&self, pos: egui::Pos2) -> text_import::Target {
+        text_import::hit(&self.ctx, WindowId::from_raw(1), TEST_SURFACE, 1.0, Some(physical(pos)), &self.inv)
+    }
+
     fn settle(&mut self) {
         for _ in 0..6 {
             self.frame(Vec::new(), false);
@@ -232,6 +247,10 @@ fn draw_tree(
         });
     });
 }
+fn physical(pos: egui::Pos2) -> PhysicalPosition<f64> {
+    PhysicalPosition::new(f64::from(pos.x), f64::from(pos.y))
+}
+
 fn id(n: u128) -> Uuid {
     Uuid::from_u128(n)
 }

@@ -26,7 +26,7 @@ pub fn release() {
     discovery::release();
 }
 
-/// `\\.\pipe\aurora-viewer-slurl-<session>[-demo][-<title>]`.
+/// The pipe prefix identifies the edition before the session and title.
 fn pipe_name() -> String {
     legacy_name(&Scope::current())
 }
@@ -39,7 +39,12 @@ fn legacy_name(scope: &Scope) -> String {
     unsafe {
         ProcessIdToSessionId(GetCurrentProcessId(), &mut session);
     }
-    let mut name = format!(r"\\.\pipe\aurora-viewer-slurl-{session}");
+    let edition_suffix = if aurora_version::edition::CURRENT.always_on() {
+        "-ftrlv"
+    } else {
+        ""
+    };
+    let mut name = format!(r"\\.\pipe\aurora-viewer{edition_suffix}-slurl-{session}");
     if scope.demo {
         name.push_str("-demo");
     }

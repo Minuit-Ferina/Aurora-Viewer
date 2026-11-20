@@ -339,7 +339,7 @@ impl Session {
                 let Some(target) = transfer
                     .target
                     .as_mut()
-                    .filter(|target| target.incoming == *id && target.phase == Phase::Reading(*serial))
+                    .filter(|target| target.matches(window, *id) && target.phase == Phase::Reading(*serial))
                 else {
                     return false;
                 };

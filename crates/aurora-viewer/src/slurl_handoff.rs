@@ -93,6 +93,9 @@ mod bus {
     /// a digit, and the whole name stays under 255 bytes.
     pub(super) fn name_for(demo: bool, title_slug: Option<&str>) -> String {
         let mut name = String::from(INTERFACE);
+        if aurora_version::edition::CURRENT.always_on() {
+            name.push_str(".FTRLV");
+        }
         if demo {
             name.push_str(".Demo");
         }
@@ -160,17 +163,22 @@ mod bus {
 
     pub(super) fn listen_as(name: String) -> Option<Receiver<String>> {
         let (tx, rx) = crossbeam_channel::unbounded();
-        let bus = match Connection::session() {
+        // Served through the builder, which waits until the object server's
+        // task reads the method calls before the connection reads anything.
+        // `object_server().at` on a built connection starts that task in the
+        // background: a call that arrived before it subscribed found no reader
+        // and was dropped unanswered, and the launch waited its whole timeout
+        // (seen on loaded CI runners, a few milliseconds after the name).
+        let bus = match zbus::blocking::connection::Builder::session()
+            .and_then(|b| b.serve_at(PATH, Links(tx)))
+            .and_then(|b| b.build())
+        {
             Ok(bus) => bus,
             Err(e) => {
                 log::warn!("startup links: no session bus ({e})");
                 return None;
             }
         };
-        if let Err(e) = bus.object_server().at(PATH, Links(tx)) {
-            log::warn!("startup links: {e}");
-            return None;
-        }
         match bus.request_name_with_flags(name.as_str(), RequestNameFlags::DoNotQueue.into()) {
             Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {
                 *OWNER.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((bus, name));
@@ -205,11 +213,13 @@ mod tests {
     #[test]
     fn bus_names_are_valid() {
         use super::bus::name_for;
-        assert_eq!(name_for(false, None), "org.aurora_viewer.AuroraViewer");
-        assert_eq!(
-            name_for(true, Some("test-linux-slurl")),
-            "org.aurora_viewer.AuroraViewer.Demo.T_test_linux_slurl"
-        );
+        let base = if aurora_version::edition::CURRENT.always_on() {
+            "org.aurora_viewer.AuroraViewer.FTRLV"
+        } else {
+            "org.aurora_viewer.AuroraViewer"
+        };
+        assert_eq!(name_for(false, None), base);
+        assert_eq!(name_for(true, Some("test-linux-slurl")), format!("{base}.Demo.T_test_linux_slurl"));
         // non-ASCII letters of a title, a leading digit, a very long title
         for slug in ["été-2", "9lives", &"a".repeat(400)] {
             let name = name_for(false, Some(slug));

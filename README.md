@@ -111,34 +111,36 @@ while rethinking the user interface.
   </tr>
 </table>
 
-### New in 0.9.9 <img src="docs/readme/pill-new.svg" alt="New" height="18" align="absmiddle">
+### New in 0.9.10 <img src="docs/readme/pill-new.svg" alt="New" height="18" align="absmiddle">
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>Aurora Weather</h3>
-      Rain, snow, wind, thunder and northern lights, with puddles, lying
-      snow and footprints. Choose yours in the Environment window, or let
-      regions set it (off by default).
+      <h3>The Director</h3>
+      Film in the world: keep camera views as keyframes on a timeline,
+      play them back as one smooth shot with the world alone, and record
+      it to a video file with your own ffmpeg.
     </td>
     <td width="50%" valign="top">
-      <h3>Avatar Studio</h3>
-      A calm space to dress, pose and photograph your avatar, with its own
-      animation editor: keyframes, a timeline, ANIM and BVH import.
+      <h3>Transparency in its true order</h3>
+      Glass, curtains and the layers of mesh hair show in the right order
+      at every pixel, even when they cross. Choose it in Preferences ›
+      Graphics, "Order of transparent surfaces"; the Stochastic choice
+      is thanks to Anne Skydancer.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3>Lua scripts</h3>
-      SLua scripts get a real editor: Lua colours, completion, hover help,
-      and the compile target of your choice. New script can create a Lua
-      script on a region with SLua.
+      <h3>Weather and water</h3>
+      Aurora Weather reaches farther, with puddles and lying snow up to
+      256 m away and much steadier snow. Water and ambient occlusion cost
+      less for the same image.
     </td>
     <td valign="top">
-      <h3>Gamepad and VR</h3>
-      Switch between First Person, Avatar Mode and Flycam with a gamepad,
-      on the desktop or in VR. The camera can also follow an animated
-      body part.
+      <h3>More like the Legacy Viewer</h3>
+      The Conversation log, draw distance up to 1024 m, the Animation
+      Speed menu, beacons, radar marks, Doppler on moving sounds, and
+      objects saved as Collada or OBJ.
     </td>
   </tr>
 </table>
@@ -441,8 +443,9 @@ are planned or in progress: they are not in the viewer yet.
 - **Write with ease**: a spell checker with suggestions in the chat bars,
   conversations and notecards, auto-replace (`brb`…) if you like, `@` to
   mention someone in the conversation, names completed as you type, and `/`
-  in nearby chat to find and play a gesture. Ctrl+Shift+Enter starts a new
-  line, and pasted paragraphs keep their shape. Arabic and Hebrew read right
+  in nearby chat to find and play a gesture. Shift+Enter starts a new
+  line, and pasted paragraphs keep their shape; the chat's keys can be
+  changed in Preferences › Controls › Shortcuts. Arabic and Hebrew read right
   to left, in name tags, bubbles, floating text and conversations. A long
   IM goes out as several messages instead of being cut off.
 - **Messages that matter, in front of you**: a message an estate manager
@@ -1027,13 +1030,10 @@ files never leave the machine and are never attached to a bug report.
 
 Preferences › Language and updates › "Remove Aurora from this computer"
 (or `aurora-viewer --uninstall`, see [Command line](#command-line)) removes
-what Aurora registered outside its own folders: the `secondlife://`,
-`hop://` and `x-grid-location-info://` link handler when it opens this
-Aurora (another viewer's stays), the Windows notification identity, the
-cache key and saved logins of the system's credential store, and Aurora's
-Blender add-on. It then lists the folders that remain (settings, cache,
-logs, media plugins, and the cache or history folders you chose), each with
-an "Open folder" button: quit Aurora, then delete them and the viewer.
+this edition's Windows notification registration. Quit that edition and
+remove its installation folder. The result lists the shared data locations,
+which both editions can continue using. Saved logins, the cache key and
+shared integrations remain available.
 
 ## Under the hood
 
@@ -1074,8 +1074,40 @@ an "Open folder" button: quit Aurora, then delete them and the viewer.
 
 ## Build
 
-Requirements: Windows 10/11, [Rust](https://rustup.rs) (stable, selected
-automatically by `rust-toolchain.toml`), a GPU with Vulkan support. On Linux,
+### Fork editions
+
+Classic is the default build. It offers the usual RLVa preference, off by
+default. FTRLV (Full Time RLV) keeps RLVa enabled and still honors individual
+rule releases and session cleanup.
+
+From a task worktree, build each complete portable archive in a separate
+invocation. Both commands default to a development preview.
+
+```powershell
+./scripts/build-edition.ps1 -Edition classic -Out .scratch/dist
+./scripts/build-edition.ps1 -Edition ftrlv -Out .scratch/dist
+```
+
+Add `-Release` to build distribution archives, or use
+`./scripts/build-release.ps1 -Edition ftrlv -ArchiveOut .scratch/dist`.
+The output contains an
+edition-specific application, a schema-2 install manifest and a SHA-256
+sidecar. Keep the installations in separate locations. On Linux, the
+FTRLV package contains `aurora-viewer-ftrlv` and
+`aurora-viewer-ftrlv.desktop`. On macOS the app is
+`Aurora Viewer FTRLV.app`. The script signs macOS Release builds ad hoc.
+The fork distributes both editions by manual archive while it has no
+edition-aware update feed.
+
+Both editions share settings, account data, cache, media plugins and logs.
+FTRLV preserves Classic's saved RLVa choice. Other saved choices are
+available on the next launch. Concurrent sessions save complete settings
+snapshots independently. Close other instances before you import or reset
+shared settings or clear the shared cache.
+
+Requirements: Windows 10/11, [Rust](https://rustup.rs) (rustup installs by
+itself the version that `rust-toolchain.toml` names), a GPU with Vulkan
+support. On Linux,
 see [Installing on Linux](docs/LINUX.md#building-from-source); on macOS,
 [Installing on macOS](docs/MACOS.md#building-from-source).
 
@@ -1166,7 +1198,8 @@ exe before publishing; the local build also writes it to `version.txt`.
 | `<slurl>`, `--url <slurl>` | Starts at this place, or hands it to the viewer already running; must come last |
 | `-h`, `--help` | Shows the help |
 | `-V`, `--version` | Prints the built version then exits, with no window, log or network |
-| `--uninstall` | Removes what Aurora registered on this computer, prints it and the folders left, then exits, with no window |
+| `--edition` | Prints the compiled edition ID (`classic` or `ftrlv`), then exits before the window, log or network |
+| `--uninstall` | Removes this edition's Windows notification registration, lists shared data locations, then exits |
 
 - `--title`: the build profile ends the title (Dev, Release, Debug); the log
   file is `aurora-<text>.log` (`aurora-demo-<text>.log` in demo mode).
@@ -1198,8 +1231,8 @@ exe before publishing; the local build also writes it to `version.txt`.
 - `--uninstall`: what Preferences › Language and updates › "Remove Aurora
   from this computer" does, without its confirmation (see
   [Removing Aurora](#removing-aurora)); it prints each part with its result,
-  then the folders to delete, and exits with code 1 when a part could not be
-  removed. On Windows, run it as `aurora-viewer.exe --uninstall | more` so
+  then lists the shared data locations, and exits with code 1 when a part could
+  not be removed. On Windows, run it as `aurora-viewer.exe --uninstall | more` so
   the terminal waits for its text. With `AURORA_DEMO=1` it is a dry run that
   removes nothing.
 - `--login`: the account follows the usual "remember" choices; a single
@@ -1299,6 +1332,11 @@ openly.
 
 Questions and answers, and the details:
 [AI use policy](https://aurora-viewer.org/ai-policy/).
+
+## Security
+
+Found a vulnerability? Please report it privately, not in a public issue:
+[SECURITY.md](SECURITY.md) explains how, and what happens next.
 
 ## Privacy
 

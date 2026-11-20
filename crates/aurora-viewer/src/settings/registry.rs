@@ -113,7 +113,7 @@ impl Locks {
             "camera.preset" | "camera.camera_offset" | "camera.focus_offset" | "camera.offset_scale" => self.camera_preset,
             "camera.fov" => self.camera_fov,
             "autoresponse.dnd_text" => self.sendim,
-            "rlva_enabled" => self.restricted,
+            "rlva_enabled" => self.restricted || aurora_version::edition::CURRENT.always_on(),
             _ => self.restricted && key.starts_with("rlva."),
         }
     }
@@ -121,7 +121,7 @@ impl Locks {
 
 /// Whether the setting is kept out of the list, whatever its value.
 fn hidden(key: &str) -> bool {
-    HIDDEN.contains(&key) || super::backup::is_this_pc(key)
+    HIDDEN.contains(&key) || super::backup::is_this_pc(key) || (key == "rlva_enabled" && aurora_version::edition::CURRENT.always_on())
 }
 
 /// A UUID anywhere in `text`: 8-4-4-4-12 hexadecimal digits.
@@ -234,6 +234,9 @@ impl Settings {
         self.hover_height_account = current.hover_height_account;
         self.photo_held = current.photo_held.clone();
         self.draw_stepping = current.draw_stepping;
+        // (Autotune's hold: without it, the tuned values would become the
+        // user's and be saved)
+        self.autotune_hold = current.autotune_hold;
         self.newer_file = current.newer_file.clone();
         self.new_profile = current.new_profile;
         self.camera_limits_restored = current.camera_limits_restored;
@@ -435,6 +438,30 @@ mod tests {
     }
 
     #[test]
+    fn autotunes_hold_survives_a_change_and_the_users_values_stay_theirs() {
+        use crate::settings::autotune::{Hold, Tuned};
+        let mut s = Settings {
+            draw_distance: 256.0,
+            max_avatars: 16,
+            ..Settings::default()
+        };
+        let mut hold = Hold::new(&s);
+        hold.write(
+            &mut s,
+            Tuned {
+                draw_distance: 64.0,
+                max_avatars: 6,
+            },
+        );
+        s.autotune_hold = Some(hold);
+        set(&mut s, "show_huds", json!(false)).expect("set");
+        assert!(s.autotune_hold.is_some());
+        assert_eq!((s.draw_distance, s.max_avatars), (64.0, 6), "still tuned");
+        let saved = s.to_saved();
+        assert_eq!((saved.draw_distance, saved.max_avatars), (256.0, 16), "the file keeps the user's");
+    }
+
+    #[test]
     fn rlva_locks_name_the_settings_they_hold() {
         let free = Locks::default();
         for key in [
@@ -444,7 +471,11 @@ mod tests {
             "rlva_enabled",
             "rlva.allow_ooc",
         ] {
-            assert!(!free.locked(key), "{key}");
+            assert_eq!(
+                free.locked(key),
+                key == "rlva_enabled" && aurora_version::edition::CURRENT.always_on(),
+                "{key}"
+            );
         }
         let camera = Locks {
             camera_preset: true,

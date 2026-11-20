@@ -20,7 +20,9 @@ impl App {
         self.native_windows.reconcile_notecards(|key| {
             allowed
                 && (matches(&self.inventory_ui, key)
+                    || matches(&self.dual_inventory_ui, key)
                     || self.inventory_ui.windows.iter().any(|w| matches(&w.state, key))
+                    || self.dual_inventory_ui.windows.iter().any(|w| matches(&w.state, key))
                     || self.task_notecards.values().any(|d| matches(&d.state, key)))
         });
     }
@@ -60,10 +62,19 @@ impl App {
                 let (state, inventory, god_level) = if let Some(task) = task {
                     let Some(d) = self.task_notecards.get_mut(&task) else { return true };
                     d.refresh_permissions(key.item, metadata.as_ref());
+                    d.inventory.rlva_preview_mask = world_inventory.rlva_preview_mask;
                     (&mut d.state, &d.inventory, 0)
                 } else if self.inventory_ui.ui_id == key.editor {
                     (&mut self.inventory_ui, world_inventory, god_level)
-                } else if let Some(w) = self.inventory_ui.windows.iter_mut().find(|w| w.state.ui_id == key.editor) {
+                } else if self.dual_inventory_ui.ui_id == key.editor {
+                    (&mut self.dual_inventory_ui, world_inventory, god_level)
+                } else if let Some(w) = self
+                    .inventory_ui
+                    .windows
+                    .iter_mut()
+                    .chain(&mut self.dual_inventory_ui.windows)
+                    .find(|w| w.state.ui_id == key.editor)
+                {
                     (w.state.as_mut(), world_inventory, god_level)
                 } else {
                     return true;
@@ -104,7 +115,7 @@ impl App {
                     },
                 ) => self.open_notecard_attachment(editor, notecard, marker, copy, object),
                 (Some((object, item)), InvAction::Edit(change)) => self.apply_task_note_description(object, item, change),
-                (None, action) => self.apply_inventory_action(action),
+                (None, action) => self.apply_inventory_action_from(key.editor, action),
                 _ => {}
             }
         }

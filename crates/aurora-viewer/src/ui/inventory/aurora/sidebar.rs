@@ -175,6 +175,7 @@ fn folder_target(
     facts: &Facts,
     actions: &mut Vec<InvAction>,
 ) {
+    text_import::record_row(ui, response.rect, id);
     task_drop::target(ui, p, response, inv, id, actions);
     drag::target(ui, p, response, inv, id, st, prefs, facts, actions);
     drag::navigation::folder(ui, response, st.ui_id, id, open);

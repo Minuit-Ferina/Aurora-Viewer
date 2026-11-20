@@ -127,8 +127,19 @@ pub async fn save(
     options: ScriptOptions,
     source: String,
 ) -> Result<ScriptSaved, String> {
+    save_staged(http, cap, target, options, source).await.map_err(|err| err.message)
+}
+
+pub(crate) async fn save_staged(
+    http: &reqwest::Client,
+    cap: &str,
+    target: ScriptTarget,
+    options: ScriptOptions,
+    source: String,
+) -> Result<ScriptSaved, crate::inventory::text_import::SaveError> {
+    use crate::inventory::text_import::SaveError;
     if source.len() > MAX_SOURCE {
-        return Err(aurora_i18n::tr!("script-source-too-large").into());
+        return Err(SaveError::before(aurora_i18n::tr!("script-source-too-large")));
     }
     // Cover all requests, including a server that never finishes its response.
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
@@ -140,9 +151,9 @@ pub async fn save(
             &upload_body(target, options.compile, options.running, Some(options.experience)),
         )
         .await
-        .map_err(|_| aurora_i18n::tr!("script-save-failed").to_owned())?;
+        .map_err(|_| SaveError::before(aurora_i18n::tr!("script-save-failed")))?;
         if answer["state"].as_str() != "upload" || answer["uploader"].as_str().is_empty() {
-            return Err(aurora_i18n::tr!("script-save-unconfirmed").into());
+            return Err(SaveError::before(aurora_i18n::tr!("script-save-unconfirmed")));
         }
         let mut response = http
             .post(answer["uploader"].as_str())
@@ -150,26 +161,26 @@ pub async fn save(
             .body(source.into_bytes())
             .send()
             .await
-            .map_err(|_| aurora_i18n::tr!("script-save-failed").to_owned())?;
+            .map_err(|_| SaveError::uncertain(aurora_i18n::tr!("script-save-failed")))?;
         if !response.status().is_success() {
-            return Err(aurora_i18n::tr!("script-save-failed").into());
+            return Err(SaveError::uncertain(aurora_i18n::tr!("script-save-failed")));
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| aurora_i18n::tr!("script-save-failed").to_owned())?
+            .map_err(|_| SaveError::uncertain(aurora_i18n::tr!("script-save-failed")))?
         {
             if bytes.len() + chunk.len() > MAX_SOURCE {
-                return Err(aurora_i18n::tr!("script-save-unconfirmed").into());
+                return Err(SaveError::uncertain(aurora_i18n::tr!("script-save-unconfirmed")));
             }
             bytes.extend_from_slice(&chunk);
         }
-        let ack = aurora_llsd::from_xml(&bytes).map_err(|_| aurora_i18n::tr!("script-save-unconfirmed").to_owned())?;
-        saved_reply(&ack)
+        let ack = aurora_llsd::from_xml(&bytes).map_err(|_| SaveError::uncertain(aurora_i18n::tr!("script-save-unconfirmed")))?;
+        saved_reply(&ack).map_err(SaveError::uncertain)
     })
     .await
-    .map_err(|_| aurora_i18n::tr!("script-timeout").to_owned())?
+    .map_err(|_| SaveError::uncertain(aurora_i18n::tr!("script-timeout")))?
 }
 
 #[cfg(test)]
@@ -233,7 +244,7 @@ mod tests {
         };
         let source = "default\n{ // éèあ\n    state_entry() { llSay(0, \"Bonjour !\"); }\n}\n";
         let result = save(
-            &reqwest::Client::new(),
+            &crate::test_http_client(),
             &url,
             target,
             ScriptOptions {

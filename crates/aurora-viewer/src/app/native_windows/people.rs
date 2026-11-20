@@ -139,6 +139,7 @@ impl App {
                         &self.palette,
                         &mut self.world,
                         &mut self.contacts_ui,
+                        &self.avatar_pics,
                         Some(true),
                     ));
                 }

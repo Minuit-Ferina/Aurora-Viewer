@@ -13,9 +13,19 @@
 param(
     [Parameter(Mandatory)][string]$Exe,
     [Parameter(Mandatory)][string]$Out,
+    [ValidateSet('classic','ftrlv')][string]$Edition = 'classic',
     # repository whose assets go with the exe (default: this script's)
     [string]$Source = (Split-Path $PSScriptRoot -Parent)
 )
+
+$taskExePath = (Resolve-Path -LiteralPath $Exe -ErrorAction Stop).Path
+$taskEdition = (& $taskExePath --edition | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $taskEdition -cne $Edition) {
+    throw "Package expects edition '$Edition'; executable reported '$taskEdition'."
+}
+$taskVersion = (& $taskExePath --language en --version | Out-String).Trim() -replace '^Aurora Viewer ', ''
+if ($LASTEXITCODE -ne 0 -or $taskVersion -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.+-]+)?$') { throw 'Invalid package version.' }
+$taskJson = @{ schema = 2; version = $taskVersion; edition = $Edition } | ConvertTo-Json
 
 New-Item -ItemType Directory -Force -Path (Join-Path $Out 'assets/emoji') -ErrorAction Stop | Out-Null
 Copy-Item -LiteralPath $Exe -Destination $Out -ErrorAction Stop
@@ -43,13 +53,18 @@ Copy-Item -LiteralPath $docs -Destination $Out -ErrorAction Stop
 # (macOS has its own bundle: package-macos.ps1; $IsMacOS is unset, so
 # false, in Windows PowerShell 5.1.)
 if (-not [IO.Path]::GetExtension($Exe) -and -not $IsMacOS) {
-    Copy-Item -LiteralPath (Join-Path $Source 'packaging/linux/aurora-viewer.desktop') -Destination $Out -ErrorAction Stop
+    $desktop = Get-Content -LiteralPath (Join-Path $Source 'packaging/linux/aurora-viewer.desktop') -Raw -ErrorAction Stop
+    $desktopId = if ($Edition -eq 'ftrlv') { 'aurora-viewer-ftrlv' } else { 'aurora-viewer' }
+    if ($Edition -eq 'ftrlv') {
+        $desktop = $desktop.Replace('Name=Aurora Viewer', 'Name=Aurora Viewer FTRLV').Replace('StartupWMClass=aurora-viewer', "StartupWMClass=$desktopId")
+        $desktop = $desktop -replace '(?m)^Exec=aurora-viewer(?=\s|$)', "Exec=$desktopId"
+    }
+    if ($Edition -eq 'ftrlv') {
+        Move-Item -LiteralPath (Join-Path $Out (Split-Path $Exe -Leaf)) -Destination (Join-Path $Out $desktopId) -ErrorAction Stop
+    }
+    [IO.File]::WriteAllText((Join-Path (Resolve-Path -LiteralPath $Out).Path "$desktopId.desktop"), $desktop, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath (Join-Path $Source 'assets/branding/aurora-logo.svg') -Destination (Join-Path $Out 'aurora-viewer.svg') -ErrorAction Stop
 }
-$taskExePath = (Resolve-Path -LiteralPath $Exe).Path
-$taskVersion = (& $taskExePath --version | Out-String).Trim() -replace '^Aurora Viewer ', ''
-if ($LASTEXITCODE -ne 0 -or $taskVersion -notmatch '^\d+\.\d+\.\d+([+-][0-9A-Za-z.+-]+)?$') { throw 'Invalid package version.' }
-$taskJson = @{ schema = 1; version = $taskVersion } | ConvertTo-Json
 $taskMetadataPath = Join-Path (Resolve-Path -LiteralPath $Out -ErrorAction Stop).Path 'aurora-install.json'
 # Windows PowerShell 5.1 does not support Set-Content -Encoding utf8NoBOM.
 [IO.File]::WriteAllText($taskMetadataPath, $taskJson, [Text.UTF8Encoding]::new($false))

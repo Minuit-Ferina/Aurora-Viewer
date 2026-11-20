@@ -242,7 +242,10 @@ mod tests {
 
     #[test]
     fn rlva_version_handshake_resolves_the_worn_original_before_the_immediate_reply() {
-        let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = crate::world::World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

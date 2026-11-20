@@ -163,8 +163,10 @@ pub fn extract(path: &Path, root: &Path, tag: &str, cancel: &Cancel) -> Result<P
     unpack(path, root, &format!("Aurora-Viewer-{tag}-windows-x64"), cancel)?;
     let manifest: InstallManifest = serde_json::from_slice(&fs::read(root.join("aurora-install.json"))?)?;
     ensure!(
-        manifest.schema == 1 && manifest.version == tag.trim_start_matches('v'),
-        "package version mismatch"
+        manifest.schema == 2
+            && manifest.version == tag.trim_start_matches('v')
+            && manifest.edition == aurora_version::edition::CURRENT.id(),
+        "package version or edition mismatch"
     );
     ensure!(
         root.join("aurora-viewer.exe").is_file() && root.join("assets").is_dir() && root.join("LICENSE").is_file(),
@@ -242,6 +244,7 @@ pub(crate) fn unpack(path: &Path, root: &Path, prefix: &str, cancel: &Cancel) ->
 pub struct InstallManifest {
     pub schema: u32,
     pub version: String,
+    pub edition: String,
 }
 
 #[cfg(test)]

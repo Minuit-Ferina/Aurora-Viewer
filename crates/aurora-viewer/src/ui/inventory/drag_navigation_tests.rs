@@ -178,3 +178,46 @@ fn inventory_drag_navigation_only_scrolls_the_entered_window_and_cancels_on_esca
     assert!((offset(&f, f.state.ui_id) - stopped).abs() < 0.1);
     assert!(f.actions.is_empty());
 }
+
+#[test]
+fn desktop_text_import_uses_item_parent_and_scrolls_without_an_egui_button_press() {
+    for filtered in [false, true] {
+        let mut f = Fixture::new();
+        long_list(&mut f, 1);
+        long_list(&mut f, 20);
+        f.scrolling = Some(filtered);
+        f.two_windows = true;
+        f.settle();
+        let item = f.row(100);
+        assert_eq!(f.desktop_target(item), text_import::Target::Folder(id(10)));
+        assert_eq!(f.desktop_target(f.row(20)), text_import::Target::Folder(id(20)));
+
+        // An ineligible parent must not fall through to the list background.
+        f.inv.folders.get_mut(&id(10)).expect("parent").library = true;
+        assert_eq!(f.desktop_target(item), text_import::Target::Reject);
+        f.inv.folders.get_mut(&id(10)).expect("parent").library = false;
+
+        let rect = viewport(&f, f.other.ui_id).0;
+        let left_before = offset(&f, f.state.ui_id);
+        f.desktop = Some(egui::pos2(rect.center().x, rect.bottom() - 4.0));
+        for _ in 0..35 {
+            f.frame(Vec::new(), false);
+        }
+        let down = offset(&f, f.other.ui_id);
+        assert!(down > 100.0, "the entered window scrolls down");
+        assert_eq!(offset(&f, f.state.ui_id), left_before);
+
+        f.desktop = Some(egui::pos2(rect.center().x, rect.top() + 4.0));
+        for _ in 0..12 {
+            f.frame(Vec::new(), false);
+        }
+        let up = offset(&f, f.other.ui_id);
+        assert!(up < down - 30.0, "the same window scrolls up");
+        f.desktop = None;
+        f.frame(Vec::new(), false);
+        let stopped = offset(&f, f.other.ui_id);
+        f.settle();
+        assert!((offset(&f, f.other.ui_id) - stopped).abs() < 0.1);
+        assert!(f.actions.is_empty(), "hovering and scrolling never moves or creates an item");
+    }
+}

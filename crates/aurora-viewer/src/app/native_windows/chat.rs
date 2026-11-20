@@ -26,6 +26,7 @@ impl App {
                 }
                 ui::chat::ConvAction::Local(out) => a.chat = Some(out),
                 ui::chat::ConvAction::Im { to, text } => a.ims.push((to, text)),
+                ui::chat::ConvAction::SendSysinfo(to) => a.sysinfo.push(to),
                 ui::chat::ConvAction::OfferTeleport(id) => a.offer_tp.push(id),
                 ui::chat::ConvAction::ToggleBlock(id) => a.ctx_action = Some(ui::context::CtxAction::ToggleBlock(id)),
                 ui::chat::ConvAction::Close(id) => {
@@ -68,7 +69,7 @@ impl App {
                 ui::chat::ConvAction::Contacts(c) => contact_actions.push(c),
                 ui::chat::ConvAction::People(pa) => contacts_people.push(pa),
                 ui::chat::ConvAction::OpenIm(id) => self.world.start_text_conference(vec![id]),
-                ui::chat::ConvAction::StartGroupChat(group) => self.world.start_group_chat(group),
+                ui::chat::ConvAction::StartGroupChat(group) => self.world.start_group_chat(group, true),
                 // LLIMModel::sendTypingState: to the resident, in
                 // the session of the two of us (agent XOR other)
                 ui::chat::ConvAction::Typing { to, typing } => a.typing.push(NetCommand::SendImDialog {
@@ -85,7 +86,7 @@ impl App {
                 // the inventory's Share dialog confirms, then gives
                 // (LLGiveInventory::doGiveInventoryItem)
                 ui::chat::ConvAction::GiveItems { to, items } => {
-                    self.inventory_ui.dialog = Some(ui::inventory::EditDialog::Share(items, to));
+                    self.inventory_ui.dialog = Some(ui::inventory::EditDialog::Share(items, vec![to]));
                 }
                 // shown and in front even when already open
                 // (LLAvatarActions::share → showInstance), else the
@@ -119,6 +120,9 @@ impl App {
                 }
                 ui::people::PeopleAction::OfferTeleport(id) => a.offer_tp.push(id),
                 ui::people::PeopleAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
+                ui::people::PeopleAction::RosterProfile(id) => {
+                    self.profile_ui.open_in(&mut self.world, crate::world::names::NameScope::Roster, id);
+                }
                 ui::people::PeopleAction::ZoomRefused { name, why } => {
                     let meters = |d: f32| aurora_i18n::number(f64::from(d), 0);
                     let text = match why {
@@ -134,7 +138,7 @@ impl App {
                 }
                 ui::people::PeopleAction::GroupChat(id) => {
                     self.world.ui_sounds.push(UiSound::StartIm);
-                    self.world.start_group_chat(id);
+                    self.world.start_group_chat(id, true);
                     self.show_conversations();
                 }
                 ui::people::PeopleAction::GroupNotices(id, on) => self.world.groups.set_accept_notices(id, on),
@@ -142,6 +146,9 @@ impl App {
                     self.contacts_ui.ask_modify_rights(friend, rights, grant)
                 }
                 ui::people::PeopleAction::PickFriend => self.contacts_ui.pick_new_friend(),
+                ui::people::PeopleAction::ConversationLog => {
+                    ui::widgets::toggle_floater(&self.egui_ctx, ui::conversation_log::WINDOW, &mut self.panels.conversation_log);
+                }
                 ui::people::PeopleAction::Unblock(id, name) => self.world.unblock(id, &name, 0),
                 ui::people::PeopleAction::BlockByName(name) => {
                     if let Err(e) = self.world.block(uuid::Uuid::nil(), &name, crate::world::mutes::MuteType::ByName) {

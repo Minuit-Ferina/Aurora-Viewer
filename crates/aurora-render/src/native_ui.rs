@@ -1,6 +1,6 @@
 //! UI-only swapchains on the existing device and queue.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use crate::EguiFrame;
 
@@ -18,6 +18,8 @@ pub enum NativeUiCommand {
 pub struct NativeUiTask {
     pub id: NativeUiId,
     pub command: NativeUiCommand,
+    /// Whether the host is inside a native interactive resize gesture.
+    pub resizing: bool,
     pub reply: Box<dyn FnOnce(NativeUiResult) + Send>,
 }
 
@@ -56,6 +58,7 @@ struct Surface {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     configure: bool,
+    resize_scaling: bool,
     egui: egui_wgpu::Renderer,
     previews: crate::preview::Cache,
 }
@@ -74,7 +77,7 @@ impl Surfaces {
                 },
             },
             NativeUiCommand::Draw { size, mut frame } => match (self.0.get_mut(&task.id), frame.0.take()) {
-                (Some(surface), Some(frame)) => surface.draw(device, queue, size, frame),
+                (Some(surface), Some(frame)) => surface.draw(device, queue, size, task.resizing, frame),
                 (_, mut frame) => {
                     if let Some(frame) = &mut frame {
                         frame.textures_delta.clear();
@@ -108,16 +111,18 @@ impl Surface {
         }
         config.present_mode = crate::present::choose(&caps.present_modes, false, None);
         log::info!("native UI surface: {}", crate::present::name(config.present_mode));
+        crate::present::request_resize_scaling(&surface);
         Some(Self {
             surface,
             egui: egui_wgpu::Renderer::new(device, config.format, egui_wgpu::RendererOptions::default()),
             config,
             configure: true,
+            resize_scaling: false,
             previews: Default::default(),
         })
     }
 
-    fn draw(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: [u32; 2], mut frame: EguiFrame) -> NativeUiResult {
+    fn draw(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: [u32; 2], resizing: bool, mut frame: EguiFrame) -> NativeUiResult {
         for (id, deltas) in &frame.textures_delta.set {
             for delta in deltas {
                 self.egui.update_texture(device, queue, *id, delta);
@@ -125,28 +130,49 @@ impl Surface {
         }
         let frees = std::mem::take(&mut frame.textures_delta.free);
         frame.textures_delta.clear();
-        let result = self.present(device, queue, size, frame);
+        let start = log::log_enabled!(log::Level::Trace).then(Instant::now);
+        let result = self.present(device, queue, size, resizing, frame);
+        if let Some(start) = start {
+            log::trace!("native UI {}x{}: {result:?} in {:?}", size[0], size[1], start.elapsed());
+        }
         for id in &frees {
             self.egui.free_texture(id);
         }
         result
     }
 
-    fn present(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, [width, height]: [u32; 2], frame: EguiFrame) -> NativeUiResult {
+    fn present(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        [width, height]: [u32; 2],
+        resizing: bool,
+        frame: EguiFrame,
+    ) -> NativeUiResult {
         if width == 0 || height == 0 {
             return NativeUiResult::Occluded;
         }
-        if self.configure || self.config.width != width || self.config.height != height {
+        // Retain the swapchain only when the driver enabled explicit STRETCH.
+        // Its last image then covers the changing client area while this worker
+        // prepares the next layout. Release restores exact pixel dimensions.
+        let retaining = resizing && self.resize_scaling && !self.configure;
+        if self.configure || !retaining && (self.config.width != width || self.config.height != height) {
             self.config.width = width;
             self.config.height = height;
+            let start = log::log_enabled!(log::Level::Trace).then(Instant::now);
             crate::present::configure(&self.surface, device, &self.config);
+            if let Some(start) = start {
+                log::trace!("native UI {width}x{height}: configured in {:?}", start.elapsed());
+            }
             self.configure = false;
+            self.resize_scaling = crate::present::resize_scaling_enabled(&self.surface);
+            log::trace!("native UI resize scaling enabled={}", self.resize_scaling);
         }
         use wgpu::CurrentSurfaceTexture::*;
         let surface_texture = match self.surface.get_current_texture() {
             Success(texture) => texture,
             Suboptimal(texture) => {
-                self.configure = true;
+                self.configure = !retaining;
                 texture
             }
             Outdated => {
@@ -166,8 +192,17 @@ impl Surface {
         crate::label_depth::skip(&mut ui.primitives);
         self.previews
             .render(device, queue, &mut encoder, &mut self.egui, &mut ui.primitives, ui.pixels_per_point);
+        let surface_size = [self.config.width, self.config.height];
+        if surface_size != [width, height] {
+            log::trace!(
+                "native UI {width}x{height}: retaining {}x{} during resize",
+                surface_size[0],
+                surface_size[1]
+            );
+            scale_ui(&mut ui.primitives, [width, height], surface_size);
+        }
         let screen = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [width, height],
+            size_in_pixels: surface_size,
             pixels_per_point: ui.pixels_per_point,
         };
         let mut commands = self.egui.update_buffers(device, queue, &mut encoder, &ui.primitives, &screen);
@@ -194,5 +229,94 @@ impl Surface {
         queue.submit(commands);
         queue.present(surface_texture);
         NativeUiResult::Presented
+    }
+}
+
+/// Fit the latest logical layout into the retained swapchain. The compositor
+/// stretches this image back to the live client rectangle until exact-size
+/// presentation resumes. Scale clips and callback rectangles with the meshes.
+fn scale_ui(primitives: &mut [egui::epaint::ClippedPrimitive], from: [u32; 2], to: [u32; 2]) {
+    debug_assert!(from.into_iter().chain(to).all(|side| side > 0));
+    let scale = egui::vec2(to[0] as f32 / from[0] as f32, to[1] as f32 / from[1] as f32);
+    for primitive in primitives {
+        primitive.clip_rect.min = (primitive.clip_rect.min.to_vec2() * scale).to_pos2();
+        primitive.clip_rect.max = (primitive.clip_rect.max.to_vec2() * scale).to_pos2();
+        match &mut primitive.primitive {
+            egui::epaint::Primitive::Mesh(mesh) => {
+                for vertex in &mut mesh.vertices {
+                    vertex.pos = (vertex.pos.to_vec2() * scale).to_pos2();
+                }
+            }
+            egui::epaint::Primitive::Callback(callback) => {
+                callback.rect.min = (callback.rect.min.to_vec2() * scale).to_pos2();
+                callback.rect.max = (callback.rect.max.to_vec2() * scale).to_pos2();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::epaint::{ClippedPrimitive, Mesh, Primitive, Vertex};
+
+    #[test]
+    fn retained_surface_scales_layout_clips_and_callbacks_without_changing_texture_coordinates() {
+        let rect = egui::Rect::from_min_max(egui::pos2(20.0, 10.0), egui::pos2(100.0, 50.0));
+        let vertex = Vertex {
+            pos: egui::pos2(40.0, 30.0),
+            uv: egui::pos2(0.25, 0.75),
+            color: Default::default(),
+        };
+        let callback = std::sync::Arc::new(());
+        for (from, to, expected_vertex, expected_rect) in [
+            (
+                [400, 300],
+                [200, 600],
+                egui::pos2(20.0, 60.0),
+                egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(50.0, 100.0)),
+            ),
+            (
+                [200, 600],
+                [400, 300],
+                egui::pos2(80.0, 15.0),
+                egui::Rect::from_min_max(egui::pos2(40.0, 5.0), egui::pos2(200.0, 25.0)),
+            ),
+            ([400, 300], [400, 300], vertex.pos, rect),
+        ] {
+            let mut primitives = vec![
+                ClippedPrimitive {
+                    clip_rect: rect,
+                    primitive: Primitive::Mesh(Mesh {
+                        vertices: vec![vertex],
+                        indices: vec![0],
+                        texture_id: egui::TextureId::Managed(17),
+                    }),
+                },
+                ClippedPrimitive {
+                    clip_rect: egui::Rect::EVERYTHING,
+                    primitive: Primitive::Callback(egui::PaintCallback {
+                        rect,
+                        callback: callback.clone(),
+                    }),
+                },
+            ];
+            scale_ui(&mut primitives, from, to);
+            assert_eq!(primitives[0].clip_rect, expected_rect);
+            let Primitive::Mesh(mesh) = &primitives[0].primitive else {
+                panic!("expected mesh")
+            };
+            assert_eq!(mesh.vertices[0].pos, expected_vertex);
+            assert_eq!(mesh.vertices[0].uv, vertex.uv);
+            assert_eq!(mesh.vertices[0].color, vertex.color);
+            assert_eq!(mesh.texture_id, egui::TextureId::Managed(17));
+            assert_eq!(mesh.indices, [0]);
+            assert_eq!(primitives[1].clip_rect, egui::Rect::EVERYTHING);
+            let Primitive::Callback(actual) = &primitives[1].primitive else {
+                panic!("expected callback")
+            };
+            assert_eq!(actual.rect, expected_rect);
+            assert!(actual.callback.downcast_ref::<()>().is_some());
+        }
     }
 }

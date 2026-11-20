@@ -138,12 +138,15 @@ pub(super) struct TitleInputs {
     currency: &'static str,
     unread: usize,
     paused: bool,
+    gaming: bool,
     video_memory_full: bool,
 }
 
 impl TitleInputs {
     fn annotate(self, mut title: String) -> String {
-        if self.paused {
+        if self.gaming {
+            title = aurora_i18n::tr_in!(self.language, "gaming-mode-window-title", title = title.as_str());
+        } else if self.paused {
             title = aurora_i18n::tr_in!(self.language, "busy-pause-window-title", title = title.as_str());
         }
         if self.video_memory_full {
@@ -352,6 +355,7 @@ impl App {
             currency: aurora_i18n::currency(),
             unread,
             paused: self.busy_pause.paused(),
+            gaming: self.gaming_mode.on,
             video_memory_full: self.last_render.video_memory_full,
         }
     }
@@ -390,12 +394,12 @@ impl App {
                         continue;
                     }
                     self.world.social.session_mut(session);
-                    self.world.social.focus_im = Some(session);
-                    self.chat_ui.conv_focus_request = true;
+                    self.world.focus_conversation(session, true);
                     crate::ui::notifications::open_conversations(&self.egui_ctx, &mut self.panels.chat);
                 }
                 Some(Open::NearbyChat) => {
                     self.world.social.focus_im = Some(uuid::Uuid::nil());
+                    self.world.social.focus_im_to_type = false;
                     crate::ui::notifications::open_conversations(&self.egui_ctx, &mut self.panels.chat);
                 }
                 Some(Open::Notifications) => self.notif_ui.open = true,
@@ -566,6 +570,7 @@ mod tests {
             currency: "L$",
             unread,
             paused,
+            gaming: false,
             video_memory_full,
         }
     }
@@ -606,6 +611,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn gaming_title_keeps_the_account_and_budgets_its_name() {
+        let base = crate::cli::title_with("en", Some("Test sync [AUTOMATION - DO NOT TOUCH]"), "debug", "1.2.3");
+        let mut inputs = title_inputs("en", 3, true, true);
+        inputs.gaming = true;
+        assert_eq!(
+            inputs.compose(&base, Some("Example Linden")),
+            "(3) Aurora Viewer 1.2.3 (Dev) - Test sync [AUTOMATION - DO NOT TOUCH] - Example Linden — Gaming mode — Video memory full"
+        );
+        let long = inputs.compose(&base, Some(&"名".repeat(MAX_TITLE)));
+        assert_eq!(long.chars().count(), MAX_TITLE);
+        assert!(long.contains("[AUTOMATION - DO NOT TOUCH] - 名"));
+        assert!(long.ends_with("… — Gaming mode — Video memory full"));
+        assert_eq!(
+            inputs.compose(&base, None),
+            "(3) Aurora Viewer 1.2.3 - Test sync [AUTOMATION - DO NOT TOUCH] (Dev) — Gaming mode — Video memory full"
+        );
     }
 
     #[test]

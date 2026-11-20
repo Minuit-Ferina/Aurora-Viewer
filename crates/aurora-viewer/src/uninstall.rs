@@ -71,6 +71,8 @@ pub enum Secret {
     Password(Login),
     SecondFactor(Login),
     CrashReports,
+    /// The SOCKS 5 proxy's user name and password.
+    Proxy,
 }
 
 impl Secret {
@@ -79,6 +81,10 @@ impl Secret {
         match self {
             Secret::CacheKey => (crate::cache_key::STORE_ENTRY.0, crate::cache_key::STORE_ENTRY.1.to_owned()),
             Secret::CrashReports => (crate::crash::github::STORE_ENTRY.0, crate::crash::github::STORE_ENTRY.1.to_owned()),
+            Secret::Proxy => {
+                let (service, account) = crate::credentials::proxy_store_entry();
+                (service, account.to_owned())
+            }
             Secret::Password(login) => {
                 let [password, _] = crate::credentials::store_entries(&login.grid, &login.user);
                 password
@@ -159,8 +165,17 @@ pub fn plan(system: &dyn System, logins: &[Login]) -> Plan {
         parts.push(Part::Secret(Secret::SecondFactor(login.clone())));
     }
     parts.push(Part::Secret(Secret::CrashReports));
+    parts.push(Part::Secret(Secret::Proxy));
     parts.push(Part::BlenderAddon);
     Plan { parts }
+}
+
+/// Removing a portable edition leaves shared integrations, credentials and
+/// user data in place. The report lists the installation to remove by hand.
+pub fn edition_plan(system: &dyn System) -> Plan {
+    Plan {
+        parts: system.notification_id().map(Part::NotificationId).into_iter().collect(),
+    }
 }
 
 /// Carries the plan out, every part even after a failure.
@@ -361,6 +376,7 @@ pub fn part_label(part: &Part) -> String {
         Part::NotificationId(_) => tr!("uninstall-notification-id").to_owned(),
         Part::Secret(Secret::CacheKey) => tr!("uninstall-cache-key").to_owned(),
         Part::Secret(Secret::CrashReports) => tr!("uninstall-crash-reports").to_owned(),
+        Part::Secret(Secret::Proxy) => tr!("uninstall-proxy").to_owned(),
         Part::Secret(Secret::Password(login)) => {
             tr!("uninstall-password", user = login.user.clone(), grid = grid_label(&login.grid)).to_owned()
         }
@@ -417,19 +433,6 @@ pub fn done_label(done: &Done) -> String {
     }
 }
 
-/// The saved logins whose credentials may be in the store: the account
-/// catalogue, and the one of the settings.
-pub fn saved_logins(current: Option<Login>) -> Vec<Login> {
-    crate::login_accounts::load()
-        .into_iter()
-        .map(|account| Login {
-            grid: account.uri,
-            user: account.username,
-        })
-        .chain(current)
-        .collect()
-}
-
 /// `--uninstall`: the removal without a window, what it did printed. The
 /// exit code is 1 when a part could not be removed.
 pub fn command_line() -> i32 {
@@ -439,16 +442,11 @@ pub fn command_line() -> i32 {
     // the saved language, unless the command line chose one
     aurora_i18n::select(&settings.language, crate::cli::get().language.as_deref());
     let mut system = system::for_run();
-    let current = Login {
-        grid: settings.login_uri(),
-        user: settings.username.clone(),
-    };
-    let logins = if system.dry_run() {
-        system::demo_logins()
+    let plan = if system.dry_run() {
+        plan(system.as_ref(), &system::demo_logins())
     } else {
-        saved_logins(Some(current))
+        edition_plan(system.as_ref())
     };
-    let plan = plan(system.as_ref(), &logins);
     let (steps, blender) = run(&plan, system.as_mut());
     let chosen_cache: Vec<PathBuf> = crate::cache_location::root_for(&settings.cache_location).into_iter().collect();
     let transcripts = Some(PathBuf::from(settings.chat_log_location.trim())).filter(|p| !p.as_os_str().is_empty());
@@ -485,7 +483,11 @@ pub fn printed(report: &Report) -> String {
     }
     lines.push(String::new());
     lines.push(tr!("uninstall-left").to_owned());
-    lines.push(tr!("uninstall-left-text").to_owned());
+    lines.push(if report.dry_run {
+        tr!("uninstall-left-text").to_owned()
+    } else {
+        tr!("uninstall-edition-left-text").to_owned()
+    });
     for place in &report.remaining {
         lines.push(format!("  {}: {}", kinds_label(&place.kinds), place.path.display()));
     }

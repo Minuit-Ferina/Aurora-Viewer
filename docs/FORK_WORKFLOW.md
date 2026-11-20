@@ -6,15 +6,11 @@
 PR numbers are local to a repository. Always push a task branch explicitly
 with `git push -u origin HEAD`; never push directly to `main` or `develop`.
 
-The fork's `main` follows Aurora and contains upstream viewer code plus
-fork-specific CI, tooling and workflow documentation, starting with fork PR #1. Those commits must not be
-included in a contribution to Aurora. Do not reset or force-push `main` to
-make the fork look identical to upstream.
-
-`develop` is our usable version: it receives `main` through merge PRs and
-our viewer changes through feature PRs. Both branches require PRs and checks.
-A worktree is a separate working directory for one branch; it is not another
-Git history or a second kind of main.
+The fork's `main` holds the earlier upstream snapshot and the initial
+fork CI and workflow setup. All new fork PRs target `develop`, including
+tooling, viewer changes and synchronization with stable Aurora releases.
+`develop` is also the base for the fork's releases. A worktree is a
+separate working directory for a branch.
 
 ## Protection of main and develop
 
@@ -34,8 +30,8 @@ and platform scope rules still apply. Full Windows tests run on code PRs;
 Linux and macOS tests and the Metal demo run when their scope applies.
 
 Squash is the normal method for fork-only changes and feature PRs into
-`develop`. **Synchronizations (upstream to main, and main to develop) use
-merge commits**, preserving upstream's commit ancestry. The fork therefore
+`develop`. **Synchronization PRs from an upstream release tag into
+`develop` use merge commits**, preserving upstream's commit ancestry. The fork therefore
 allows both squash and merge, with no linear-history requirement. GitHub
 cannot restrict the merge method by PR purpose: the person or agent merging
 must choose `-Method merge` for a synchronization. Do not squash or rebase a
@@ -48,17 +44,9 @@ keeps other tasks' existing builds, including a viewer being kept for use.
 
 | Task | Base | PR destination | Merge method |
 | --- | --- | --- | --- |
-| Fork tooling or CI | `origin/main` | fork `main` | squash |
-| Our viewer changes | `origin/develop` | fork `develop` | squash |
-| Update our version from main | `origin/develop`, then merge `origin/main` | fork `develop` | merge |
-| Synchronize Aurora into the fork | `origin/main`, then merge `upstream/main` | fork `main` | merge |
+| Fork tooling, CI or viewer changes | `origin/develop` | fork `develop` | squash |
+| Import a stable Aurora release | `origin/develop`, then merge the upstream release tag | fork `develop` | merge |
 | Contribute a feature or fix to Aurora | `upstream/main` | Aurora | Aurora's policy |
-
-For fork tooling or CI:
-
-```powershell
-./scripts/new-task.ps1 -Name fork-maintenance -Kind chore -BaseRemote origin -SkipCleanup
-```
 
 For a change specific to our viewer:
 
@@ -146,91 +134,120 @@ branch unchanged. Later upstream integration may need conflict resolution
 because Aurora can squash or edit the same feature; review the resulting
 code instead of automatically accepting either side.
 
-## Synchronize Aurora into main through a fork PR
+## Synchronize a stable Aurora release into develop
 
-First, from the main checkout, check whether upstream has commits missing
-from the fork:
-
-```powershell
-git fetch origin main
-git fetch upstream main
-git log --oneline origin/main..upstream/main
-```
-
-If the list is empty, no sync PR is needed. Otherwise create a fresh task
-(use a unique name for each sync), then work inside it:
+Select the stable tag published in [Aurora's releases](https://github.com/Aurora-Viewer/Aurora-Viewer/releases).
+Use that exact tag as the sync target so newer commits on Aurora's `main`
+stay outside the release baseline. Create a dedicated task from `origin/develop`:
 
 ```powershell
-./scripts/new-task.ps1 -Name sync-aurora-2026-11-15 -Kind chore -BaseRemote origin -SkipCleanup
-Set-Location ../work/sync-aurora-2026-11-15
-$upstreamRevision = (git rev-parse upstream/main).Trim()
-$upstreamRevision | Set-Content .scratch/upstream-revision.txt
-git merge --no-ff $upstreamRevision -m "Merge Aurora main into the fork"
+./scripts/new-task.ps1 -Name sync-aurora-v0-9-10 -Kind chore -BaseBranch develop -SkipCleanup
+Set-Location ../work/sync-aurora-v0-9-10
+git fetch --no-tags upstream 'refs/tags/v0.9.10:refs/tags/v0.9.10'
+$upstreamRevision = (git rev-parse 'refs/tags/v0.9.10^{commit}').Trim()
+git merge --no-ff $upstreamRevision -m "Merge the Aurora v0.9.10 release into develop"
 ```
 
-Record that upstream SHA in the PR body; it stays the sync target even if
-another task fetches a newer upstream revision while CI runs.
-
-If Git reports conflicts, stop and resolve them before continuing. Review
-upstream changes to CI and the fork's documentation carefully: retain full
-fork PR testing and this separation of branch bases. Do not blanket-select
-ours or theirs. Review `git diff origin/main...HEAD`, run the appropriate
-checks (including `scripts/check.ps1` for code changes), then open the PR:
+If the release commit is already an ancestor of `develop`, it is already
+integrated. Otherwise resolve conflicts, review the combined code against
+the exact upstream commit and the fork base, then run `scripts/check.ps1`
+and complete human validation when the viewer changes. Keep the tag and
+full upstream commit SHA in the PR body.
 
 ```powershell
 git push -u origin HEAD
-gh pr create --repo Minuit-Ferina/Aurora-Viewer --base main --head chore/sync-aurora-2026-11-15 --title "chore(sync): merge Aurora main" --body-file .scratch/pr-body.md
-gh pr checks 42 --repo Minuit-Ferina/Aurora-Viewer
-# After review and all required checks pass:
-./scripts/merge-pr.ps1 -Pr 42 -Repository Minuit-Ferina/Aurora-Viewer -Method merge
+gh pr create --repo Minuit-Ferina/Aurora-Viewer --base develop --head chore/sync-aurora-v0-9-10 --title "chore(sync): merge Aurora v0.9.10" --body-file .scratch/pr-body.md
+gh pr checks 42 --repo Minuit-Ferina/Aurora-Viewer --watch
 ```
 
-If fork `main` advances before the merge, fetch it, merge `origin/main`
-into this sync branch, push, review and wait for the checks again. Never use
-an admin bypass or weaken required checks to finish a sync.
+If `develop` advances while CI runs, merge the latest `origin/develop` into
+the sync branch and rerun checks. After review and green required checks,
+run `merge-pr.ps1 -Pr 42 -Repository Minuit-Ferina/Aurora-Viewer -Method merge`.
+Fetch `origin/develop` after GitHub confirms the merge and verify
+`git merge-base --is-ancestor $upstreamRevision origin/develop` exits 0.
+Return to the main checkout before running `end-task.ps1` with the fork
+repository and the exact PR number.
 
-After merging, return to the main checkout in a separate command, then:
+When preparing a fork release, tag a tested commit of `develop` in the fork.
+Build each intended edition from that commit. Keep the previous working
+build until the human has validated its replacement.
 
-```powershell
-git fetch origin main
-git merge --ff-only origin/main
-git merge-base --is-ancestor $upstreamRevision origin/main
-./scripts/end-task.ps1 -Name sync-aurora-2026-11-15 -Repository Minuit-Ferina/Aurora-Viewer -Pr 42
+
+## Fork patch releases
+
+A fork release names both the official Aurora base and our own patch version:
+`Aurora Viewer 0.9.11 - Patch 0.2.0`. Its tag is
+`v0.9.11+patch.0.2.0`; the compiled version keeps the same two numbers.
+Classic and FTRLV share this version and source commit. The edition stays in
+the archive name and its schema-2 install manifest.
+
+The fork patch follows SemVer independently of the upstream base. Before
+patch 1.0, a feature bumps its minor component and a fix bumps its patch
+component. Changing the Aurora base is recorded separately. The `+patch`
+part is SemVer build metadata, which has no version precedence of its own;
+these distributions are installed manually until an edition-aware fork
+update feed is implemented.
+
+Prepare both archives from one tested commit of `origin/develop`, using a
+dedicated worktree and a local annotated tag at that exact commit. For a
+distribution, call `scripts/build-edition.ps1 -Release` once per edition.
+Verify each archive's compiled version and edition, install manifest,
+required files and SHA-256 sidecar. Record the source commit and the reused
+CI/human validation separately from these archive checks. A packaging run
+does not by itself mean the functional test suites were rerun.
+
+Assemble the archives and English notes in a draft release before
+publication. Credit Aurora's contributors, identify the upstream release,
+explain the fork changes and include the existing Linden Lab disclaimer.
+Archive filenames identify the available platforms. The upstream Release
+workflow publishes Classic only; it does not assemble a complete two-edition fork
+release. Keep the release tag local while preparing the draft rather than
+starting that automatic publisher. Keep the previous working build until
+the human has validated its replacement.
+
+### Release notes for users
+
+Write release notes in English for the person installing the viewer. Keep the
+existing Linden Lab disclaimer, then use these three sections in this order:
+
+1. **What's new**: explain the changes since the previous fork release and
+   why they matter to users. For the first release, describe the fork's
+   additions to Aurora. Focus on features, fixes and their practical benefit.
+2. **Choose an edition**: keep a short Classic/FTRLV table explaining whether
+   RLVa is optional or always active. Include only brief installation advice
+   that affects users, such as manual updates or macOS opening requirements.
+3. **Based on Aurora**: name and link the official Aurora release, give the
+   fork patch version, credit Aurora's contributors and link the exact source.
+   Keep the existing license, documentation and privacy links.
+
+The attached files already identify editions and platforms. Keep SHA-256
+sidecars available with the downloads without a checksum explanation in the
+notes. Verification results, CI jobs, build steps, commit hashes and release
+preparation/status reports belong in PRs and task records. Do not add
+Downloads, Verification or Release status sections to user release notes.
+
+Use this outline for future fork releases, replacing the examples with the
+actual changes and versions:
+
+```markdown
+> This software is not provided or supported by Linden Lab, the makers of Second Life.
+
+## What's new
+
+- **Feature or fix:** explain its benefit to the person using the viewer.
+
+## Choose an edition
+
+| Edition | RLVa behavior |
+|---|---|
+| **Classic** | Turn RLVa on or off in Preferences. |
+| **FTRLV** (Full Time RLV) | RLVa is always active. |
+
+## Based on Aurora
+
+Based on **[Aurora Viewer X.Y.Z](official-release-url)**, with **patch A.B.C**.
+
+This independent distribution builds on the work of the Aurora contributors.
+
+[Source code](exact-source-url) · [GPLv3 license](license-url) · [Aurora documentation](documentation-url) · [Privacy policy](privacy-url)
 ```
-
-The ancestry check must exit with code 0 for the upstream revision recorded
-in the PR (restore `$upstreamRevision` from that SHA if using a new shell).
-A later upstream update naturally needs another sync. Do not
-use GitHub's one-click sync or `gh repo sync` to bypass the protected PR path.
-
-## Bring main into our version
-
-After an upstream sync, fetch both fork branches and check whether `main`
-is already an ancestor of `develop`:
-
-```powershell
-git fetch origin main develop
-git merge-base --is-ancestor origin/main origin/develop
-```
-
-Exit 0 means no integration is needed. Exit 1 means create a fresh task from
-`develop`, merge `origin/main`, resolve conflicts and test the combined code:
-
-```powershell
-./scripts/new-task.ps1 -Name update-develop-2026-11-15 -Kind chore -BaseRemote origin -BaseBranch develop -SkipCleanup
-Set-Location ../work/update-develop-2026-11-15
-git merge --no-ff origin/main -m "Merge main into develop"
-./scripts/check.ps1
-git push -u origin HEAD
-gh pr create --repo Minuit-Ferina/Aurora-Viewer --base develop --head chore/update-develop-2026-11-15 --title "chore(sync): update develop from main" --body-file .scratch/pr-body.md
-```
-
-Review this PR and wait for all its required checks. Merge with
-`merge-pr.ps1 -Repository Minuit-Ferina/Aurora-Viewer -Pr <number> -Method merge`.
-If `develop` moves first, merge the latest `origin/develop` into the task
-branch and rerun checks. Never merge `develop` back into `main`: our viewer
-changes belong in `develop` and in clean contribution branches to Aurora.
-
-To build our current version, use a separate worktree from `origin/develop`
-with `-BaseBranch develop -SkipCleanup` and the normal default dev profile.
-Keep a working build until its replacement has been checked by the human.

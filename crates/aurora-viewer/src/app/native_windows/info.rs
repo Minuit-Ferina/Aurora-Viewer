@@ -65,7 +65,7 @@ impl App {
             .gfx
             .as_ref()
             .filter(|_| panel == Panel::About)
-            .map(|gfx| self.about_sections(&gfx.renderer));
+            .map(|gfx| self.about_sections(&gfx.renderer, None));
         let render_rows = (panel == Panel::AvatarRenderSettings).then(|| self.avatar_render_settings_rows());
         let Some(gfx) = &mut self.gfx else { return };
         let mut render_change = None;

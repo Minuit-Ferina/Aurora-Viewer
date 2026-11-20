@@ -171,7 +171,10 @@ mod tests {
 
     #[test]
     fn rlva_console_queries_stay_local_and_closing_releases_only_the_console_issuer() {
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         let agent = Uuid::from_u128(1);
         let controller = Uuid::from_u128(2);
         world.agent_id = agent;
@@ -214,7 +217,9 @@ mod tests {
                     behaviour: "version".into(),
                     option: String::new(),
                     strict: false,
-                    param: Param::Reply(0)
+                    param: Param::Reply(0),
+                    environment_locked: false,
+                    received: Default::default(),
                 }
             ),
             Outcome::Rejected
@@ -230,7 +235,10 @@ mod tests {
     fn rlva_console_hides_texture_ids_the_rule_does_not_allow() {
         const TEXTURE: &str = "00000000-0000-0000-0000-0000000000bb";
         const FRIEND: &str = "00000000-0000-0000-0000-00000000000a";
-        let mut world = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         world.agent_id = Uuid::from_u128(1);
         world.rlva.configure(true);
         world.rlva_console_input(&format!("@camtextures:{TEXTURE}=n,sendim:{FRIEND}=add"));

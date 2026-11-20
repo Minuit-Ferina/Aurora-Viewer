@@ -167,7 +167,10 @@ mod tests {
     const G2: Uuid = Uuid::from_u128(11);
 
     fn world() -> World {
-        let mut w = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut w = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         w.rlva.configure(true);
         for (id, name) in [(G1, "Example"), (G2, "Example Extended")] {
             w.groups.groups.push(aurora_net::social::GroupMembership {

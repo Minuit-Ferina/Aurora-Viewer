@@ -1655,7 +1655,7 @@ fn shade_material(in: VsOut, m: Material) -> Shaded {
         col = max(col-m.emissive,vec3<f32>(0.0))*water_scene_light(in.world_pos)+m.emissive;
     }
     col = rez_apply(rec, in, m.n, col);
-    if (!hazed || camera_underwater() || (water_fx_on(256u) && in.world_pos.z<camera_water_level())) {
+    if (!hazed || water_fogs_source(in.world_pos)) {
         col = apply_fog(col, in.world_pos);
     }
     var s: Shaded;
@@ -1884,6 +1884,216 @@ fn fs_blend(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<
     return vec4<f32>(c.rgb * c.a, c.a);
 }
 
+// ST_BEGIN
+// ---- depth-based stochastic transparency: the passes over the blended
+// faces (oit_stochastic.rs, oit_stochastic.wgsl). Everything from ST_BEGIN
+// to ST_END is left out of the scene module and compiled by itself, the
+// first time the method is on (oit_stochastic.rs `st_source`): Enderton,
+// Sintorn, Shirley, Luebke, "Stochastic Transparency", I3D 2010, section
+// 3.4, the anti-aliased depth-based form.
+//
+// 1. fs_st_alpha: the exact total alpha of every pixel sample, order
+//    independent (the target holds the product of the transparencies,
+//    blended Zero / OneMinusSrcAlpha); alpha-only shading.
+// 2. fs_st_depth_*: each fragment covers a random subset of its samples,
+//    R = floor(alpha S + xi) of them (stratified: one S-choose-R subset from
+//    a table), depth only, into a copy of the opaque depth; alpha-only
+//    shading. `_mask` writes the mask through `@builtin(sample_mask)`;
+//    `_index` runs once per sample (`@builtin(sample_index)`) and discards
+//    the samples off the mask.
+// 3. The accumulation: fs_blend itself, blended additively into the samples
+//    the stochastic depth lets through (GreaterEqual, reverse-Z: the
+//    fragment is at or in front of the sample's winner).
+// The seed of a fragment's mask: its pixel, its face's tie-break and its
+// triangle (paper section 5: one seed per object would make the fragments
+// of a curved object occlude instead of blend), so the noise is a field
+// fixed in screen space while the object moves through it.
+struct StParams {
+    // the passes' samples (the bits of a mask)
+    samples: u32,
+    // bit 0: the seed changes every frame (the temporal blend)
+    flags: u32,
+    // added to every seed when temporal
+    frame_seed: u32,
+    _pad: u32,
+};
+// masks[R * ST_SEEDS + seed]: a random R-subset of the S sample bits; after
+// the (S + 1) * ST_SEEDS subsets, the 64 x 64 tile of ranks (blue noise, a
+// permutation of 0..4095) that dithers R
+@group(3) @binding(30) var<storage, read> st_masks: array<u32>;
+@group(3) @binding(31) var<uniform> st: StParams;
+const ST_SEEDS: u32 = 2048u;
+const ST_TILE: u32 = 64u;
+// Whether the alpha passes test a fragment's alpha for a NaN (oit_stochastic.rs
+// `with_guards` turns it off for a measurement, AURORA_ST_GUARDS=0)
+const ST_GUARDS: bool = true;
+
+fn st_hash(v: u32) -> u32 {
+    var x = v * 747796405u + 2891336453u;
+    x = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    return (x >> 22u) ^ x;
+}
+
+// The whole S-bit mask of a fragment of alpha `a`: R = floor(a S + xi) of the
+// S samples, with xi in 24-bit fixed point, so that its mean over a tile is
+// 1/2 to within one stratum (1/4096) and E[R] = a S.
+fn st_mask(px: vec2<u32>, tie: u32, prim: u32, a: f32) -> u32 {
+    // the primitive's own seed: it rotates the dither, so that layers stay
+    // decorrelated, and (with the frame's when temporal) picks the subset
+    let layer = st_hash(st_hash(tie * 0x9e3779b9u + 0x7f4a7c15u) ^ st_hash(prim + 0x632be5abu));
+    var seed = layer;
+    var frame = 0u;
+    if ((st.flags & 1u) != 0u) {
+        // the subset is hashed again every frame; the dither instead advances
+        // by the golden ratio conjugate (frame_seed is frame * 0x9e3779b9,
+        // that fraction of 2^32), so that 8 frames hold 8 well spread values
+        // of xi (Enderton et al., "Stochastic Transparency", I3D 2010,
+        // section 5, stratified seeds)
+        seed = st_hash(layer + st.frame_seed);
+        frame = st.frame_seed >> 8u;
+    }
+    // xi: the pixel's stratum in the blue-noise tile (section 3.1, R dithered
+    // across a tile), rotated by the primitive's own offset (Cranley-Patterson)
+    let rank = st_masks[(st.samples + 1u) * ST_SEEDS + (px.y & (ST_TILE - 1u)) * ST_TILE + (px.x & (ST_TILE - 1u))];
+    let xi24 = ((2u * rank + 1u) * 2048u + (layer >> 8u) + frame) & 0xffffffu;
+    let dither = f32(xi24) / 16777216.0;
+    // the subset is hashed from the layer's seed and the pixel, whatever the
+    // pixel values: two layers whose rotations met on one table index would
+    // otherwise share a subset over their whole overlap and hide the back one
+    let pick = f32(st_hash(seed ^ st_hash(px.x | (px.y << 16u)) ^ 0x5bd1e995u) >> 8u) / 16777216.0;
+    let s = st.samples;
+    let r = min(u32(floor(a * f32(s) + dither)), s);
+    return st_masks[r * ST_SEEDS + min(u32(pick * f32(ST_SEEDS)), ST_SEEDS - 1u)];
+}
+
+// water_clip's decision without the discard (the stochastic passes'
+// alpha-only shading, blend_alpha).
+fn water_clipped(world_pos: vec3<f32>) -> bool {
+    let h = frame.params.y;
+    if (WATER_CLIP == 0u || frame.camera_pos.z < h) {
+        return false;
+    }
+    return (WATER_CLIP == 1u) != (world_pos.z >= h);
+}
+
+// A fragment's alpha as the alpha-only passes take it: -1 (fs_blend's
+// discard) under the least alpha drawn, and for one that is not a finite
+// number, which would take the pixel's total alpha, then the scene under it;
+// never over 1 (a transparency under 0).
+fn st_alpha(a: f32) -> f32 {
+    if ((ST_GUARDS && not_finite(a)) || a < 0.004) {
+        return -1.0;
+    }
+    return min(a, 1.0);
+}
+
+// eval_material's `color.a` alone, for the alpha-only passes: the portal
+// clip, then one fetch of the base texture (none for an emissive mask, whose
+// alpha is the face colour's). The normal, specular and emissive maps, the
+// normal perturbation and the specular anti-aliasing are left out: alpha
+// does not read them.
+fn st_material_alpha(rec: DrawRecord, in: VsOut) -> f32 {
+    portal_clip(rec, in.world_pos);
+    if ((rec.flags.x & FLAG_EMISSIVE_MASK) != 0u) {
+        return rec.base_color.a;
+    }
+    // (PBR and legacy alike: the texture alpha times the face colour's)
+    return sample_tex(rec.tex.x, in.uv).a * rec.base_color.a;
+}
+
+// A blended legacy material that can glare (materialF.glsl: al = max(diffuse
+// alpha, glare) x vertex alpha, shade_material), as `legacy_glare` is not
+// zero only with gloss or environment intensity, and not on a fullbright
+// face or an emissive mask: a superset of the faces whose alpha the lighting
+// raises, so that the others keep the alpha-only shortcut. Mirrored by
+// `glare_possible` in oit_stochastic.rs.
+fn glare_possible(rec: DrawRecord) -> bool {
+    return (rec.flags.x & (FLAG_LEGACY_MAT | FLAG_ALPHA_BLEND | FLAG_FULLBRIGHT | FLAG_EMISSIVE_MASK)) == (FLAG_LEGACY_MAT | FLAG_ALPHA_BLEND)
+        && (rec.legacy.z > 0.0 || rec.legacy.w > 0.0);
+}
+
+// A blended fragment's alpha, as fs_blend computes it (the shading's own
+// result for a glaring legacy material: the shells of a body's wet layer are
+// empty texels that glare, and would otherwise drop out of the alpha and
+// depth passes while the accumulation adds their streaks); -1 where
+// fs_blend discards. The diffuse alpha alone for the rest, without the
+// shading (the alpha-only passes).
+fn blend_alpha(in: VsOut, front: bool) -> f32 {
+    if (!front && (records[in.record].flags.x & FLAG_DOUBLE_SIDED) == 0u) {
+        return -1.0;
+    }
+    let portal_aa = max(length(fwidth(in.uv)) * 2.0 * PORTAL_SURFACE_SCALE, 0.001);
+    if ((records[in.record].flags.x & FLAG_PORTAL_EFFECT) != 0u) {
+        return st_alpha(portal_surface(records[in.record], in.uv, portal_aa).alpha);
+    }
+    if (water_clipped(in.world_pos)) {
+        return -1.0;
+    }
+    let rec = records[in.record];
+    let base_a = st_material_alpha(rec, in);
+    if ((rec.flags.x & FLAG_ALPHA_MASK) != 0u && base_a < rec.params.w) {
+        return -1.0;
+    }
+    var alpha = base_a;
+    // (the glare only raises the alpha where the texel's is under the face
+    // colour's: its share is the face colour's alpha)
+    if (glare_possible(rec) && base_a < rec.base_color.a) {
+        alpha = shade_material(in, eval_material(in, front)).color.a;
+    }
+    return st_alpha(alpha * rez_alpha(rec, in));
+}
+
+@fragment
+fn fs_st_alpha(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let a = blend_alpha(in, front);
+    if (a < 0.0) {
+        discard;
+    }
+    // (the target keeps the product of (1 - alpha): Zero / OneMinusSrcAlpha)
+    return vec4<f32>(0.0, 0.0, 0.0, a);
+}
+
+// The fallback route: one invocation per sample, the samples off the mask
+// discarded (the sample mask route's module cannot always be made).
+@fragment
+fn fs_st_depth_index(in: VsOut, @builtin(front_facing) front: bool, @builtin(sample_index) s: u32, /*ST_PRIM_PARAM*/) {
+    let a = blend_alpha(in, front);
+    if (a < 0.0) {
+        discard;
+    }
+    let prim = /*ST_PRIM*/0u;
+    let m = st_mask(vec2<u32>(in.clip.xy), records[in.record].identity.x & 0xffffffu, prim, a);
+    if ((m & (1u << s)) == 0u) {
+        discard;
+    }
+}
+
+struct StMaskOut {
+    @builtin(sample_mask) mask: u32,
+};
+
+// The default route: the mask written once per fragment (the hardware ands it with
+// the fragment's coverage).
+@fragment
+fn fs_st_depth_mask(in: VsOut, @builtin(front_facing) front: bool, /*ST_PRIM_PARAM*/) -> StMaskOut {
+    let a = blend_alpha(in, front);
+    if (a < 0.0) {
+        discard;
+    }
+    let prim = /*ST_PRIM*/0u;
+    return StMaskOut(st_mask(vec2<u32>(in.clip.xy), records[in.record].identity.x & 0xffffffu, prim, a));
+}
+
+// The glow of a
+// blended face accumulated like its colour, into the samples where it is
+// at or in front of the stochastic depth (red of an R16Float target): on
+// average its glow times the transparency of the layers in front of it,
+// what fs_glow drawn after each face in order leaves in the scene alpha.
+@fragment
+fn fs_st_glow(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    return vec4<f32>(glow_amount(in, front), 0.0, 0.0, 0.0);
+}
+// ST_END
 // ------------------------------------------------------ exact blend order
 //
 // `RiggedBlendDepth::Exact` (blend_exact.rs): the blended faces composed in
@@ -2897,7 +3107,7 @@ fn fs_land_overlay(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(sample.rgb, 0.9);
 }
 
-// Selection is a separate coverage mask, never an interior grid. Keep
+// Selection coverage is a separate mask (the halo and the pulse). Keep
 // masked texture holes but retain invisible faces for editing their TE.
 @fragment
 fn fs_selection_mask(in: VsOut) -> @location(0) vec4<f32> {
@@ -2908,6 +3118,105 @@ fn fs_selection_mask(in: VsOut) -> @location(0) vec4<f32> {
         if (rec.base_color.a >= 0.004 && alpha < rec.params.w) { discard; }
     }
     return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+}
+
+// ------------------------------------------------- face-select pattern
+// Port of LLPipeline::renderSelectedFaces / LLFace::renderSelected
+// (indra/newview/pipeline.cpp, llface.cpp, originally LGPL 2.1) with the
+// highlight shader (app_settings/shaders/class1/interface/highlightF.glsl):
+// a face picked in Select face mode is drawn again with the face-select
+// texture IMG_FACE_SELECT times (1, 1, 1, 0.5), alpha blended, at the
+// face's own texture coordinates. `in.uv` is what the diffuse map reads
+// (PBR: the base color map): repeats, offset and rotation of the texture
+// entry or the base color's KHR transform, planar mapping and texture
+// animation included, so the pattern is an alignment aid that moves with
+// the Texture tab's values. The whole face is drawn, holes of an alpha
+// mask and invisible faces included, as LL draws the face's triangles.
+//
+// Where it is blended: the world's pattern goes into the HDR scene with the
+// debug overlays (`fs_selection_pattern_hdr`), before exposure, tone mapping
+// and gamma, as LL's renderHighlights runs in renderGeomPostDeferred before
+// renderFinalize; the HUDs' over the finished HUD image (`fs_selection_pattern`),
+// as LL's HUDs are drawn after renderFinalize.
+//
+// Two visible differences, kept on purpose (better for the user):
+// - rigged faces get the pattern too; LL draws nothing on them (the rigged
+//   branch of LLFace::renderSelected is `#if 0`);
+// - it follows texture animation on every face; LL's stays still on faces
+//   large enough to animate through the texture matrix (MIN_TEX_ANIM_SIZE in
+//   LLFace::getGeometryVolume), since renderSelected sets no texture matrix.
+//
+// The asset is fetched from the grid; frame.features[FEATURE_FACE_SELECT_SLOT] is its slot once
+// loaded, 0 while it loads and offline. Meanwhile `face_select_standin`
+// draws the pattern LL describes for it ("white squares with the rounded
+// cross at the center", llface.cpp): per texture repeat, a white square
+// frame along the tile's edges and a cross with rounded ends at its
+// center, transparent elsewhere. It is drawn here, the asset is not
+// bundled.
+
+// Distance (tile units) from a capsule from -a to a of radius r.
+fn capsule_distance(p: vec2<f32>, a: vec2<f32>, r: f32) -> f32 {
+    let h = clamp(dot(p + a, 2.0 * a) / dot(2.0 * a, 2.0 * a), 0.0, 1.0);
+    return length(p + a - 2.0 * a * h) - r;
+}
+
+// Coverage of the stand-in pattern at `uv`, one tile per texture repeat;
+// `px` is the size of a pixel in tiles, for anti-aliasing and for fading
+// to the pattern's mean coverage where the tiles shrink to a few pixels
+// (what the texture's mip maps do).
+fn face_select_standin(uv: vec2<f32>, px: f32) -> f32 {
+    let p = fract(uv) - vec2<f32>(0.5);
+    // the frame: a band of 0.035 tile along each edge (two at a seam)
+    let edge = 0.5 - max(abs(p.x), abs(p.y));
+    let frame_d = edge - 0.035;
+    // the cross: two capsules 0.36 tile long, 0.06 thick
+    let cross_d = min(capsule_distance(p, vec2<f32>(0.15, 0.0), 0.03), capsule_distance(p, vec2<f32>(0.0, 0.15), 0.03));
+    let d = min(frame_d, cross_d);
+    let w = max(px, 1e-5);
+    let shape = clamp(0.5 - d / w, 0.0, 1.0);
+    // (frame 4 x 0.035 x 0.93 + cross ~ 2 x 0.36 x 0.06: about 0.17)
+    return mix(shape, 0.17, smoothstep(0.15, 0.5, px));
+}
+
+// The pattern's color and alpha: the loaded texture's sample, or the
+// stand-in's coverage while no texture is loaded.
+fn face_select_color(loaded: bool, texel: vec4<f32>, standin: f32) -> vec4<f32> {
+    // highlight_selected_color (pipeline.cpp renderHighlights) times the
+    // highlight program's diffuse color: white, half alpha
+    let c = select(vec4<f32>(1.0, 1.0, 1.0, standin), texel, loaded);
+    return vec4<f32>(c.rgb, c.a * 0.5);
+}
+
+// The pattern in linear color, straight alpha.
+fn selection_pattern(in: VsOut, front: bool) -> vec4<f32> {
+    // (sampled and differentiated before any discard)
+    let slot = frame.features[FEATURE_FACE_SELECT_SLOT];
+    let texel = sample_tex(slot, in.uv);
+    let px = max(length(dpdx(in.uv)), length(dpdy(in.uv)));
+    let standin = face_select_standin(in.uv, px);
+    let rec = records[in.record];
+    portal_clip(rec, in.world_pos);
+    // LL draws it with back faces culled (renderGeomPostDeferred's
+    // LLGLEnable cull); a double-sided face shows it on both sides
+    if (!front && (rec.flags.x & FLAG_DOUBLE_SIDED) == 0u) { discard; }
+    let c = face_select_color(slot != 0u, texel, standin);
+    if (c.a <= 0.002) { discard; }
+    return c;
+}
+
+// The world's faces: blended into the HDR scene, before the post pass.
+@fragment
+fn fs_selection_pattern_hdr(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    return selection_pattern(in, front);
+}
+
+// The HUDs' faces: blended over the finished HUD image.
+@fragment
+fn fs_selection_pattern(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let c = selection_pattern(in, front);
+    var rgb = c.rgb;
+    if (!HUD_SRGB_TARGET) { rgb = ll_linear_to_srgb(rgb); }
+    return vec4<f32>(rgb, c.a);
 }
 
 // The poser's hovered part on the subject's skinned faces (Aurora's own):
@@ -3211,9 +3520,22 @@ fn vs_shadow(in: VsIn) -> ShadowOut {
 // - rigged and avatars: dithered under 0.598, as avatarAlphaShadowF.glsl
 //   (LLDrawPoolAvatar::renderShadow).
 @fragment
-fn fs_shadow(in: ShadowOut) {
+fn fs_shadow(in: ShadowOut, @builtin(front_facing) front: bool) {
     let rec = records[in.record];
     portal_clip(rec, in.world_pos);
+    // the rain's shelter map, seen from straight above (+Y up on the map,
+    // as on the ground: a face turned up keeps its winding, `front`): it
+    // holds what is seen from above, so a face turned down that the scene
+    // culls is left out. A ceiling whose roof is fully transparent (a
+    // skybox's painted sky, its top not drawn at all) lets the snow fall
+    // through it, as people asked; a visible roof, glass too, still keeps
+    // it off (its top faces up). Kept both ways: a two-sided face (seen
+    // from above whichever way it was modelled), and the faces with alpha,
+    // masked or blended (the usual mode of a texture with alpha): a tree's
+    // leaves are one-sided cards, half of them facing down, and without
+    // them the cover under a tree broke into bare texels
+    let both_ways = (rec.flags.x & (FLAG_DOUBLE_SIDED | FLAG_ALPHA_MASK | FLAG_ALPHA_BLEND)) != 0u;
+    if (shadow_params.kind.x == 1u && !both_ways && !front) { discard; }
     let tex_alpha = sample_tex_unbiased(rec.tex.x, in.uv).a;
     let alpha = tex_alpha * rec.base_color.a;
     // the rain's shelter map: any blended texel that is there at all keeps
@@ -3444,7 +3766,7 @@ fn impostor_color(in: SpriteOut) -> vec4<f32> {
         }
     }
     col*=select(vec3<f32>(1.0),water_scene_light(in.world_pos),in.fullbright==0u);
-    if(!is_classic_sky() || camera_underwater() || (water_fx_on(256u) && in.world_pos.z<camera_water_level())){col=apply_fog(col,in.world_pos);}
+    if(!is_classic_sky() || water_fogs_source(in.world_pos)){col=apply_fog(col,in.world_pos);}
     return vec4<f32>(col, 1.0);
 }
 

@@ -35,6 +35,7 @@ pub struct Cli {
     pub uninstall: bool,
     help: bool,
     version: bool,
+    edition: bool,
 }
 
 /// The grid named by `--grid` or `--loginuri`.
@@ -86,6 +87,10 @@ pub fn get() -> &'static Cli {
             println!("{}", aurora_i18n::tr!("cli-help", languages = languages));
             std::process::exit(0);
         }
+        if cli.edition {
+            println!("{}", aurora_version::edition::CURRENT.id());
+            std::process::exit(0);
+        }
         if cli.version {
             println!("{}", aurora_i18n::tr!("common-aurora-viewer", value0 = aurora_version::version()));
             std::process::exit(0);
@@ -100,6 +105,8 @@ fn parse(args: impl Iterator<Item = String>) -> Cli {
     while let Some(a) = args.next() {
         if a == "-h" || a == "--help" {
             cli.help = true;
+        } else if a == "--edition" {
+            cli.edition = true;
         } else if a == "-V" || a == "--version" {
             cli.version = true;
         } else if a == "--uninstall" {
@@ -209,23 +216,20 @@ fn parse_fps_limit(value: &str) -> Option<u32> {
 /// The window title, ending with the build profile ("(Dev)", "(Release)",
 /// "(Debug)"): test windows of different builds can be told apart.
 pub fn window_title() -> String {
-    let title = get().title.as_deref();
-    title_with(
-        aurora_i18n::language(),
-        title,
-        env!("AURORA_BUILD_PROFILE"),
-        aurora_version::version(),
-    )
-    .render(None)
+    get();
+    window_title_parts(aurora_i18n::language()).render(None)
 }
 
 pub(crate) fn window_title_parts(language: &str) -> TitleParts<'_> {
-    title_with(
-        language,
-        get().title.as_deref(),
-        env!("AURORA_BUILD_PROFILE"),
-        aurora_version::version(),
-    )
+    TitleParts {
+        edition: aurora_version::edition::CURRENT,
+        ..title_with(
+            language,
+            get().title.as_deref(),
+            env!("AURORA_BUILD_PROFILE"),
+            aurora_version::version(),
+        )
+    }
 }
 
 pub(crate) struct TitleParts<'a> {
@@ -233,6 +237,7 @@ pub(crate) struct TitleParts<'a> {
     version: &'a str,
     custom: Option<&'a str>,
     profile: Option<&'static str>,
+    edition: aurora_version::edition::Edition,
 }
 
 impl TitleParts<'_> {
@@ -251,6 +256,9 @@ impl TitleParts<'_> {
             Some(t) => aurora_i18n::tr_in!(language, "cli-aurora-viewer-2", version = version, t = t),
             None => aurora_i18n::tr_in!(language, "cli-aurora-viewer", version = version),
         };
+        if self.edition.always_on() {
+            base.push_str(" [FTRLV]");
+        }
         match (account, self.profile) {
             (Some(account), _) => {
                 base.push_str(aurora_i18n::tr_in!(language, "window-title-account-separator"));
@@ -271,7 +279,11 @@ impl TitleParts<'_> {
 /// Viewer's `com.secondlife.indra.viewer` is shared by every viewer of its
 /// family, so Aurora does not take it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub const DESKTOP_ID: &str = "aurora-viewer";
+pub const DESKTOP_ID: &str = if aurora_version::edition::CURRENT.always_on() {
+    "aurora-viewer-ftrlv"
+} else {
+    "aurora-viewer"
+};
 
 /// Window attributes with the [`DESKTOP_ID`] on Linux; elsewhere unchanged.
 pub fn with_desktop_id(
@@ -280,7 +292,7 @@ pub fn with_desktop_id(
 ) -> winit::window::WindowAttributes {
     #[cfg(target_os = "linux")]
     {
-        use wgpu::rwh::{HasDisplayHandle, RawDisplayHandle};
+        use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
         match _event_loop.display_handle().map(|handle| handle.as_raw()) {
             Ok(RawDisplayHandle::Wayland(_)) => attrs.with_platform_attributes(Box::new(
                 winit::platform::wayland::WindowAttributesWayland::default().with_name(DESKTOP_ID, DESKTOP_ID),
@@ -301,6 +313,7 @@ pub(crate) fn title_with<'a>(language: &'a str, custom: Option<&'a str>, profile
         version,
         custom,
         profile: profile_label_in(language, profile_dir),
+        edition: aurora_version::edition::Edition::Classic,
     }
 }
 
@@ -367,25 +380,27 @@ mod tests {
     #[test]
     fn title_ends_with_the_build_profile() {
         let language = aurora_i18n::language();
+        let named = |version: &str, title: &str| aurora_i18n::tr!("cli-aurora-viewer-2", version = version, t = title);
+        let plain = |version: &str| aurora_i18n::tr!("cli-aurora-viewer", version = version);
         assert_eq!(
             title_with(language, Some("Test ombres"), "debug", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - Test ombres (Dev)").as_str()
+            format!("{} (Dev)", named("0.2.0", "Test ombres"))
         );
         assert_eq!(
             title_with(language, None, "release", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Release)").as_str()
+            format!("{} (Release)", plain("0.2.0"))
         );
         assert_eq!(
             title_with(language, None, "debugging", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 (Debug)").as_str()
+            format!("{} ({})", plain("0.2.0"), aurora_i18n::tr!("common-debug"))
         );
         assert_eq!(
             title_with(language, Some("X"), "unknown", "0.2.0").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0 - X").as_str()
+            named("0.2.0", "X")
         );
         assert_eq!(
             title_with(language, None, "debug", "0.2.0+7.gabcdef123").render(None),
-            aurora_i18n::tr!("cli-aurora-viewer", version = "0.2.0+7.gabcdef123 (Dev)").as_str()
+            format!("{} (Dev)", plain("0.2.0+7.gabcdef123"))
         );
     }
 

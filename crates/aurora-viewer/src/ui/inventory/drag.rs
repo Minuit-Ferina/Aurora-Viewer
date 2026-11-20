@@ -272,12 +272,17 @@ pub(crate) fn badge(ctx: &egui::Context, p: &Palette) {
     let Some(pointer) = ctx.input(|i| i.pointer.interact_pos().filter(|_| i.pointer.primary_down())) else {
         return;
     };
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("inventory_drag_count")));
-    let text = painter.layout_no_wrap(
+    paint_badge(
+        ctx,
+        p,
+        pointer,
         aurora_i18n::tr!("inventory-move-selection-count", count = cargo.0.len()),
-        tree::font(),
-        p.ink,
     );
+}
+
+pub(super) fn paint_badge(ctx: &egui::Context, p: &Palette, pointer: egui::Pos2, text: String) {
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("inventory_drag_count")));
+    let text = painter.layout_no_wrap(text, tree::font(), p.ink);
     let size = text.size() + Vec2::new(16.0, 10.0);
     let area = ctx.content_rect();
     let pos = (pointer + Vec2::new(16.0, 20.0)).min(area.max - size).max(area.min);

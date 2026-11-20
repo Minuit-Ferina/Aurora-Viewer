@@ -429,7 +429,10 @@ mod tests {
 
     #[test]
     fn rlva_native_chat_path_exempts_own_attachments_and_drops_hidden_messages_before_history() {
-        let mut world = crate::world::World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut world = crate::world::World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         for event in crate::demo::events() {
             world.apply(event);
         }

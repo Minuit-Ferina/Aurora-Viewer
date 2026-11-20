@@ -119,7 +119,10 @@ mod tests {
 
     #[test]
     fn rlva_wear_notifications_skip_initial_load_and_report_every_removal_before_additions() {
-        let mut w = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut w = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         w.rlva.configure(true);
         w.rlva.process(A, super::super::Command::parse("notify:123;worn=n").unwrap());
         notices(&mut w);
@@ -149,7 +152,10 @@ mod tests {
 
     #[test]
     fn rlva_wear_notifications_keep_previous_types_across_missing_data_and_reset_on_disable() {
-        let mut w = World::new(std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()));
+        let mut w = World::with_rlva_activation(
+            std::sync::Arc::new(crate::scene::avatar::AvatarLibrary::load()),
+            crate::world::rlva::Activation::Configurable,
+        );
         w.rlva.configure(true);
         w.rlva.process(A, super::super::Command::parse("notify:123=n").unwrap());
         notices(&mut w);
