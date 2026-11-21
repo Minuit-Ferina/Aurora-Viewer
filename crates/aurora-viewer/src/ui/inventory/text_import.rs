@@ -372,7 +372,7 @@ mod tests {
                 ..Default::default()
             };
             input.viewports.entry(child).or_default().parent = Some(root);
-            let _ = ctx.run_ui(input, |ui| {
+            let mut frame = ctx.run_ui(input, |ui| {
                 begin(ui.ctx(), window, size, 1.0, None);
                 egui::Area::new(Id::unique(("desktop text inventory", viewport)))
                     .fixed_pos(Pos2::ZERO)
@@ -383,6 +383,7 @@ mod tests {
                         }
                     });
             });
+            frame.textures_delta.clear();
             finish(&ctx, viewport);
         };
         for _ in 0..3 {
