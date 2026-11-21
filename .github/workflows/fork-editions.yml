@@ -1,21 +1,18 @@
 name: Fork editions
+# One-off distribution controller. The viewer checkout is the tested release
+# source; this branch's controller does not alter the source being packaged.
 on:
-  pull_request:
-    branches: [develop]
-    paths:
-      - 'crates/**'
-      - 'Cargo.*'
-      - 'scripts/**'
-      - 'packaging/**'
-      - '.github/workflows/fork-editions.yml'
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  SOURCE_COMMIT: 730bcb797641064b265a69e16163fde049b57ed3
+  AURORA_VERSION_TAG: v0.9.12+patch.0.4.1
 jobs:
   editions:
     if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
-    name: ${{ matrix.edition }} on ${{ matrix.os }}
-    timeout-minutes: 90
+    name: package ${{ matrix.edition }} on ${{ matrix.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -25,30 +22,103 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: 730bcb797641064b265a69e16163fde049b57ed3
           fetch-depth: 0
           persist-credentials: false
+      - name: Pin source and local release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          if git rev-parse --verify "refs/tags/$AURORA_VERSION_TAG" >/dev/null 2>&1; then
+            test "$(git rev-parse "$AURORA_VERSION_TAG^{commit}")" = "$SOURCE_COMMIT"
+          else
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" tag -a "$AURORA_VERSION_TAG" "$SOURCE_COMMIT" -m "Aurora Viewer 0.9.12 - Patch 0.4.1"
+          fi
       - name: System libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev
-      - name: Rust stable
-        run: |
-          rustup update stable --no-self-update
-          rustup component add clippy rustfmt
+      - name: Pinned Rust toolchain
+        run: rustup toolchain install --profile minimal --no-self-update
       - uses: ./.github/actions/rust-cache
         with:
           name: fork-edition-${{ matrix.edition }}
-      - name: Check compiled edition
-        if: github.event_name == 'pull_request'
-        shell: pwsh
-        run: ./scripts/check.ps1 -CI -Edition ${{ matrix.edition }}
-      - name: Build archive
-        if: github.event_name == 'workflow_dispatch'
+      - name: Build distribution archive (no test suite)
         shell: pwsh
         run: ./scripts/build-edition.ps1 -Edition ${{ matrix.edition }} -Out "${{ runner.temp }}/dist" -Release
-      - name: Upload archive and checksum
-        if: github.event_name == 'workflow_dispatch'
+      - name: Verify archive identity and integrity
+        shell: bash
+        env:
+          DIST: ${{ runner.temp }}/dist
+          EDITION: ${{ matrix.edition }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then interpreter=python; else interpreter=python3; fi
+          "$interpreter" - <<'PY'
+          import hashlib, json, os, pathlib, plistlib, subprocess, sys, tarfile, zipfile
+          root = pathlib.Path(os.environ['DIST'])
+          edition = os.environ['EDITION']
+          version = os.environ['AURORA_VERSION_TAG'][1:]
+          archives = list(root.glob('*.zip')) + list(root.glob('*.tar.gz'))
+          assert len(archives) == 1, archives
+          archive = archives[0]
+          def digest(stream):
+              with stream:
+                  return hashlib.file_digest(stream, 'sha256').hexdigest()
+          sha = digest(archive.open('rb'))
+          assert pathlib.Path(str(archive)+'.sha256').read_text().strip() == f'{sha}  {archive.name}'
+          stages = list(root.glob('.staging-*'))
+          assert len(stages) == 1
+          stage = stages[0]
+          if archive.suffix == '.zip':
+              with zipfile.ZipFile(archive) as packed:
+                  assert packed.testzip() is None
+                  names = packed.namelist()
+                  regular = [n for n in names if not n.endswith('/') and not n.startswith('__MACOSX/')]
+                  for name in regular:
+                      path = pathlib.PurePosixPath(name)
+                      assert not path.is_absolute() and '..' not in path.parts
+                      assert digest(packed.open(name)) == digest((stage/name).open('rb')), name
+          else:
+              with tarfile.open(archive, 'r:gz') as packed:
+                  names = packed.getnames()
+                  regular = [m.name for m in packed.getmembers() if m.isfile()]
+                  for name in regular:
+                      path = pathlib.PurePosixPath(name)
+                      assert not path.is_absolute() and '..' not in path.parts
+                      assert digest(packed.extractfile(name)) == digest((stage/name).open('rb')), name
+          manifests = list(stage.rglob('aurora-install.json'))
+          assert len(manifests) == 1
+          manifest = json.loads(manifests[0].read_text())
+          assert manifest == {'schema':2, 'version':version, 'edition':edition}, manifest
+          resources = manifests[0].parent
+          for item in ('LICENSE','NOTICE.md','README.md','assets/emoji/LICENSE-OFL.txt','assets/dictionaries/README.md'):
+              assert (resources/item).is_file(), item
+          if sys.platform == 'darwin':
+              apps = list(stage.glob('*.app'))
+              assert len(apps) == 1
+              app = apps[0]
+              exe = app/'Contents/MacOS/aurora-viewer'
+              subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+              with (app/'Contents/Info.plist').open('rb') as stream:
+                  info = plistlib.load(stream)
+              expected = 'org.aurora-viewer.AuroraViewer' + ('.FTRLV' if edition == 'ftrlv' else '')
+              assert info['CFBundleIdentifier'] == expected, info
+              assert info['CFBundleShortVersionString'] == '0.9.12', info
+          elif sys.platform == 'win32':
+              exe = resources/'aurora-viewer.exe'
+          else:
+              exe = resources/('aurora-viewer-ftrlv' if edition == 'ftrlv' else 'aurora-viewer')
+          def query(*args):
+              return subprocess.check_output([str(exe),*args],text=True).strip()
+          assert query('--edition') == edition
+          assert query('--language','en','--version') == 'Aurora Viewer '+version
+          report = dict(source_commit=os.environ['SOURCE_COMMIT'],version=version,edition=edition,platform=sys.platform,archive=archive.name,sha256=sha,size=archive.stat().st_size,files=len(regular),checks=['compiled version and edition','install manifest','required files and licenses','archive-to-staging hashes','SHA-256 sidecar'])
+          (root/'archive-verification.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
+          PY
+      - name: Upload verified archive, checksum and report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aurora-${{ matrix.edition }}-${{ matrix.os }}
@@ -56,4 +126,5 @@ jobs:
             ${{ runner.temp }}/dist/*.zip
             ${{ runner.temp }}/dist/*.tar.gz
             ${{ runner.temp }}/dist/*.sha256
+            ${{ runner.temp }}/dist/archive-verification.json
           if-no-files-found: error
