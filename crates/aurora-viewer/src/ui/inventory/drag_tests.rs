@@ -21,6 +21,7 @@ struct Fixture {
     two_windows: bool,
     scrolling: Option<bool>,
     desktop: Option<egui::Pos2>,
+    detached: bool,
 }
 
 impl Fixture {
@@ -95,65 +96,79 @@ impl Fixture {
             two_windows: false,
             scrolling: None,
             desktop: None,
+            detached: false,
         };
         f.settle();
         f
     }
+    fn surface(&self) -> (egui::ViewportId, WindowId) {
+        if self.detached {
+            (egui::ViewportId(egui::Id::unique("detached inventory drag")), WindowId::from_raw(2))
+        } else {
+            (egui::ViewportId::ROOT, WindowId::from_raw(1))
+        }
+    }
+
     fn frame(&mut self, mut events: Vec<egui::Event>, ctrl: bool) -> egui::CursorIcon {
         self.time += 0.05;
         let ctx = self.ctx.clone();
         let p = crate::theme::Theme::default().palette();
         events.insert(0, egui::Event::ModifiersChanged(modifiers(ctrl)));
-        let mut output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1200.0, 900.0))),
-                time: Some(self.time),
-                focused: true,
-                events,
-                ..Default::default()
-            },
-            |ui| {
-                let desktop = self.desktop.map(|pos| (DataTransferId::from_raw(1), physical(pos)));
-                text_import::begin(ui.ctx(), WindowId::from_raw(1), TEST_SURFACE, 1.0, desktop);
-                ui.horizontal_top(|ui| {
+        let (viewport, window) = self.surface();
+        let mut input = egui::RawInput {
+            viewport_id: viewport,
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1200.0, 900.0))),
+            time: Some(self.time),
+            focused: true,
+            events,
+            ..Default::default()
+        };
+        if self.detached {
+            input.viewports.entry(viewport).or_default().parent = Some(egui::ViewportId::ROOT);
+        }
+        let mut output = ctx.run_ui(input, |ui| {
+            let desktop = self.desktop.map(|pos| (DataTransferId::from_raw(1), physical(pos)));
+            text_import::begin(ui.ctx(), window, TEST_SURFACE, 1.0, desktop);
+            ui.horizontal_top(|ui| {
+                draw_tree(
+                    ui,
+                    &p,
+                    &mut self.inv,
+                    &mut self.state,
+                    &mut self.prefs,
+                    &self.facts,
+                    &mut self.actions,
+                    id(1),
+                    self.scrolling,
+                );
+                if self.two_windows {
                     draw_tree(
                         ui,
                         &p,
                         &mut self.inv,
-                        &mut self.state,
+                        &mut self.other,
                         &mut self.prefs,
                         &self.facts,
                         &mut self.actions,
-                        id(1),
+                        id(20),
                         self.scrolling,
                     );
-                    if self.two_windows {
-                        draw_tree(
-                            ui,
-                            &p,
-                            &mut self.inv,
-                            &mut self.other,
-                            &mut self.prefs,
-                            &self.facts,
-                            &mut self.actions,
-                            id(20),
-                            self.scrolling,
-                        );
-                    }
-                });
-                // Other UI is drawn after the list: resolve feedback last.
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
-                if let Some(cursor) = drag::cursor(ui.ctx()) {
-                    ui.ctx().set_cursor_icon(cursor);
                 }
-                drag::badge(ui.ctx(), &p);
-            },
-        );
+            });
+            // Other UI is drawn after the list: resolve feedback last.
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+            if let Some(cursor) = drag::cursor(ui.ctx()) {
+                ui.ctx().set_cursor_icon(cursor);
+            }
+            drag::badge(ui.ctx(), &p);
+        });
+        text_import::finish(&ctx, viewport);
         output.textures_delta.clear();
         output.platform_output.cursor_icon
     }
     fn desktop_target(&self, pos: egui::Pos2) -> text_import::Target {
-        text_import::hit(&self.ctx, WindowId::from_raw(1), TEST_SURFACE, 1.0, Some(physical(pos)), &self.inv)
+        let (viewport, window) = self.surface();
+        text_import::hit(&self.ctx, viewport, window, TEST_SURFACE, 1.0, Some(physical(pos)), &self.inv)
     }
 
     fn settle(&mut self) {

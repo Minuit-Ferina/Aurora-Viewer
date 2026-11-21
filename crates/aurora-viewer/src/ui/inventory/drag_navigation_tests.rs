@@ -180,9 +180,36 @@ fn inventory_drag_navigation_only_scrolls_the_entered_window_and_cancels_on_esca
 }
 
 #[test]
+fn detached_inventory_list_accepts_ordinary_wheel_input() {
+    let mut f = Fixture::new();
+    f.detached = true;
+    f.scrolling = Some(false);
+    long_list(&mut f, 1);
+    f.settle();
+    let rect = viewport(&f, f.state.ui_id).0;
+    let before = offset(&f, f.state.ui_id);
+    f.frame(
+        vec![
+            egui::Event::PointerMoved(rect.center()),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -200.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        false,
+    );
+    f.settle();
+    assert!(offset(&f, f.state.ui_id) > before + 1.0);
+}
+
+#[test]
 fn desktop_text_import_uses_item_parent_and_scrolls_without_an_egui_button_press() {
-    for filtered in [false, true] {
+    for (detached, filtered) in [(false, false), (false, true), (true, false), (true, true)] {
         let mut f = Fixture::new();
+        f.detached = detached;
         long_list(&mut f, 1);
         long_list(&mut f, 20);
         f.scrolling = Some(filtered);

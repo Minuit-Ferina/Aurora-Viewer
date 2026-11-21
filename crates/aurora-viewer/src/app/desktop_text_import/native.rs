@@ -6,6 +6,7 @@ use winit::{
     dpi::PhysicalPosition,
     error::TransferError,
     event_loop::{AsyncRequestSerial, DndAction},
+    window::Window,
 };
 
 const URI_BYTES: usize = 1024 * 1024;
@@ -66,18 +67,14 @@ impl Controller {
         Some((drag.id, drag.position?))
     }
 
-    pub(in crate::app) fn drag_frame_deadline(&self, window: WindowId) -> Option<Instant> {
-        self.native
-            .drag
-            .as_ref()
-            .filter(|drag| drag.window == window)
-            .map(|drag| drag.next_frame)
+    pub(in crate::app) fn drag_frame_deadline(&self) -> Option<Instant> {
+        self.native.drag.as_ref().map(|drag| drag.next_frame)
     }
 
     /// Windows and Explorer exchange hover messages synchronously. Leave the
     /// event loop available between frames, even at the unfocused frame cap.
-    pub(in crate::app) fn pace_drag(&mut self, window: WindowId, start: Instant, period: Option<Duration>) -> bool {
-        let Some(drag) = self.native.drag.as_mut().filter(|drag| drag.window == window) else {
+    pub(in crate::app) fn pace_drag(&mut self, start: Instant, period: Option<Duration>) -> bool {
+        let Some(drag) = self.native.drag.as_mut() else {
             return false;
         };
         let period = period.unwrap_or_default().max(Duration::from_millis(16));
@@ -87,15 +84,25 @@ impl Controller {
 }
 
 impl App {
-    fn desktop_text_native_target(&self, window: WindowId, position: Option<PhysicalPosition<f64>>) -> Target {
-        let Some(gfx) = self.gfx.as_ref().filter(|gfx| gfx.window.id() == window) else {
+    fn desktop_text_surface(&self, id: WindowId) -> Option<(&dyn Window, egui::ViewportId)> {
+        let gfx = self.gfx.as_ref()?;
+        if gfx.window.id() == id {
+            Some((gfx.window.as_ref(), egui::ViewportId::ROOT))
+        } else {
+            self.native_windows.desktop_inventory_surface(id)
+        }
+    }
+
+    fn desktop_text_native_target(&self, id: WindowId, position: Option<PhysicalPosition<f64>>) -> Target {
+        let Some((window, viewport)) = self.desktop_text_surface(id) else {
             return Target::Reject;
         };
         text_import::hit(
             &self.egui_ctx,
-            window,
-            gfx.window.surface_size(),
-            gfx.window.scale_factor(),
+            viewport,
+            id,
+            window.surface_size(),
+            window.scale_factor(),
             position,
             &self.world.inventory,
         )
@@ -121,9 +128,6 @@ impl App {
     }
 
     pub(in crate::app) fn desktop_text_native(&mut self, event_loop: &dyn ActiveEventLoop, window: WindowId, event: &WindowEvent) -> bool {
-        if self.gfx.as_ref().is_none_or(|gfx| gfx.window.id() != window) {
-            return false;
-        }
         if !self.desktop_text_drop_enabled() {
             self.desktop_text_import.native.drag = None;
             return false;
@@ -131,6 +135,7 @@ impl App {
         match *event {
             WindowEvent::DragEntered { id, position } => {
                 if self.desktop_text_import.native.transfer.is_some()
+                    || self.desktop_text_surface(window).is_none()
                     || !event_loop.data_transfer(id).is_ok_and(|data| data.has_type(&TypeHint::UriList))
                 {
                     return false;
@@ -215,7 +220,8 @@ impl App {
             }
             _ => return false,
         }
-        self.egui_ctx.request_repaint();
+        self.egui_ctx.request_repaint_of(egui::ViewportId::ROOT);
+        self.native_windows.repaint_inventory_surface(window);
         true
     }
 

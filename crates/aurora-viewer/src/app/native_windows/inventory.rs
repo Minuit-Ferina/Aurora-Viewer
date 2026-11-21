@@ -26,6 +26,9 @@ impl App {
         let ctx = self.egui_ctx.clone();
         let before = self.settings.inventory.clone();
         let modal = self.exit_prompt.open;
+        let accepts_text = self.desktop_text_drop_enabled();
+        let text_import = &self.desktop_text_import;
+        self.publish_desktop_text_status(&ctx);
         let Some(gfx) = &mut self.gfx else { return };
         let mut actions = Vec::new();
         let mut close_all = false;
@@ -39,7 +42,7 @@ impl App {
                 shadow: &mut self.egui_shadow,
             },
             Panel::Inventory(id),
-            |ui, close, _, _| {
+            |ui, close, window, _| {
                 if modal {
                     ui.disable();
                 }
@@ -53,6 +56,17 @@ impl App {
                         self.panels.inventory = false;
                     }
                     return true;
+                }
+                if accepts_text {
+                    ui::inventory::text_import::begin(
+                        ui.ctx(),
+                        window.id(),
+                        window.surface_size(),
+                        window.scale_factor(),
+                        text_import.drag_pointer(window.id()),
+                    );
+                } else {
+                    ui::inventory::text_import::forget(ui.ctx(), ui.ctx().viewport_id());
                 }
                 actions.extend(ui::inventory::show_placed(
                     &ctx,
@@ -71,6 +85,7 @@ impl App {
                     classic,
                     ui::widgets::PanelHost::Desktop { ui, key: id },
                 ));
+                ui::inventory::text_import::draw_hover(ui.ctx(), &self.palette, &self.world.inventory);
                 false
             },
         );
