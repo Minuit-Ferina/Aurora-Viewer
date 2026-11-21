@@ -332,6 +332,23 @@ impl NativeWindows {
         }
     }
 
+    pub(super) fn desktop_inventory_surface(&self, id: WindowId) -> Option<(&dyn Window, egui::ViewportId)> {
+        let host = self.hosts.iter().find(|host| {
+            host.window.id() == id && matches!(host.panel, Panel::Inventory(_)) && host.visible() && self.detached.contains_key(&host.panel)
+        })?;
+        Some((host.window.as_ref(), host.viewport()))
+    }
+
+    pub(super) fn repaint_inventory_surface(&mut self, id: WindowId) {
+        if let Some(host) = self
+            .hosts
+            .iter_mut()
+            .find(|host| host.window.id() == id && matches!(host.panel, Panel::Inventory(_)))
+        {
+            host.set_repaint(Duration::ZERO);
+        }
+    }
+
     pub(super) fn reconcile_inventory(&mut self, mut allowed: impl FnMut(Option<uuid::Uuid>) -> bool) {
         self.detached.retain(|panel, _| match *panel {
             Panel::Inventory(id) => allowed(id),
@@ -725,6 +742,9 @@ impl NativeWindows {
             }
             if host.stage != Stage::Retiring && !desired {
                 self.cross_window_drag.forget_window(host.window.id());
+                if matches!(host.panel, Panel::Inventory(_)) {
+                    crate::ui::inventory::text_import::forget(root_context, host.viewport());
+                }
                 host.stage = Stage::Retiring;
                 host.window.set_visible(false);
             }
@@ -828,6 +848,9 @@ impl NativeWindows {
                 chrome.finish(caption, palette, window, &title);
             },
         );
+        if matches!(panel, Panel::Inventory(_)) {
+            crate::ui::inventory::text_import::finish(context, host.viewport());
+        }
         self.root_input.child_pass_finished();
         host.return_when_unblocked |= deferred;
         if !matches!(panel, Panel::Demo(_)) {
@@ -840,6 +863,9 @@ impl NativeWindows {
         }
         if close || rehost {
             self.cross_window_drag.forget_window(host.window.id());
+            if matches!(host.panel, Panel::Inventory(_)) {
+                crate::ui::inventory::text_import::forget(context, host.viewport());
+            }
             remember_placement(&mut self.placement, context, host);
             painted.frame.textures_delta.clear();
             host.stage = Stage::Retiring;

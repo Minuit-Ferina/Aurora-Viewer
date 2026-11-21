@@ -13254,6 +13254,7 @@ impl App {
             }
             windows_ms += t.elapsed().as_secs_f32() * 1000.0;
         });
+        ui::inventory::text_import::finish(&ctx, egui::ViewportId::ROOT);
         self.native_windows.finish_root_pass(&ctx);
         // a capture leaves the user's layout as it is (as at exit)
         if self.capture.is_none() {
@@ -13822,8 +13823,7 @@ impl App {
         // frame limiter's wait (llperfstats.cpp subtracts RENDER_FPSLIMIT);
         // none while Windows holds the window
         let mut work = None;
-        let desktop_drag =
-            self.desktop_text_drop_enabled() && self.desktop_text_import.pace_drag(gfx.window.id(), self.frame_start, target);
+        let desktop_drag = self.desktop_text_drop_enabled() && self.desktop_text_import.pace_drag(self.frame_start, target);
         if !crate::window_hold::paces(target) && !desktop_drag {
             // frame pacing (aurora-render pacing.rs): when the GPU sets the
             // pace, the next frame reads its input once the GPU has finished
@@ -25210,7 +25210,7 @@ impl ApplicationHandler for App {
         } else if let Some(g) = &self.gfx {
             use winit::event_loop::ControlFlow;
             if self.desktop_text_drop_enabled()
-                && let Some(next) = self.desktop_text_import.drag_frame_deadline(g.window.id())
+                && let Some(next) = self.desktop_text_import.drag_frame_deadline()
                 && next > Instant::now()
             {
                 // Wake on native input as well as the next paint deadline.

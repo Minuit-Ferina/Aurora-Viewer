@@ -223,12 +223,15 @@ pub(super) fn combination(
         // the whole room is the tiles': the list's keyboard and focus too
         return in_rect(ui, top_rect, "aurora_inventory_gallery_room", |ui| {
             clipboard::list_focus(ui, st, top);
-            pane(ui, p, icons, inv, st, prefs, facts, images, actions, top, root, None, true)
+            let out = pane(ui, p, icons, inv, st, prefs, facts, images, actions, top, root, None, true);
+            drag::navigation::scroll(ui, &out, st.ui_id);
+            out
         });
     }
     if tiles > 0 {
         in_rect(ui, top_rect, "aurora_inventory_gallery_room", |ui| {
-            pane(ui, p, icons, inv, st, prefs, facts, images, actions, top, root, None, false)
+            let out = pane(ui, p, icons, inv, st, prefs, facts, images, actions, top, root, None, false);
+            drag::navigation::scroll(ui, &out, st.ui_id);
         });
     }
     let mut below = rect;

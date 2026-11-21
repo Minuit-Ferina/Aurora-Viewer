@@ -7473,8 +7473,10 @@ failure. Grid validation and any paid upload are performed by the human.
   2. Drop onto an item in a nested folder, including in search results.
      The highlight names the item's folder and the file creates a new entry
      there. Hold the drag near both list edges and check that the entered
-     inventory scrolls while the pointer stays still. Cross into a second
-     inventory window, check it scrolls instead, and cancel to stop scrolling.
+     inventory scrolls while the pointer stays still. Detach Inventory and
+     repeat both the drop and the edge scrolling. Cross between attached and
+     detached inventories, check that only the entered window scrolls, and
+     cancel to stop scrolling.
      Drop on the blank area of an aggregate list, choose a folder from its
      menu, then repeat and cancel. Try the world, object Contents, Trash and
      Library and check that no import starts.

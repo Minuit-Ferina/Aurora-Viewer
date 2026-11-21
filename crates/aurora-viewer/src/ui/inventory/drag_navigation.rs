@@ -74,8 +74,8 @@ struct Motion {
 /// header/footer/world, but never scroll a window covered by another window.
 pub(crate) fn scroll<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput<R>, editor: Uuid) {
     let ctx = ui.ctx();
-    let owner_id = egui::Id::unique("inventory_drag_scroll_owner");
-    let motion_id = out.id.with("inventory_drag_scroll_motion");
+    let owner_id = egui::Id::unique(("inventory_drag_scroll_owner", ctx.viewport_id()));
+    let motion_id = out.id.with(("inventory_drag_scroll_motion", ctx.viewport_id()));
     let rect = out.inner_rect.intersect(ui.clip_rect());
     if cfg!(test) || demo::enabled() {
         ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("inventory_drag_viewport", editor)), (rect, out.id)));
@@ -168,7 +168,11 @@ pub(crate) fn scroll<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput
         return;
     }
     crate::ui::widgets::scroll_offset::set(ctx, out.id, egui::vec2(offset.x, next));
-    ctx.request_repaint();
+    if native.is_some() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(16));
+    } else {
+        ctx.request_repaint();
+    }
 }
 
 fn edge(rect: egui::Rect, y: f32) -> f32 {
