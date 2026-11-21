@@ -65,7 +65,10 @@ impl App {
                 ui::chat::ConvAction::OpenPeople(tab) => {
                     self.show_people_tab(tab);
                 }
-                ui::chat::ConvAction::Profile(id) => self.profile_ui.open(&mut self.world, id),
+                // Conversation profiles use the same identity as their headers and participants.
+                ui::chat::ConvAction::Profile(id) => {
+                    self.profile_ui.open_in(&mut self.world, crate::world::names::NameScope::Roster, id);
+                }
                 ui::chat::ConvAction::Contacts(c) => contact_actions.push(c),
                 ui::chat::ConvAction::People(pa) => contacts_people.push(pa),
                 ui::chat::ConvAction::OpenIm(id) => self.world.start_text_conference(vec![id]),
@@ -87,6 +90,7 @@ impl App {
                 // (LLGiveInventory::doGiveInventoryItem)
                 ui::chat::ConvAction::GiveItems { to, items } => {
                     self.inventory_ui.dialog = Some(ui::inventory::EditDialog::Share(items, vec![to]));
+                    self.inventory_ui.share_in_session = Some(to);
                 }
                 // shown and in front even when already open
                 // (LLAvatarActions::share → showInstance), else the
