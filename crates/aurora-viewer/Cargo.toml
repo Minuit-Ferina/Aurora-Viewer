@@ -85,7 +85,7 @@ unicode-bidi = "0.3.18"
 unicode-bidi-mirroring = "0.4.0"
 uuid = { version = "1.27.0", features = ["v4"] }
 wgpu = "30.0.1"
-winit = { version = "=0.31.0-beta.3", git = "https://github.com/Minuit-Ferina/winit", rev = "1b82d3eb0eebe59bcb2ee16ce841ea1d2ec7efe5" }
+winit = { version = "=0.31.0-beta.4", git = "https://github.com/Minuit-Ferina/winit", rev = "4a86bef75c12523283ec06134b5de15a563a009b" }
 ron = "0.12.2"
 flate2 = "1.1.10"
 zip = { version = "9.0.1", default-features = false, features = ["deflate-flate2"] }
