@@ -87,9 +87,9 @@ type_complexity = "allow"
 # Native desktop-file drops need winit 0.31 transfer IDs and positions.
 # Pin the egui winit-0.31 bridge (emilk/egui#8767) and its matching
 # accessibility adapter together; all revisions are fixed in Cargo.lock.
-egui = { git = "https://github.com/mockydevs/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
-egui-winit = { git = "https://github.com/mockydevs/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
-egui-wgpu = { git = "https://github.com/mockydevs/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
+egui = { git = "https://github.com/Minuit-Ferina/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
+egui-winit = { git = "https://github.com/Minuit-Ferina/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
+egui-wgpu = { git = "https://github.com/Minuit-Ferina/egui", rev = "3c1a3fb05b4ad4615ac77482fe24300b771d5f9c" }
 accesskit = { git = "https://github.com/mockydevs/accesskit", rev = "a116d6c23b044566f2e1e4f6d640ac3c4005c57c" }
 # wgpu 30.0.1 retains Aurora's Intel empty-pool fix (gfx-rs/wgpu#10124).
 # The fork adds opt-in Vulkan resize scaling for Windows surfaces.

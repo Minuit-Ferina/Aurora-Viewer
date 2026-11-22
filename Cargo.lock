@@ -1779,7 +1779,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 [[package]]
 name = "ecolor"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "bytemuck",
  "emath",
@@ -1789,7 +1789,7 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "accesskit",
  "ahash",
@@ -1809,7 +1809,7 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1826,7 +1826,7 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "arboard",
  "block2",
@@ -1856,7 +1856,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 [[package]]
 name = "emath"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1969,7 +1969,7 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1995,7 +1995,7 @@ dependencies = [
 [[package]]
 name = "epaint_default_fonts"
 version = "0.37.0"
-source = "git+https://github.com/mockydevs/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
+source = "git+https://github.com/Minuit-Ferina/egui?rev=3c1a3fb05b4ad4615ac77482fe24300b771d5f9c#3c1a3fb05b4ad4615ac77482fe24300b771d5f9c"
 
 [[package]]
 name = "equivalent"
