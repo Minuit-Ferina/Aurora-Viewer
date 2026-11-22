@@ -1,0 +1,49 @@
+name: macOS world click recovery preview
+on:
+  push:
+    branches: [codex/macos-world-click-preview]
+permissions:
+  contents: read
+jobs:
+  package:
+    if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CARGO_PROFILE_DEV_STRIP: debuginfo
+      CARGO_PROFILE_DEV_INCREMENTAL: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and verify both editions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./scripts/common.ps1
+          New-Item -ItemType Directory -Path dist | Out-Null
+          foreach ($edition in 'classic', 'ftrlv') {
+              $build = @('build', '--locked', '-p', 'aurora-viewer')
+              if ($edition -eq 'ftrlv') { $build += @('--features', 'rlva-always-on') }
+              Invoke-Checked 'Build viewer' { cargo @build }
+              $label = if ($edition -eq 'classic') { 'Classic' } else { 'FTRLV' }
+              $bundle = Join-Path $env:RUNNER_TEMP "Aurora Viewer $label Test.app"
+              ./scripts/package-macos.ps1 -Exe target/debug/aurora-viewer -Out $bundle -Edition $edition
+              $executable = Join-Path $bundle 'Contents/MacOS/aurora-viewer'
+              if ((lipo -archs $executable) -ne 'arm64') { throw 'Expected an arm64 executable.' }
+              Invoke-Checked 'Ad hoc sign test bundle' { codesign --force --sign - $bundle }
+              Invoke-Checked 'Verify test bundle signature' { codesign --verify --strict $bundle }
+              $archive = "dist/Aurora-Viewer-$label-macos-arm64-click-recovery-test.zip"
+              Invoke-Checked 'Archive bundle' { ditto -c -k --keepParent $bundle $archive }
+              Invoke-Checked 'Test archive' { unzip -tq $archive }
+              $checksum = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$checksum  $(Split-Path $archive -Leaf)" | Set-Content -LiteralPath "$archive.sha256" -Encoding utf8NoBOM
+          }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-arm64-click-recovery-test
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
