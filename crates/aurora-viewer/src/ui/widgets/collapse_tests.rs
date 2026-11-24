@@ -212,9 +212,7 @@ fn moving_an_embedded_window_keeps_one_widget_id() {
                     |_| {},
                 );
             } else {
-                Floater::new("drag_fixture", "Drag window", default.min, default.size())
-                    .desktop_action(&mut false)
-                    .show(ui.ctx(), &p, &mut true, |_| {});
+                Floater::new("drag_fixture", "Drag window", default.min, default.size()).show(ui.ctx(), &p, &mut true, |_| {});
             }
         };
         for _ in 0..8 {
@@ -586,14 +584,30 @@ fn a_floater_paints_between_the_bars_only() {
 
 #[test]
 fn desktop_title_divider_follows_the_floater_layout_and_content_width() {
+    use std::{cell::RefCell, rc::Rc};
     let palette = crate::theme::Theme::default().palette();
-    for (flush, framed, has_divider) in [(true, false, false), (false, false, true), (true, true, true)] {
-        let mut frames = elide_tests::Frames::new();
-        let mut bounds = egui::Rect::NOTHING;
+    for (flush, framed, divider_expected) in [(true, false, false), (false, false, true), (true, true, true)] {
+        let ctx = egui::Context::default();
+        ctx.set_embed_viewports(false);
+        let captured = Rc::new(RefCell::new(Vec::new()));
+        let shapes = Rc::clone(&captured);
+        egui::Context::set_immediate_viewport_renderer(move |ctx, viewport| {
+            let mut input = egui::RawInput {
+                viewport_id: viewport.ids.this,
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 350.0))),
+                ..Default::default()
+            };
+            input.viewports.entry(viewport.ids.this).or_default().parent = Some(viewport.ids.parent);
+            let mut draw = viewport.viewport_ui_cb;
+            let mut output = ctx.run_ui(input, |ui| draw(ui));
+            *shapes.borrow_mut() = std::mem::take(&mut output.shapes);
+            output.textures_delta.clear();
+        });
+        let window = egui::Id::unique("desktop-test");
+        crate::outside::want(&ctx, window, true);
+        crate::outside::set_native(&ctx, window, true);
         let mut content = egui::Rect::NOTHING;
-        let shapes = frames.shapes(Vec::new(), |ui| {
-            ui.add_space(32.0);
-            bounds = ui.available_rect_before_wrap();
+        let mut root = ctx.run_ui(egui::RawInput::default(), |ui| {
             let mut floater = Floater::new("desktop-test", "Window", egui::Pos2::ZERO, egui::vec2(400.0, 350.0));
             if flush {
                 floater = floater.flush_body();
@@ -603,25 +617,21 @@ fn desktop_title_divider_follows_the_floater_layout_and_content_width() {
             if framed {
                 floater = floater.framed_header("app-window-filled");
             }
-            floater.show_desktop(ui, &palette, None, |ui| content = ui.available_rect_before_wrap());
+            floater.show(ui.ctx(), &palette, &mut true, |ui| content = ui.available_rect_before_wrap());
         });
-
-        assert!(
-            shapes
-                .iter()
-                .all(|shape| !matches!(shape, egui::Shape::Rect(rect) if rect.stroke.width > 0.0))
-        );
-        let dividers: Vec<_> = shapes
+        root.textures_delta.clear();
+        let captured = captured.borrow();
+        let lines: Vec<_> = captured
             .iter()
-            .filter_map(|shape| match shape {
-                egui::Shape::LineSegment { points, stroke } if *stroke == divider_stroke(&palette) => Some(points),
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::LineSegment { points, stroke } if *stroke == divider_stroke(&palette) => Some(*points),
                 _ => None,
             })
             .collect();
-        assert_eq!(dividers.len(), usize::from(has_divider));
-        if let Some(line) = dividers.first() {
-            assert_eq!(line[0], egui::pos2(content.left(), bounds.top() + 0.5));
-            assert_eq!(line[1], egui::pos2(content.right(), bounds.top() + 0.5));
+        assert_eq!(lines.len(), usize::from(divider_expected));
+        if let Some(line) = lines.first() {
+            assert_eq!((line[0].x, line[1].x), (content.left(), content.right()));
+            assert!(line[0].y <= content.top());
         }
     }
 }

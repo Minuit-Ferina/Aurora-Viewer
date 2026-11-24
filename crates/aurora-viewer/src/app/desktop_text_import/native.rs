@@ -84,12 +84,12 @@ impl Controller {
 }
 
 impl App {
-    fn desktop_text_surface(&self, id: WindowId) -> Option<(&dyn Window, egui::ViewportId)> {
+    fn desktop_text_surface(&self, id: WindowId) -> Option<(std::sync::Arc<dyn Window>, egui::ViewportId)> {
         let gfx = self.gfx.as_ref()?;
         if gfx.window.id() == id {
-            Some((gfx.window.as_ref(), egui::ViewportId::ROOT))
+            Some((gfx.window.clone(), egui::ViewportId::ROOT))
         } else {
-            self.native_windows.desktop_inventory_surface(id)
+            self.outside.surface(id)
         }
     }
 
@@ -221,7 +221,9 @@ impl App {
             _ => return false,
         }
         self.egui_ctx.request_repaint_of(egui::ViewportId::ROOT);
-        self.native_windows.repaint_inventory_surface(window);
+        if let Some((target, _)) = self.desktop_text_surface(window) {
+            target.request_redraw();
+        }
         true
     }
 

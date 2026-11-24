@@ -22,6 +22,10 @@
 //! waits instead, between two requests, and it spaces the frames out while
 //! the cursor moves ([`pause`]).
 //!
+//! A window outside the viewer's (outside.rs) is on the same thread and is
+//! held the same way: its procedure is hooked too ([`follow`]), and the
+//! repaint asked stays the main window's, whose frame draws them all.
+//!
 //! `AURORA_WINDOW_HOLD=0` turns it off, to compare.
 
 use std::time::Duration;
@@ -113,6 +117,18 @@ fn hwnd(window: &dyn Window) -> Option<isize> {
         RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
         _ => None,
     }
+}
+
+/// Called for every window outside the viewer's (outside.rs), on the thread
+/// that created it: Windows holding its frame is a hold too. The frames
+/// stay those of the main window, which draw the windows outside with it.
+pub fn follow(window: &dyn Window) {
+    #[cfg(windows)]
+    if std::env::var("AURORA_WINDOW_HOLD").as_deref() != Ok("0") {
+        imp::follow(window);
+    }
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 #[cfg(windows)]
@@ -226,6 +242,8 @@ mod imp {
                     continue;
                 }
                 let start = Instant::now();
+                // Windows dispatches the synchronous paint to the window whose
+                // border is held. Both it and the root paint the shared frame.
                 let hwnd = if native != 0 { native } else { TARGET.load(Ordering::Acquire) };
                 // SAFETY: `RedrawWindow` takes a window handle and flags; the
                 // handle of a destroyed window makes it fail, nothing more.
@@ -261,6 +279,19 @@ mod imp {
         };
         let _ = HELPER.set(helper.thread().clone());
         subclass(hwnd);
+    }
+
+    pub fn follow(window: &dyn winit::window::Window) {
+        let Ok(handle) = window.window_handle() else {
+            return;
+        };
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return;
+        };
+        // (the helper is made with the main window: without it, no hold)
+        if HELPER.get().is_some() {
+            subclass(handle.hwnd.get());
+        }
     }
 
     /// Our procedure in front of the window's. One previous procedure is kept

@@ -13,7 +13,7 @@ use uuid::Uuid;
 const GP_OBJECT_MANIPULATE: u64 = 1 << 38;
 
 pub(super) struct TaskNotecard {
-    pub(super) inventory: Inventory,
+    inventory: Inventory,
     pub(super) state: InventoryUi,
 }
 
@@ -57,22 +57,6 @@ impl TaskNotecard {
         Self { inventory, state }
     }
 
-    pub(super) fn refresh_permissions(&mut self, item: Uuid, metadata: Option<&InvItem>) {
-        let allowed = metadata.is_some_and(|it| it.owner_mask & (rules::COPY | rules::MODIFY) == rules::COPY | rules::MODIFY);
-        if let Some(model) = self.inventory.items.get_mut(&item) {
-            model.owner_mask = metadata.map_or(0, |it| it.owner_mask);
-            if let Some(metadata) = metadata {
-                model.desc.clone_from(&metadata.desc);
-            }
-        }
-        if self.state.preview_source.is_some() {
-            self.state.preview_can_edit = allowed;
-        }
-        if metadata.is_none() {
-            self.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();
-        }
-    }
-
     fn load(&mut self, item: Uuid, asset: Uuid, result: Result<Vec<u8>, String>) {
         if self.inventory.items.get(&item).is_some_and(|it| it.asset_id == asset) {
             self.state
@@ -82,7 +66,7 @@ impl TaskNotecard {
 }
 
 impl App {
-    pub(super) fn task_notecard_item(&self, object: Uuid, item: Uuid) -> Option<InvItem> {
+    fn task_notecard_item(&self, object: Uuid, item: Uuid) -> Option<InvItem> {
         let idx = self.world.objects.index_of_uuid(&object)?;
         let metadata = self
             .build
@@ -109,6 +93,7 @@ impl App {
 
     pub(super) fn open_task_notecard(&mut self, object: Uuid, item: Uuid) {
         if self.world.rlva.has("viewnote") {
+            self.rlva_view_blocked(7);
             return;
         }
         if self.task_notecards.get(&(object, item)).is_some_and(|d| d.state.preview.is_some()) {
@@ -126,21 +111,27 @@ impl App {
                 .index_of_uuid(&object)
                 .is_some_and(|i| self.world.rlva_locked_attachment(i))
         {
+            self.rlva_view_blocked(7);
             return;
         }
-        // a preview: the rule of the contents' Open entries, on the raw item
-        if metadata.asset_type != 7
-            && !self
+        // a preview: the rule of the contents' Open entries, on the raw item;
+        // one RLVa keeps closed (@viewtexture) says so
+        if metadata.asset_type != 7 {
+            let raw = self
                 .build
                 .contents
                 .objects
                 .get(&object)
                 .and_then(|inv| inv.items.iter().find(|it| it.item_id == item))
                 .and_then(aurora_net::build::TaskItem::to_inv_item)
-                .zip(self.world.objects.index_of_uuid(&object))
-                .is_some_and(|(raw, idx)| self.build.task_preview_allowed(&self.world, idx, &raw))
-        {
-            return;
+                .zip(self.world.objects.index_of_uuid(&object));
+            let Some((raw, idx)) = raw.filter(|(raw, idx)| self.build.task_preview_offered(&self.world, *idx, raw)) else {
+                return;
+            };
+            if !self.build.task_preview_allowed(&self.world, idx, &raw) {
+                self.rlva_view_blocked(raw.asset_type);
+                return;
+            }
         }
         let download = metadata.asset_type == 7 && metadata.owner_mask & rules::COPY != 0 && !metadata.asset_id.is_nil();
         self.task_notecards.insert((object, item), TaskNotecard::new(metadata));
@@ -219,9 +210,8 @@ impl App {
     }
 
     pub(super) fn show_task_notecards(&mut self, ctx: &egui::Context, p: &Palette) {
-        if self.world.rlva.has("viewnote") {
-            return;
-        }
+        // (`open_task_notecard` refuses @viewnote; what is open stays open,
+        // RlvUIEnabler::filterFloaterViewXXX in rlvui.cpp)
         if let Some((object, item)) = self.build.ui.open_notecard.take() {
             self.open_task_notecard(object, item);
         }
@@ -236,9 +226,24 @@ impl App {
             let Some(d) = self.task_notecards.get_mut(&(object, item)) else {
                 continue;
             };
-            d.refresh_permissions(item, metadata.as_ref());
+            let allowed = metadata
+                .as_ref()
+                .is_some_and(|it| it.owner_mask & (rules::COPY | rules::MODIFY) == rules::COPY | rules::MODIFY);
+            if let Some(model) = d.inventory.items.get_mut(&item) {
+                model.owner_mask = metadata.as_ref().map_or(0, |it| it.owner_mask);
+                if let Some(metadata) = &metadata {
+                    model.desc.clone_from(&metadata.desc);
+                }
+            }
+            if d.state.preview_source.is_some() {
+                d.state.preview_can_edit = allowed;
+            }
+            // RLVa's @viewtexture refuses the textures it embeds as well
             d.inventory.rlva_preview_mask = self.world.inventory.rlva_preview_mask;
-            for action in ui::inventory::show_document_placed(
+            if metadata.is_none() {
+                d.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();
+            }
+            for action in ui::inventory::show_document(
                 ctx,
                 p,
                 &self.skin.icons,
@@ -248,8 +253,6 @@ impl App {
                 &self.ui_images,
                 &mut self.settings.inventory,
                 &self.settings.script_editor,
-                0,
-                None,
             ) {
                 if let InvAction::SaveContent { text, close, .. } = action {
                     saves.push((object, item, text, close));
@@ -307,21 +310,6 @@ impl App {
         self.task_notecards.retain(|_, d| d.state.preview.is_some());
     }
 
-    pub(super) fn apply_task_note_description(&mut self, object: Uuid, item: Uuid, change: aurora_net::inventory::operations::Mutation) {
-        for operation in change.operations {
-            if let aurora_net::inventory::operations::Operation::Patch { id, folder: false, body } = operation
-                && id == item
-                && body.has("desc")
-                && self
-                    .task_notecard_item(object, item)
-                    .is_some_and(|it| it.owner_mask & rules::MODIFY != 0)
-                && let Some(idx) = self.world.objects.index_of_uuid(&object)
-            {
-                self.build.describe_item(&self.world, idx, item, body["desc"].as_str());
-            }
-        }
-    }
-
     pub(super) fn task_document_state(&mut self, editor: Uuid) -> Option<&mut InventoryUi> {
         self.task_notecards
             .values_mut()
@@ -329,7 +317,7 @@ impl App {
             .map(|d| &mut d.state)
     }
 
-    pub(super) fn save_task_notecard(&mut self, object: Uuid, item: Uuid, text: String, close: bool) {
+    fn save_task_notecard(&mut self, object: Uuid, item: Uuid, text: String, close: bool) {
         let Some(metadata) = self.task_notecard_item(object, item) else {
             if let Some(d) = self.task_notecards.get_mut(&(object, item)) {
                 d.state.preview_message = aurora_i18n::tr!("notecard-task-unavailable").into();

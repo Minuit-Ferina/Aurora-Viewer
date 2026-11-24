@@ -57,9 +57,11 @@ $originUrl = git -C $p.Main remote get-url origin 2>$null
 $cleanupRepo = if ($LASTEXITCODE -eq 0 -and $originUrl -match 'github\.com[:/](?<repo>[^/]+/[^/]+?)(\.git)?$') { $Matches.repo } else { $null }
 
 # Free the build folders of the other tasks that no longer need them. The
-# last build is when Cargo last wrote into a deps\ or incremental\ folder.
-# Before the whole target\ goes, an idle task first loses its incremental
-# cache: it only speeds up the next small rebuild of that same task.
+# last build is Get-LastBuildTime (common.ps1). Before the whole target\
+# goes, an idle task first loses its incremental cache: it only speeds up
+# the next small rebuild of that same task. The trim leaves the date of the
+# last build in a marker, so that the next run still counts from that build.
+# A target whose last build cannot be dated is kept: "unknown" is not idle.
 if (-not $SkipCleanup -and (Test-Path -LiteralPath $p.Work)) {
     foreach ($t in Get-ChildItem -LiteralPath $p.Work -Directory -Force) {
         $target = Join-Path $t.FullName 'target'
@@ -70,10 +72,12 @@ if (-not $SkipCleanup -and (Test-Path -LiteralPath $p.Work)) {
         if ($LASTEXITCODE -eq 0 -and $cleanupRepo -and (gh pr view $b.Trim() -R $cleanupRepo --json state --jq .state 2>$null) -eq 'MERGED') {
             $why = 'PR merged'
         } else {
-            $last = Get-ChildItem -LiteralPath $target -Directory -Force | ForEach-Object {
-                Get-Item -LiteralPath (Join-Path $_.FullName 'deps'), (Join-Path $_.FullName 'incremental') -Force -ErrorAction SilentlyContinue
-            } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            $idleHours = if ($last) { ((Get-Date) - $last.LastWriteTime).TotalHours } else { [double]::MaxValue }
+            $last = Get-LastBuildTime $target
+            if (-not $last) {
+                Write-Host "$($t.Name): target kept (date of its last build unknown)." -ForegroundColor DarkGray
+                continue
+            }
+            $idleHours = ((Get-Date) - $last).TotalHours
             if ($idleHours -ge $IdleDays * 24) {
                 $why = "no build for $([math]::Floor($idleHours / 24)) days"
             } elseif ($idleHours -ge $TrimHours) {
@@ -90,6 +94,7 @@ if (-not $SkipCleanup -and (Test-Path -LiteralPath $p.Work)) {
                 Write-Host "$($t.Name): target freed ($why)." -ForegroundColor DarkGray
             }
         } else {
+            Set-LastBuildMarker $target $last
             foreach ($d in $trim) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }
             if ($trim | Where-Object { Test-Path -LiteralPath $_ }) {
                 Write-Warning "$($t.Name): incremental cache not fully deleted (locked file?)."

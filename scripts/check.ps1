@@ -30,6 +30,7 @@ if ($PSVersionTable.PSEdition -ne 'Desktop' -and -not $IsWindows) { $clippyArgs 
 $steps = @(
     @{ Name = 'PowerShell scripts (5.1 parser)'; Run = { & "$PSScriptRoot\check-scripts.ps1" } },
     @{ Name = 'Shell hook of the agents'; Run = { & "$PSScriptRoot\test-agent-hook.ps1" } },
+    @{ Name = 'Last build of the tasks'; Run = { & "$PSScriptRoot\test-task-cleanup.ps1" } },
     @{ Name = 'Formatting (rustfmt)'; Run = { cargo fmt --all -- --check } },
     @{ Name = 'Clippy'; Heavy = $true; Run = { cargo clippy @taskProfileArgs --workspace --all-targets --locked @features -- @clippyArgs } },
     @{ Name = 'Tests'; Heavy = $true; Run = { cargo test @taskProfileArgs --workspace --locked @features } }

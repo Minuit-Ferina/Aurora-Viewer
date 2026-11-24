@@ -15,7 +15,7 @@ mod overlay;
 
 use super::map_tiles::{MAP_LEVELS, MapTiles, scale_to_level, tile_origin};
 use super::minimap::{MapCamera, TRACK_COLOR, View, draw_directions, draw_self, draw_tracking, text_shadow, to_global};
-use super::widgets::{self, Floater, PanelHost};
+use super::widgets::{self, Floater};
 use crate::settings::{MapSettings, WorldMapStyle};
 use crate::theme::Palette;
 use crate::world::World;
@@ -201,12 +201,13 @@ impl WorldMapUi {
         style: WorldMapStyle,
         pictures: &MapPictures,
         open: &mut bool,
-        mut host: PanelHost<'_, ()>,
     ) -> Vec<WorldMapAction> {
         let mut actions = Vec::new();
-        if !host.draws(()) {
-            return actions;
-        }
+        // RlvUIEnabler::onToggleShowWorldMap (rlvui.cpp) closes the floater
+        // and its generic floater filter (filterFloaterGeneric) refuses to
+        // show it while @showworldmap holds, whatever asked for it: no frame
+        // is drawn and no map item is asked for.
+        *open &= !world.rlva.has("showworldmap");
         if !*open {
             self.was_open = false;
             self.focus_search = false;
@@ -231,18 +232,19 @@ impl WorldMapUi {
             // the mockup's window: a map twice the side panel layout's
             let size = vec2(1040.0, 640.0);
             let default_pos = pos2((screen.width() - size.x).max(0.0) * 0.5, 60.0);
-            let floater = Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, size).help(aurora_i18n::tr!(
-                "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
-            ));
-            host.show((), floater, ctx, p, open, |ui| {
-                self.full_frame(ui, p, world, tiles, cam, opts, pictures, &mut actions);
-            });
+            Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, size)
+                .help(aurora_i18n::tr!(
+                    "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
+                ))
+                .show(ctx, p, open, |ui| {
+                    self.full_frame(ui, p, world, tiles, cam, opts, pictures, &mut actions);
+                });
             return actions;
         }
         let default_pos = pos2((screen.width() - 700.0).max(0.0) * 0.5, 60.0);
         let mut floater = Floater::new("worldmap", aurora_i18n::tr!("common-world-map"), default_pos, vec2(700.0, 600.0));
         floater.min_size = side_panel_min_size(ctx);
-        let floater = floater
+        floater
             .help(aurora_i18n::tr!(
                 "ui-worldmap-click-place-marker-double-click-teleport-wheel-zoom-drag"
             ))
@@ -252,35 +254,35 @@ impl WorldMapUi {
             // window grew by that excess at every frame up to the screen's
             // width, and snapped back after each drag of an edge (#2669).
             // The body is laid out in the window's rect instead.
-            .steady_size();
-        host.show((), floater, ctx, p, open, |ui| {
-            let avail = ui.available_size();
-            let gap = ui.spacing().item_spacing.x;
-            ui.horizontal_top(|ui| {
-                let map_size = vec2(
-                    (avail.x - SIDE_W - gap).max(SIDE_MAP_MIN.0).floor(),
-                    avail.y.max(SIDE_MAP_MIN.1).floor(),
-                );
-                self.map(ui, p, world, tiles, cam, opts, map_size, None);
-                ui.vertical(|ui| {
-                    ui.set_width(SIDE_W);
-                    ui.set_max_width(SIDE_W);
-                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
-                    let footer_height = side_footer_height(ui.ctx());
-                    let scroll_height = (avail.y - footer_height - ui.spacing().item_spacing.y).max(0.0);
-                    egui::ScrollArea::vertical()
-                        .id_salt("worldmap-side")
-                        .auto_shrink([false, false])
-                        .max_height(scroll_height)
-                        .show(ui, |ui| {
-                            self.side_panel(ui, p, world, cam, opts, &mut actions);
-                        });
-                    let footer = ui.vertical(|ui| self.position_panel(ui, p, world, cam, &mut actions));
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(side_footer_id(), footer.response.rect.height()));
+            .steady_size()
+            .show(ctx, p, open, |ui| {
+                let avail = ui.available_size();
+                let gap = ui.spacing().item_spacing.x;
+                ui.horizontal_top(|ui| {
+                    let map_size = vec2(
+                        (avail.x - SIDE_W - gap).max(SIDE_MAP_MIN.0).floor(),
+                        avail.y.max(SIDE_MAP_MIN.1).floor(),
+                    );
+                    self.map(ui, p, world, tiles, cam, opts, map_size, None);
+                    ui.vertical(|ui| {
+                        ui.set_width(SIDE_W);
+                        ui.set_max_width(SIDE_W);
+                        ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
+                        let footer_height = side_footer_height(ui.ctx());
+                        let scroll_height = (avail.y - footer_height - ui.spacing().item_spacing.y).max(0.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("worldmap-side")
+                            .auto_shrink([false, false])
+                            .max_height(scroll_height)
+                            .show(ui, |ui| {
+                                self.side_panel(ui, p, world, cam, opts, &mut actions);
+                            });
+                        let footer = ui.vertical(|ui| self.position_panel(ui, p, world, cam, &mut actions));
+                        ui.ctx()
+                            .data_mut(|d| d.insert_temp(side_footer_id(), footer.response.rect.height()));
+                    });
                 });
             });
-        });
         actions
     }
 
@@ -832,7 +834,7 @@ impl WorldMapUi {
             }
             // LLFloaterWorldMap's Go Home button: greyed under RLVa @tplm + @tploc
             let home = ui
-                .add_enabled_ui(world.rlva_can_teleport_home(), |ui| {
+                .add_enabled_ui(world.rlva_home_button_enabled(), |ui| {
                     widgets::flat_button(ui, p, aurora_i18n::tr!("common-home"))
                         .on_hover_text(aurora_i18n::tr!("common-go-home"))
                         .clicked()
@@ -1759,7 +1761,6 @@ mod size_tests {
                 style,
                 &pictures,
                 &mut open,
-                PanelHost::Embedded,
             );
         }
     }
@@ -2002,7 +2003,6 @@ mod focus_tests {
                         self.style,
                         &pictures,
                         &mut open,
-                        PanelHost::Embedded,
                     );
                 },
             );
@@ -2063,5 +2063,96 @@ mod focus_tests {
         bench.frame(false, vec![]);
         bench.frame(true, vec![]);
         assert!(bench.ctx.memory(|memory| memory.has_focus(overlay::search_id())));
+    }
+}
+
+#[cfg(test)]
+mod privacy_tests {
+    use super::*;
+    use crate::scene::avatar::AvatarLibrary;
+    use crate::ui::widgets::elide_tests::Frames;
+    use std::sync::Arc;
+
+    #[test]
+    fn the_world_map_is_neither_drawn_nor_asks_items_under_showworldmap() {
+        let mut world = World::new(Arc::new(AvatarLibrary::load()));
+        world.rlva.configure(true);
+        restrict(&mut world, "@showworldmap=n");
+        assert!(world.rlva.has("showworldmap"));
+        let (mut map, mut tiles, mut opts) = (WorldMapUi::default(), MapTiles::new(), MapSettings::default());
+        let cam = MapCamera {
+            pos: glam::Vec3::new(128.0, 128.0, 30.0),
+            dir: glam::Vec3::X,
+            hfov: 1.2,
+            far: 128.0,
+        };
+        let images = HashMap::new();
+        let pictures = MapPictures {
+            images: &images,
+            avatars: &images,
+        };
+        let theme = crate::theme::Theme::default();
+        let p = theme.palette();
+        let mut frames = Frames::new();
+        let mut open = true;
+        let texts = frames.run(vec![], |ui| {
+            map.show(
+                ui.ctx(),
+                &p,
+                &mut world,
+                &mut tiles,
+                &cam,
+                &mut opts,
+                WorldMapStyle::Legacy,
+                &pictures,
+                &mut open,
+            );
+        });
+        assert!(!open, "the window closes whoever opened it");
+        assert!(texts.is_empty(), "nothing of the map is drawn");
+        assert!(
+            !world
+                .map
+                .take_commands()
+                .iter()
+                .any(|c| matches!(c, aurora_net::NetCommand::MapItemRequest { .. })),
+            "no map item is asked for"
+        );
+        restrict(&mut world, "@showworldmap=y");
+        let mut open = true;
+        frames.run(vec![], |ui| {
+            map.show(
+                ui.ctx(),
+                &p,
+                &mut world,
+                &mut tiles,
+                &cam,
+                &mut opts,
+                WorldMapStyle::Legacy,
+                &pictures,
+                &mut open,
+            );
+        });
+        assert!(open, "the released map opens again");
+        assert!(
+            world
+                .map
+                .take_commands()
+                .iter()
+                .any(|c| matches!(c, aurora_net::NetCommand::MapItemRequest { .. })),
+            "the opened map asks its items"
+        );
+    }
+    fn restrict(world: &mut World, command: &str) {
+        assert!(world.rlva.receive(&aurora_net::ChatMessage {
+            from_name: "Privacy fixture".into(),
+            source_id: Uuid::from_u128(4),
+            owner_id: world.agent_id,
+            source_type: aurora_net::ChatSourceType::Object,
+            chat_type: aurora_net::ChatType::OwnerSay,
+            region: None,
+            position: glam::Vec3::ZERO,
+            message: command.into(),
+        }));
     }
 }

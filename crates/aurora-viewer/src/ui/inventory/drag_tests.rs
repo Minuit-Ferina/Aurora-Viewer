@@ -124,6 +124,7 @@ impl Fixture {
             ..Default::default()
         };
         if self.detached {
+            parent_frame(&ctx, viewport, self.time);
             input.viewports.entry(viewport).or_default().parent = Some(egui::ViewportId::ROOT);
         }
         let mut output = ctx.run_ui(input, |ui| {
@@ -262,6 +263,23 @@ fn draw_tree(
         });
     });
 }
+/// Register the live child on every root tick, as the floater host does.
+/// Otherwise egui discards its input and scroll state between test frames.
+fn parent_frame(ctx: &egui::Context, viewport: egui::ViewportId, time: f64) {
+    ctx.set_embed_viewports(false);
+    let mut root = ctx.run_ui(
+        egui::RawInput {
+            time: Some(time),
+            ..Default::default()
+        },
+        |ui| {
+            ui.ctx()
+                .show_viewport_deferred(viewport, egui::ViewportBuilder::default(), |_, _| {});
+        },
+    );
+    root.textures_delta.clear();
+}
+
 fn physical(pos: egui::Pos2) -> PhysicalPosition<f64> {
     PhysicalPosition::new(f64::from(pos.x), f64::from(pos.y))
 }
@@ -288,6 +306,8 @@ fn native_hover_highlights_a_folder_before_the_verified_release() {
     let point = egui::pos2(98.0, 98.0);
     let zone = egui::Rect::from_min_size(egui::pos2(54.0, 64.0), Vec2::new(170.0, 64.0));
     for released in [false, false, true] {
+        f.time += 0.05;
+        parent_frame(&f.ctx, viewport, f.time);
         let mut raw = egui::RawInput {
             viewport_id: viewport,
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(400.0, 300.0))),
@@ -556,6 +576,132 @@ fn inventory_drag_hover_opens_the_destination_and_escape_cancels_without_moving(
 }
 
 #[test]
+fn inventory_drag_starts_only_past_the_legacy_distance_threshold() {
+    // LLFolderView::isOverDragThreshold: strictly more than 3 points
+    let press = egui::pos2(100.0, 100.0);
+    assert!(!drag::over_threshold(press, press));
+    assert!(!drag::over_threshold(press, press + Vec2::new(3.0, 0.0)));
+    assert!(!drag::over_threshold(press, press + Vec2::new(2.0, 2.0)));
+    assert!(drag::over_threshold(press, press + Vec2::new(0.0, -3.5)));
+    assert!(drag::over_threshold(press, press + Vec2::new(3.0, 1.0)));
+}
+
+/// #4057: neither holding the button still nor slipping onto the next row by
+/// a point or two moves a folder; travelling past the threshold does.
+#[test]
+fn inventory_drag_ignores_a_long_press_and_a_slip_onto_the_next_row() {
+    let row = |f: &Fixture, n: u128| {
+        f.ctx
+            .data(|d| d.get_temp::<egui::Rect>(egui::Id::unique(("inventory_drag_row", f.state.ui_id, id(n)))))
+            .expect("visible row")
+    };
+    let mut f = Fixture::new();
+    let pos = f.row(10);
+    f.button(pos, true, false);
+    for _ in 0..30 {
+        f.frame(Vec::new(), false);
+    }
+    assert!(!egui::DragAndDrop::has_any_payload(&f.ctx), "a long press is not a drag");
+    f.button(pos, false, false);
+    assert!(f.actions.is_empty() && f.state.message.is_empty());
+
+    // Pressed at the bottom edge of the folder's row, released two points
+    // lower on the next row (the folder's first item).
+    let edge = egui::pos2(pos.x, row(&f, 10).bottom() - 0.5);
+    let slip = edge + Vec2::new(0.0, 2.0);
+    assert!(row(&f, 100).contains(slip), "the slip ends on the next row");
+    f.button(edge, true, false);
+    f.hover(slip);
+    assert!(
+        !egui::DragAndDrop::has_any_payload(&f.ctx),
+        "a slip under the threshold is not a drag"
+    );
+    f.button(slip, false, false);
+    assert!(f.actions.is_empty() && f.state.message.is_empty());
+
+    // Past the threshold the folder is carried; let go on its own row, it
+    // stays where it is, without a message.
+    f.button(edge, true, false);
+    f.hover(edge + Vec2::new(0.0, 3.5));
+    assert_eq!(egui::DragAndDrop::payload::<FolderDrag>(&f.ctx).expect("folder cargo").0, id(10));
+    let back = edge - Vec2::new(0.0, 2.0);
+    f.hover(back);
+    f.button(back, false, false);
+    assert!(f.actions.is_empty() && f.state.message.is_empty());
+}
+
+/// One drag per press: Escape cancels it for good, even while the press is
+/// still short enough for egui to call it a click.
+#[test]
+fn inventory_drag_cancelled_with_escape_does_not_start_again() {
+    let mut f = Fixture::new();
+    let pos = f.row(10);
+    f.button(pos, true, false);
+    f.hover(pos + Vec2::new(0.0, 4.0));
+    assert!(egui::DragAndDrop::has_any_payload(&f.ctx));
+    f.frame(
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        false,
+    );
+    assert!(!egui::DragAndDrop::has_any_payload(&f.ctx), "Escape cancels the drag");
+    // A different button can be pressed while the original left press is
+    // still held. Only a new left press may re-arm this drag.
+    f.frame(
+        vec![egui::Event::PointerButton {
+            pos: pos + Vec2::new(4.0, 0.0),
+            button: egui::PointerButton::Secondary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        false,
+    );
+    assert!(drag::dragged_this_press(&f.ctx));
+    f.frame(
+        vec![egui::Event::PointerButton {
+            pos: pos + Vec2::new(4.0, 0.0),
+            button: egui::PointerButton::Secondary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        false,
+    );
+    f.hover(pos + Vec2::new(0.0, 5.0));
+    assert!(!egui::DragAndDrop::has_any_payload(&f.ctx), "and it does not start again");
+    let to = f.row(20);
+    f.hover(to);
+    f.button(to, false, false);
+    assert!(f.actions.is_empty());
+    // the next press drags again
+    let pos = f.row(10);
+    f.button(pos, true, false);
+    f.hover(pos + Vec2::new(0.0, 4.0));
+    assert!(egui::DragAndDrop::has_any_payload(&f.ctx));
+}
+
+/// A drop within egui's click distance is no click: the dragged selection
+/// stays selected (LLFolderView keeps it after a drag).
+#[test]
+fn inventory_drag_short_drop_keeps_the_selection() {
+    let mut f = Fixture::new();
+    f.click(100, false);
+    f.click(101, true);
+    let pos = f.row(100);
+    f.button(pos, true, false);
+    let to = pos + Vec2::new(0.0, 4.0);
+    f.hover(to);
+    assert!(egui::DragAndDrop::has_any_payload(&f.ctx), "the selection is carried");
+    f.button(to, false, false);
+    assert!(f.actions.is_empty());
+    assert_eq!(f.state.selection, HashSet::from([id(100), id(101)]));
+}
+
+#[test]
 fn inventory_drag_same_parent_is_a_no_op_and_does_not_move_to_the_enclosing_root() {
     let mut f = Fixture::new();
     f.click(100, false);
@@ -602,4 +748,15 @@ fn inventory_double_click_attaches_an_object_then_detaches_it_once_worn() {
     // a single click only selects
     f.click(101, false);
     assert!(f.actions.is_empty());
+}
+
+/// A held drag tells where the pointer is beyond the window's edges.
+#[test]
+fn beyond_the_viewers_window_the_pointer_is_not_over_the_world() {
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    assert!(drag::in_world(false, Some(egui::pos2(400.0, 300.0)), window));
+    assert!(!drag::in_world(false, Some(egui::pos2(900.0, 300.0)), window));
+    assert!(!drag::in_world(false, Some(egui::pos2(400.0, -20.0)), window));
+    // over a window of the interface, as before
+    assert!(!drag::in_world(true, Some(egui::pos2(400.0, 300.0)), window));
 }
