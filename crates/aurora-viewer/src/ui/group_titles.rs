@@ -20,7 +20,7 @@
 //! matches the worn title by role, and by the empty string before the list
 //! is known. The group profile's "Title shown" combo does not list it.
 
-use super::widgets::{self, ActionKind, Floater, PanelHost};
+use super::widgets::{self, ActionKind, Floater};
 use crate::theme::Palette;
 use crate::world::region_titles::{LookupResult, RegionTitles, Target};
 use aurora_net::GroupMembership;
@@ -525,14 +525,7 @@ impl GroupTitlesUi {
     }
 
     /// Draw the window while `open`.
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        p: &Palette,
-        view: &View,
-        open: &mut bool,
-        mut host: PanelHost<'_, ()>,
-    ) -> Vec<TitlesAction> {
+    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, view: &View, open: &mut bool) -> Vec<TitlesAction> {
         let mut actions = Vec::new();
         if !*open {
             return actions;
@@ -551,7 +544,7 @@ impl GroupTitlesUi {
             Vec2::new(640.0, 540.0),
         );
         floater.min_size = Vec2::new(520.0, 320.0);
-        host.show((), floater, ctx, p, open, |ui| {
+        floater.show(ctx, p, open, |ui| {
             let w = ui.available_width();
             ui.allocate_ui_with_layout(Vec2::new(w, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 widgets::clearable_search_box(ui, p, &mut self.filter, aurora_i18n::tr!("group-titles-filter"), w);
@@ -760,7 +753,7 @@ mod tests {
                     titles: &t,
                     region: Some("Home"),
                 };
-                ui_state.show(ctx, p, &view, &mut true, PanelHost::Embedded);
+                ui_state.show(ctx, p, &view, &mut true);
             },
         );
     }

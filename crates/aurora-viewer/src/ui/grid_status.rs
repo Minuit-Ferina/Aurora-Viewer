@@ -78,13 +78,7 @@ fn icon(ui: &mut egui::Ui, name: &str, color: egui::Color32, size: f32) {
 }
 
 /// Draw the window while `open`.
-pub(crate) fn show(
-    ctx: &egui::Context,
-    p: &Palette,
-    status: &GridStatus,
-    open: &mut bool,
-    mut host: widgets::PanelHost<'_, ()>,
-) -> Option<Action> {
+pub fn show(ctx: &egui::Context, p: &Palette, status: &GridStatus, open: &mut bool) -> Option<Action> {
     if !*open {
         return None;
     }
@@ -96,7 +90,7 @@ pub(crate) fn show(
         Vec2::new(540.0, 500.0),
     );
     window.min_size = Vec2::new(380.0, 240.0);
-    host.show((), window, ctx, p, open, |ui| {
+    window.show(ctx, p, open, |ui| {
         ui.horizontal(|ui| {
             if !status.entries.is_empty() {
                 let phase = summary(&status.entries);

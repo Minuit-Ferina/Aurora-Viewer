@@ -32,7 +32,7 @@ pub fn page(cx: &mut Cx) {
             },
         );
         cx.greyed(!cx.s.effective_rlva_enabled());
-        cx.toggle(tr!("rlva-ooc"), tr!("rlva-ooc-hint"), &field!(rlva.allow_ooc));
+        cx.toggle(tr!("rlva-ooc"), &read_at_login(tr!("rlva-ooc-hint")), &field!(rlva.allow_ooc));
         cx.toggle(tr!("rlva-ellipsis"), tr!("rlva-ellipsis-hint"), &field!(rlva.show_ellipsis));
         cx.toggle(
             tr!("rlva-redirect-typing"),
@@ -46,12 +46,12 @@ pub fn page(cx: &mut Cx) {
         );
         cx.toggle(
             tr!("rlva-experimental"),
-            tr!("rlva-experimental-hint"),
+            &read_at_login(tr!("rlva-experimental-hint")),
             &field!(rlva.experimental_commands),
         );
         cx.toggle(
             tr!("rlva-debug-commands"),
-            tr!("rlva-debug-commands-hint"),
+            &format!("{} {}", tr!("rlva-debug-commands-hint"), tr!("rlva-debug-commands-chat")),
             &field!(rlva.debug_commands),
         );
         cx.toggle(
@@ -60,13 +60,18 @@ pub fn page(cx: &mut Cx) {
             &field!(rlva.debug_hide_unset_duplicate),
         );
         cx.toggle(
+            tr!("rlva-debug-explicit-point"),
+            tr!("rlva-debug-explicit-point-hint"),
+            &field!(rlva.debug_deprecate_explicit_point),
+        );
+        cx.toggle(
             tr!("rlva-split-redirect"),
             tr!("rlva-split-redirect-hint"),
             &field!(rlva.split_redirect_chat),
         );
         cx.row(
             tr!("rlva-compatibility"),
-            tr!("rlva-compatibility-hint"),
+            &read_at_login(tr!("rlva-compatibility-hint")),
             &field!(rlva.compatibility_list),
             |ui, settings| {
                 ui.add(egui::TextEdit::singleline(&mut settings.rlva.compatibility_list).desired_width(180.0))
@@ -75,7 +80,7 @@ pub fn page(cx: &mut Cx) {
         );
         cx.toggle(
             tr!("rlva-env-locks"),
-            tr!("rlva-env-locks-hint"),
+            &read_at_login(tr!("rlva-env-locks-hint")),
             &field!(rlva.allow_environment_locks),
         );
         cx.toggle(
@@ -86,7 +91,7 @@ pub fn page(cx: &mut Cx) {
         cx.greyed(!cx.s.effective_rlva_enabled() || !cx.s.rlva.temporary_controllers);
         cx.combo(
             tr!("rlva-experience-maturity"),
-            tr!("rlva-experience-maturity-hint"),
+            &read_at_login(tr!("rlva-experience-maturity-hint")),
             &field!(rlva.experience_maturity),
             &[
                 (0, tr!("common-none")),
@@ -97,7 +102,7 @@ pub fn page(cx: &mut Cx) {
         );
         cx.row(
             tr!("rlva-blocked-experiences"),
-            tr!("rlva-blocked-experiences-hint"),
+            &read_at_login(tr!("rlva-blocked-experiences-hint")),
             &field!(rlva.blocked_experiences),
             |ui, settings| {
                 ui.add(egui::TextEdit::singleline(&mut settings.rlva.blocked_experiences).desired_width(180.0))
@@ -167,4 +172,10 @@ pub fn page(cx: &mut Cx) {
                 false
             });
     });
+}
+
+/// The hint of a setting RLVa reads when it starts (RlvSettings::initClass,
+/// indra/newview/rlvcommon.cpp): it says when a change applies.
+fn read_at_login(hint: &str) -> String {
+    format!("{hint} {}", aurora_i18n::tr!("rlva-read-at-login"))
 }

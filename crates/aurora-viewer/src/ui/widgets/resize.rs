@@ -43,14 +43,13 @@ pub(super) fn contains_pointer(ctx: &Context, pos: Pos2) -> bool {
     // each grip: the raw interact_rect alone leaves that margin to the world.
     let radius = ctx.global_style().interaction.interact_radius;
     let layers = ctx.memory(|memory| memory.areas().visible_layer_ids());
-    hit_rects(ctx, layers).any(|rect| rect.distance_sq_to_pos(pos) <= radius * radius)
-}
-
-pub(super) fn hit_rects<'a>(ctx: &'a Context, layers: impl IntoIterator<Item = egui::LayerId> + 'a) -> impl Iterator<Item = Rect> + 'a {
-    layers.into_iter().flat_map(move |layer| {
-        Edge::ALL.into_iter().filter_map(move |edge| {
-            let response = ctx.read_response(edge.id(layer.id))?;
-            (response.enabled() && !response.interact_rect.is_negative()).then_some(response.interact_rect)
+    layers.into_iter().any(|layer| {
+        Edge::ALL.into_iter().any(|edge| {
+            ctx.read_response(edge.id(layer.id)).is_some_and(|response| {
+                response.enabled()
+                    && !response.interact_rect.is_negative()
+                    && response.interact_rect.distance_sq_to_pos(pos) <= radius * radius
+            })
         })
     })
 }

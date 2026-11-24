@@ -79,36 +79,28 @@ pub(super) fn cycle(
 
 /// The keys of this frame, before the window's field reads them. `order`:
 /// the conversations as the list shows them.
-pub(super) fn handle(ctx: &egui::Context, st: &mut ChatUi, order: &[Tab], actions: &mut Vec<ConvAction>, native: bool) -> bool {
+pub(super) fn handle(ctx: &egui::Context, st: &mut ChatUi, order: &[Tab], actions: &mut Vec<ConvAction>) {
     let current = (!st.contacts).then_some(st.selected);
     let window = egui::Id::unique(WINDOW);
     // the cross of the window otherwise (`widgets::Floater`)
-    let can_close_tab = !crate::ui::close_key::closes_every_window(ctx) && (native || !crate::ui::widgets::floater_minimized(ctx, WINDOW));
-    let desktop_close =
-        native && ctx.memory(|m| m.top_modal_layer()).is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::W));
-    if can_close_tab
+    if !crate::ui::close_key::closes_every_window(ctx)
         && let Some(Some(closed)) = current
-        && (desktop_close || (!native && crate::ui::close_key::take(ctx, window)))
+        && !crate::ui::widgets::floater_minimized(ctx, WINDOW)
+        && crate::ui::close_key::take(ctx, window)
     {
         let next = after_close(order, closed);
         st.select_tab(next);
         st.reveal = next;
         actions.push(ConvAction::Close(closed));
-        return false;
-    }
-    if desktop_close {
-        return true;
+        return;
     }
     let layer = egui::LayerId::new(egui::Order::Middle, window);
-    let in_window = if native {
-        ctx.input(|i| i.focused)
-    } else {
-        ctx.memory(|m| m.focused())
-            .and_then(|field| ctx.read_response(field))
-            .is_some_and(|field| field.layer_id == layer)
-    };
+    let in_window = ctx
+        .memory(|m| m.focused())
+        .and_then(|field| ctx.read_response(field))
+        .is_some_and(|field| field.layer_id == layer);
     if !in_window {
-        return false;
+        return;
     }
     // (held down, each repeat goes one further, as in a list)
     let keys = super::shortcuts::get(ctx);
@@ -135,7 +127,6 @@ pub(super) fn handle(ctx: &egui::Context, st: &mut ChatUi, order: &[Tab], action
         st.select_tab(tab);
         st.reveal = tab;
     }
-    false
 }
 
 /// The conversations of the Legacy style's list, from top to bottom.

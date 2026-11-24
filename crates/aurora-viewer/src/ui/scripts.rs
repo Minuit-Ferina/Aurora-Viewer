@@ -32,6 +32,11 @@ pub(crate) use syntax::highlight as highlight_lsl;
 
 pub enum Action {
     Debug,
+    /// Rename only the inventory/task item metadata, never the source text.
+    Rename {
+        target: ScriptTarget,
+        name: String,
+    },
     Include {
         request: Uuid,
         name: String,
@@ -170,15 +175,8 @@ impl Editor {
     }
 }
 
-pub(crate) struct EditorHost<'a> {
-    pub placement: super::widgets::PanelHost<'a, ScriptTarget>,
-    pub parent: Option<&'a std::sync::Arc<dyn winit::window::Window>>,
-    pub close: Option<ScriptTarget>,
-}
-
 #[derive(Default)]
 pub struct Editors {
-    pub rlva_hidden: bool,
     pub documents: Vec<Editor>,
     panels: dialogs::Panels,
     debug: debug::Debug,
@@ -767,46 +765,15 @@ impl Editors {
         settings: &mut settings::ScriptSettings,
         color_prefs: &mut super::color_picker::Preferences,
     ) -> Vec<Action> {
-        self.show_placed(
-            ctx,
-            p,
-            settings,
-            color_prefs,
-            EditorHost {
-                placement: super::widgets::PanelHost::Embedded,
-                parent: None,
-                close: None,
-            },
-        )
-    }
-
-    pub(crate) fn file_picker_open(&self, target: ScriptTarget) -> bool {
-        self.documents
-            .iter()
-            .any(|document| document.target == target && document.tools.file_job.as_ref().is_some_and(|job| job.1))
-    }
-
-    pub(crate) fn show_placed(
-        &mut self,
-        ctx: &egui::Context,
-        p: &Palette,
-        settings: &mut settings::ScriptSettings,
-        color_prefs: &mut super::color_picker::Preferences,
-        mut host: EditorHost<'_>,
-    ) -> Vec<Action> {
-        if self.rlva_hidden {
-            return Vec::new();
-        }
         let colors_before = color_prefs.clone();
         let mut actions = Vec::new();
-        if host.placement.window_width().is_none() && self.panels.preferences.show(ctx, p, settings) {
+        if self.panels.preferences.show(ctx, p, settings) {
             actions.push(Action::SettingsChanged);
         }
         for e in &mut self.documents {
-            if e.closed || !host.placement.draws(e.target) {
+            if e.closed {
                 continue;
             }
-            e.tools.file_parent = host.parent.map(std::sync::Arc::downgrade);
             let id = format!("script_editor_{}_{}", e.target.object, e.target.item);
             e.recompile_allowed = settings.preprocessor && settings.recompile;
             if e.processor_settings != *settings {
@@ -876,22 +843,23 @@ impl Editors {
             if std::mem::take(&mut e.raise) {
                 super::widgets::expand_floater(ctx, &id);
             }
-            let mut open = host.close != Some(e.target);
+            let mut open = true;
             let title = format!("{}{}", e.name, if e.dirty() { " *" } else { "" });
             focus::claim(
                 ctx,
                 egui::LayerId::new(egui::Order::Middle, egui::Id::unique(&id)),
                 egui::Id::unique((&id, "source_text")),
             );
-            let floater = Floater::new(
+            Floater::new(
                 &id,
                 title,
                 ctx.content_rect().center() - Vec2::new(330.0, 260.0),
                 Vec2::new(660.0, 520.0),
             )
             .cascade(super::widgets::CascadeGroup::Script)
-            .allow_partial_outside();
-            host.placement.show(e.target, floater, ctx, p, &mut open, |ui| {
+            .allow_partial_outside()
+            .rename_title(e.name.clone(), e.can_edit && e.loaded && e.saving.is_none() && e.loading.is_none())
+            .show(ctx, p, &mut open, |ui| {
                 view::body(
                     ui,
                     p,
@@ -902,6 +870,15 @@ impl Editors {
                     &mut actions,
                 );
             });
+            if let Some(name) = super::widgets::take_title_rename(ctx, &id)
+                && e.can_edit
+                && e.loaded
+                && e.saving.is_none()
+                && e.loading.is_none()
+                && name != e.name
+            {
+                actions.push(Action::Rename { target: e.target, name });
+            }
             view::dialogs(
                 ctx,
                 p,
@@ -991,21 +968,10 @@ impl Editors {
             let id = egui::Id::unique((&window, "source_text"));
             if search.owns(id) {
                 bound = true;
-                if !host.placement.draws(e.target) {
-                    break;
-                }
                 let minimized = ctx
                     .data_mut(|d| d.get_persisted::<bool>(egui::Id::unique((&window, "minimized"))))
                     .unwrap_or(false);
-                let desktop = host.placement.window_width().is_some();
-                let parent = if desktop {
-                    Some(ctx.content_rect().shrink(6.0))
-                } else {
-                    ctx.memory(|m| m.area_rect(egui::Id::unique(&window)))
-                };
-                if (desktop || !minimized)
-                    && let Some(parent) = parent
-                {
+                if !minimized && let Some(parent) = ctx.memory(|m| m.area_rect(egui::Id::unique(&window))) {
                     view::search(
                         ctx,
                         p,
@@ -1024,7 +990,7 @@ impl Editors {
         }
         // An owner can change while a later editor handles Ctrl+F. Drop its
         // unused reserved UI within this pass, without drawing another search.
-        for e in self.documents.iter_mut().filter(|e| host.placement.draws(e.target)) {
+        for e in &mut self.documents {
             e.tools.search_slot = None;
         }
         if *color_prefs != colors_before {
@@ -1140,6 +1106,155 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_f_then_replace_changes_the_selected_word_whichever_way_it_was_selected() {
+        // egui shrinks the editor's selection to its moving end once Find
+        // takes the keyboard: the start of a word selected right to left.
+        for (anchor, caret) in [(11, 16), (16, 11)] {
+            let ctx = egui::Context::default();
+            let mut editors = Editors::default();
+            let t = target(1);
+            let load = editors.open(t, "Replace selected".into(), true, true, 0).unwrap();
+            editors.loaded(load, t, Ok("count = 1;\ncount += 2;\ncount_max = 3;".into()));
+            settle(&ctx, &mut editors);
+            let id = source_id(t);
+            let mut state = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(anchor),
+                egui::text::CCursor::new(caret),
+            )));
+            state.store(&ctx, id);
+            ctx.memory_mut(|m| m.request_focus(id));
+            settle(&ctx, &mut editors);
+            frame(&ctx, &mut editors, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            settle(&ctx, &mut editors);
+            assert_eq!(editors.panels.search.query, "count");
+            assert_eq!(
+                editors.panels.search.active_range(&ctx, id, &editors.documents[0].source),
+                Some(11..16),
+                "{anchor}..{caret}: the selected word stays the active match"
+            );
+            editors.panels.search.replacement = "total".into();
+            // The Replace button, not the replacement field's label of the same text.
+            let output = frame(&ctx, &mut editors, vec![]);
+            let pos = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == aurora_i18n::tr!("script-search-replace") => {
+                        Some(t.pos + t.galley.size() * 0.5)
+                    }
+                    _ => None,
+                })
+                .max_by(|a, b| a.y.total_cmp(&b.y))
+                .expect("visible Replace button");
+            for pressed in [true, false] {
+                frame(
+                    &ctx,
+                    &mut editors,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+            assert_eq!(
+                editors.documents[0].source, "count = 1;\ntotal += 2;\ncount_max = 3;",
+                "{anchor}..{caret}"
+            );
+        }
+    }
+
+    #[test]
+    fn ctrl_f_after_find_keeps_the_found_match_for_replace_inline_and_floating() {
+        fn click_text(ctx: &egui::Context, editors: &mut Editors, settings: &mut settings::ScriptSettings, label: &str) {
+            // The lowest text of that label: the button, not the field label
+            // "Replace" beside the floating window's replacement field.
+            let output = frame_settings(ctx, editors, settings, vec![]);
+            let pos = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == label => Some(t.pos + t.galley.size() * 0.5),
+                    _ => None,
+                })
+                .max_by(|a, b| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)))
+                .expect("visible button");
+            for pressed in [true, false] {
+                frame_settings(
+                    ctx,
+                    editors,
+                    settings,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+        }
+        for inline in [true, false] {
+            let ctx = egui::Context::default();
+            let mut editors = Editors::default();
+            let t = ScriptTarget {
+                object: Uuid::from_u128(77),
+                item: Uuid::from_u128(5),
+            };
+            let load = editors.open(t, "Find then Ctrl+F".into(), true, true, 0).unwrap();
+            editors.loaded(load, t, Ok("default\n{\n    count\n    llSay(0, \"x\");\n    count\n}\n".into()));
+            let mut settings = settings::ScriptSettings {
+                search_inline: inline,
+                ..Default::default()
+            };
+            super::super::widgets::place_floater(&ctx, &window(t), egui::pos2(100.0, 100.0), Vec2::new(900.0, 650.0));
+            for _ in 0..4 {
+                frame_settings(&ctx, &mut editors, &mut settings, vec![]);
+            }
+            let id = source_id(t);
+            editing::select(&ctx, id, 2..2, true);
+            frame_settings(&ctx, &mut editors, &mut settings, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            for _ in 0..3 {
+                frame_settings(&ctx, &mut editors, &mut settings, vec![]);
+            }
+            editors.panels.search.query = "count".into();
+            editors.panels.search.replacement = "hi".into();
+            for _ in 0..2 {
+                click_text(&ctx, &mut editors, &mut settings, aurora_i18n::tr!("script-search-find"));
+            }
+            let second = 43..48;
+            assert_eq!(
+                editors.panels.search.active_range(&ctx, id, &editors.documents[0].source),
+                Some(second.clone()),
+                "inline {inline}: Find went to the second count"
+            );
+            // Ctrl+F again: egui has shrunk the editor's selection to a caret,
+            // which must not drop the match Find went to.
+            frame_settings(&ctx, &mut editors, &mut settings, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            for _ in 0..3 {
+                frame_settings(&ctx, &mut editors, &mut settings, vec![]);
+            }
+            assert_eq!(
+                editors.panels.search.active_range(&ctx, id, &editors.documents[0].source),
+                Some(second),
+                "inline {inline}: Ctrl+F keeps the active match"
+            );
+            click_text(&ctx, &mut editors, &mut settings, aurora_i18n::tr!("script-search-replace"));
+            assert_eq!(
+                editors.documents[0].source, "default\n{\n    count\n    llSay(0, \"x\");\n    hi\n}\n",
+                "inline {inline}"
+            );
+        }
+    }
+
+    #[test]
     fn opening_scripts_focuses_character_zero_and_late_loads_do_not_steal_focus() {
         for object in [Uuid::nil(), Uuid::from_u128(22)] {
             let ctx = egui::Context::default();
@@ -1218,16 +1333,19 @@ mod tests {
             assert!(editors.panels.search.up);
             assert!(!super::super::widgets::floater_minimized(&ctx, dialogs::Search::WINDOW));
             assert!(ctx.memory(|m| m.has_focus(egui::Id::unique(dialogs::Search::WINDOW).with("query"))));
-            let output = frame(&ctx, &mut editors, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            frame(&ctx, &mut editors, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            settle(&ctx, &mut editors);
             assert!(editor_focused(&ctx));
-            assert_eq!(
-                output
-                    .shapes
-                    .iter()
-                    .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == aurora_i18n::tr!("script-search-title")))
-                    .count(),
-                1
+            assert!(
+                editors.panels.search.owns(source_id(second)),
+                "Ctrl+F keeps Find open for the same editor"
             );
+            assert!(ctx.memory(|m| m.has_focus(egui::Id::unique(dialogs::Search::WINDOW).with("query"))));
+
+            frame(&ctx, &mut editors, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+            settle(&ctx, &mut editors);
+            assert!(editors.panels.search.owns(source_id(second)), "repeated Ctrl+F keeps Find open");
+            assert!(ctx.memory(|m| m.has_focus(egui::Id::unique(dialogs::Search::WINDOW).with("query"))));
             frame(&ctx, &mut editors, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
             assert_eq!(
                 editing::cursor(&ctx, source_id(second)).as_sorted_char_range(),
@@ -1292,6 +1410,13 @@ mod tests {
                 for _ in 0..3 {
                     frame_settings(&ctx, &mut editors, &mut settings, vec![]);
                 }
+                assert!(editors.panels.search.owns(source_id(target)), "Ctrl+F keeps Find open");
+                assert!(ctx.memory(|m| m.has_focus(query_id)));
+                frame_settings(&ctx, &mut editors, &mut settings, vec![key(egui::Key::F, egui::Modifiers::COMMAND)]);
+                for _ in 0..3 {
+                    frame_settings(&ctx, &mut editors, &mut settings, vec![]);
+                }
+                assert!(editors.panels.search.owns(source_id(target)));
                 assert!(ctx.memory(|m| m.has_focus(query_id)));
                 assert_eq!(editors.panels.search.query, "étoile 🌟");
                 assert_eq!(editing::cursor(&ctx, query_id).as_sorted_char_range(), 0.into()..8.into());
@@ -1361,6 +1486,37 @@ mod tests {
 
     #[test]
     fn search_moves_between_left_floating_and_inline_without_losing_fields_or_focus() {
+        // Whether the toolbar fits inline depends on the width of the labels,
+        // so on the interface language. That language is process-wide and
+        // follows the PC's by default: English in the CI, French on a French
+        // PC, where a 840 px window fitted one and not the other. Run alone and
+        // check each maintained catalogue, so every PC checks the same layouts.
+        const ALONE: &str = "AURORA_TEST_SCRIPT_SEARCH_LANGUAGES_ALONE";
+        if std::env::var_os(ALONE).is_none() {
+            let path = concat!(
+                module_path!(),
+                "::search_moves_between_left_floating_and_inline_without_losing_fields_or_focus"
+            );
+            let (_, name) = path.split_once("::").expect("test module path");
+            let run = std::process::Command::new(std::env::current_exe().expect("the test binary"))
+                .args([name, "--exact", "--test-threads=1"])
+                .env(ALONE, "1")
+                .output()
+                .expect("the test binary starts");
+            let stdout = String::from_utf8_lossy(&run.stdout);
+            let stderr = String::from_utf8_lossy(&run.stderr);
+            assert!(run.status.success(), "the run in each language failed:\n{stdout}\n{stderr}");
+            assert!(stdout.contains("1 passed"), "the run in each language ran this test:\n{stdout}");
+            return;
+        }
+        for language in ["en", "fr", "ja"] {
+            aurora_i18n::select(language, None);
+            assert_eq!(aurora_i18n::language(), language);
+            search_moves_between_left_floating_and_inline_in_the_current_language();
+        }
+    }
+
+    fn search_moves_between_left_floating_and_inline_in_the_current_language() {
         let ctx = egui::Context::default();
         let mut editors = Editors::default();
         let target = target(1);
@@ -1391,7 +1547,8 @@ mod tests {
         assert!((search.right() - parent.left()).abs() < 1.5, "{parent:?} / {search:?}");
         assert_eq!(ctx.read_response(query_id).unwrap().layer_id.id, search_id);
         editing::select(&ctx, query_id, 2..2, true);
-        for width in [840.0, 1250.0, 660.0, 840.0] {
+        // Wide cases must fit every inline control, including Whole words.
+        for (width, expected_inline) in [(1000.0, true), (1250.0, true), (660.0, false), (1000.0, true)] {
             super::super::widgets::place_floater(&ctx, &window(target), egui::pos2(100.0, 120.0), Vec2::new(width, 650.0));
             settings.search_inline = false;
             for _ in 0..4 {
@@ -1404,8 +1561,8 @@ mod tests {
             }
             let output = frame_settings(&ctx, &mut editors, &mut settings, vec![]);
             let query = ctx.read_response(query_id).unwrap();
-            assert_eq!(query.layer_id.id, if width > 800.0 { parent_id } else { search_id });
-            if width > 800.0 {
+            assert_eq!(query.layer_id.id, if expected_inline { parent_id } else { search_id });
+            if expected_inline {
                 let parent = ctx.memory(|m| m.area_rect(parent_id)).unwrap();
                 let source_after = ctx.read_response(source_id(target)).unwrap().rect;
                 assert!(parent.contains_rect(query.rect) && query.rect.left() > parent.left() + parent.width() / 3.0);
@@ -1429,15 +1586,21 @@ mod tests {
             assert_eq!(editors.panels.search.query, "needle");
             assert_eq!(editors.panels.search.replacement, "thread");
             assert!(!editors.panels.search.insensitive && editors.panels.search.up);
-            assert_eq!(
+            // The Find button shows in both modes; only the floating panel
+            // labels the query field. Some languages use one word for both.
+            let texts = |label: &str| {
                 output
                     .shapes
                     .iter()
-                    .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == aurora_i18n::tr!("script-search-query")))
-                    .count(),
-                if width > 800.0 { 1 } else { 2 } // Text Find button; floating mode also has a query label.
-            );
-            if width > 800.0 {
+                    .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == label))
+                    .count()
+            };
+            let query_label = aurora_i18n::tr!("script-search-query");
+            let find_label = aurora_i18n::tr!("script-search-find");
+            let same_word = usize::from(query_label == find_label);
+            assert_eq!(texts(query_label), usize::from(!expected_inline) + same_word);
+            assert_eq!(texts(find_label), 1 + usize::from(!expected_inline) * same_word);
+            if expected_inline {
                 let label_pos = |label| {
                     output
                         .shapes

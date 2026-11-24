@@ -80,7 +80,11 @@ pub fn run() -> anyhow::Result<()> {
         next_repaint: Some(Instant::now()),
         error: None,
     };
-    event_loop.run_app_on_demand(&mut app)?;
+    let result = event_loop.run_app_on_demand(&mut app);
+    app.input = None;
+    app.surface = None;
+    app.window = None;
+    result?;
     if let Some(error) = app.error {
         anyhow::bail!(error);
     }

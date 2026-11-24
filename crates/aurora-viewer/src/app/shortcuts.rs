@@ -10,27 +10,12 @@ use crate::camera::CameraPreset;
 use std::time::Instant;
 
 impl App {
-    pub(in crate::app) fn show_people_tab(&mut self, tab: u8) {
-        self.panels.people_tab = tab;
-        let panel = super::native_windows::Panel::People;
-        if self.native_windows.is_native(panel) {
-            self.native_windows.reveal(panel);
-        } else {
-            crate::ui::widgets::open_floater(&self.egui_ctx, "people", &mut self.panels.people);
-        }
-    }
-
     /// Communicate › Friends / Groups / Contact Sets (togglePeoplePanel,
     /// llviewermenu.cpp): People closes when that tab shows, otherwise it
     /// opens, or expands, on the tab.
     pub(super) fn people_tab_shortcut(&mut self, tab: u8) {
         let classic = self.settings.classic_people || (self.demo && crate::demo::people::legacy());
         let tab = people_tab_shown(tab, classic);
-        if self.native_windows.is_native(super::native_windows::Panel::People) {
-            self.panels.people_tab = tab;
-            self.native_windows.reveal(super::native_windows::Panel::People);
-            return;
-        }
         let ctx = &self.egui_ctx;
         let shown = self.panels.people && self.panels.people_tab == tab && !crate::ui::widgets::floater_minimized(ctx, "people");
         if shown {

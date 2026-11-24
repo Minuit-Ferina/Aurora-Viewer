@@ -146,7 +146,7 @@ fn uri_destinations_restore_on_explicit_open_and_stay_minimized_otherwise() {
                                             );
                                         }
                                         Destination::Places => {
-                                            places.show(ctx, &mut c, &mut true, false, false, None, widgets::PanelHost::Embedded);
+                                            places.show(ctx, &mut c, &mut true, false, false, None);
                                         }
                                         _ => {
                                             details.show(ctx, &mut c, !classic);

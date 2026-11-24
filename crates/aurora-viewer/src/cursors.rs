@@ -199,6 +199,208 @@ fn badge_image(svg: &[u8], palette: &crate::theme::Palette) -> Option<egui::Cust
     Some(finish(&pixmap, [1, 1]))
 }
 
+/// The cursor the window was last asked for. egui-winit sends a cursor
+/// picture again at every frame (a system cursor only when it changes), and
+/// each time Wayland allocates its pixels and commits its surface: hundreds
+/// of them a second stall the desktop for as long as the picture is up, with
+/// the viewer's own frames on time. The pictures are sent from here instead,
+/// when they change; egui-winit keeps the system cursors.
+#[derive(Default)]
+pub struct Shown {
+    /// The picture on screen (its number in `made`), None for a system cursor.
+    picture: Option<u32>,
+    /// The system cursor egui-winit has sent: it sends another one, and the
+    /// same one again after a time without a pointer.
+    icon: Option<egui::CursorIcon>,
+    /// egui-winit has a pointer position: without one it leaves the cursor
+    /// alone, and forgets what it sent.
+    pointer: bool,
+    /// The finger egui-winit follows as its pointer (its `pointer_touch_id`).
+    finger: Option<u64>,
+    /// The window's cursor of each picture, by its pixels.
+    made: Vec<(std::sync::Arc<[u8]>, winit::cursor::CustomCursor, u32)>,
+    numbered: u32,
+    refused: bool,
+}
+
+/// What a frame has left to send once egui-winit has sent its own.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Change {
+    Nothing,
+    /// The frame's picture.
+    Picture,
+    /// The frame's system cursor: egui-winit believes it is still up.
+    System,
+}
+
+impl Shown {
+    /// A window event egui-winit receives: its pointer position follows
+    /// these, and of several fingers the first one only (its `on_touch`).
+    pub fn event(&mut self, event: &winit::event::WindowEvent) {
+        use winit::event::{ButtonSource, PointerKind, PointerSource, WindowEvent};
+        match event {
+            WindowEvent::PointerButton {
+                button: ButtonSource::Touch { finger_id, .. },
+                state,
+                ..
+            } if self.finger.is_none_or(|finger| finger == finger_id.into_raw() as u64) => {
+                self.pointer = state.is_pressed();
+                self.finger = self.pointer.then_some(finger_id.into_raw() as u64);
+            }
+            WindowEvent::PointerMoved {
+                source: PointerSource::Touch { finger_id, .. },
+                ..
+            } => {
+                if self.finger == Some(finger_id.into_raw() as u64) {
+                    self.pointer = true;
+                }
+            }
+            WindowEvent::PointerLeft {
+                kind: PointerKind::Touch(id),
+                ..
+            } => {
+                if self.finger == Some(id.into_raw() as u64) {
+                    self.pointer = false;
+                    self.finger = None;
+                }
+            }
+            WindowEvent::PointerMoved { primary: true, .. } => self.pointer = true,
+            WindowEvent::PointerButton {
+                primary: true,
+                button: ButtonSource::Mouse(_),
+                ..
+            } => self.pointer = true,
+            WindowEvent::PointerLeft { primary: true, .. } => self.pointer = false,
+            WindowEvent::ScaleFactorChanged { .. } => self.rescaled(),
+            _ => {}
+        }
+    }
+
+    /// The window's scale changed. Wayland sizes a picture from the scale
+    /// the window has when it is sent (winit's `apply_custom_cursor`), and
+    /// nothing sends it again by itself: the one on screen goes out anew.
+    fn rescaled(&mut self) {
+        self.picture = None;
+    }
+
+    /// A new egui-winit state, or a new window: nothing is sent yet, and it
+    /// has no pointer before the next move.
+    pub fn forget(&mut self) {
+        self.picture = None;
+        self.icon = None;
+        self.pointer = false;
+        self.finger = None;
+    }
+
+    /// The window's cursor of a picture and its number, made once.
+    pub fn cursor(
+        &mut self,
+        event_loop: &dyn winit::event_loop::ActiveEventLoop,
+        image: &egui::CustomCursorImage,
+    ) -> Option<(u32, winit::cursor::CustomCursor)> {
+        if let Some((_, cursor, number)) = self.made.iter().find(|(rgba, ..)| std::sync::Arc::ptr_eq(rgba, &image.rgba)) {
+            return Some((*number, cursor.clone()));
+        }
+        let [w, h] = image.size;
+        let [x, y] = image.hotspot;
+        match winit::cursor::CustomCursorSource::from_rgba(image.rgba.to_vec(), w, h, x, y)
+            .map_err(|e| e.to_string())
+            .and_then(|source| event_loop.create_custom_cursor(source).map_err(|e| e.to_string()))
+        {
+            Ok(cursor) => {
+                // (a change of skin draws them all again)
+                if self.made.len() >= 64 {
+                    self.made.clear();
+                }
+                self.numbered += 1;
+                self.made.push((image.rgba.clone(), cursor.clone(), self.numbered));
+                Some((self.numbered, cursor))
+            }
+            Err(e) => {
+                if !std::mem::replace(&mut self.refused, true) {
+                    log::warn!("cursor: a picture was refused ({e}), the system cursor stays");
+                }
+                None
+            }
+        }
+    }
+
+    /// A frame whose `icon` egui-winit was just given, without its picture:
+    /// what is left to send.
+    pub fn step(&mut self, picture: Option<u32>, icon: egui::CursorIcon) -> Change {
+        if !self.pointer {
+            self.picture = None;
+            self.icon = None;
+            return Change::Nothing;
+        }
+        // egui-winit sent the system cursor at this frame, over a picture too
+        let sent = self.icon.replace(icon) != Some(icon);
+        match picture {
+            Some(_) if sent || self.picture != picture => {
+                self.picture = picture;
+                Change::Picture
+            }
+            Some(_) => Change::Nothing,
+            None if self.picture.take().is_some() && !sent => Change::System,
+            None => Change::Nothing,
+        }
+    }
+}
+
+/// Show a system cursor, as egui-winit does (its `translate_cursor` is
+/// private).
+pub fn set_system(window: &dyn winit::window::Window, icon: egui::CursorIcon) {
+    match system(icon) {
+        Some(cursor) => {
+            window.set_cursor_visible(true);
+            window.set_cursor(cursor.into());
+        }
+        None => window.set_cursor_visible(false),
+    }
+}
+
+fn system(icon: egui::CursorIcon) -> Option<winit::cursor::CursorIcon> {
+    use egui::CursorIcon as E;
+    use winit::cursor::CursorIcon as W;
+    Some(match icon {
+        E::None => return None,
+        E::Default => W::Default,
+        E::ContextMenu => W::ContextMenu,
+        E::Help => W::Help,
+        E::PointingHand => W::Pointer,
+        E::Progress => W::Progress,
+        E::Wait => W::Wait,
+        E::Cell => W::Cell,
+        E::Crosshair => W::Crosshair,
+        E::Text => W::Text,
+        E::VerticalText => W::VerticalText,
+        E::Alias => W::Alias,
+        E::Copy => W::Copy,
+        E::Move => W::Move,
+        E::NoDrop => W::NoDrop,
+        E::NotAllowed => W::NotAllowed,
+        E::Grab => W::Grab,
+        E::Grabbing => W::Grabbing,
+        E::AllScroll => W::AllScroll,
+        E::ResizeHorizontal => W::EwResize,
+        E::ResizeNeSw => W::NeswResize,
+        E::ResizeNwSe => W::NwseResize,
+        E::ResizeVertical => W::NsResize,
+        E::ResizeEast => W::EResize,
+        E::ResizeSouthEast => W::SeResize,
+        E::ResizeSouth => W::SResize,
+        E::ResizeSouthWest => W::SwResize,
+        E::ResizeWest => W::WResize,
+        E::ResizeNorthWest => W::NwResize,
+        E::ResizeNorth => W::NResize,
+        E::ResizeNorthEast => W::NeResize,
+        E::ResizeColumn => W::ColResize,
+        E::ResizeRow => W::RowResize,
+        E::ZoomIn => W::ZoomIn,
+        E::ZoomOut => W::ZoomOut,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +498,148 @@ mod tests {
         ));
         assert!(c.inventory_drag(egui::CursorIcon::NotAllowed).is_none());
         assert!(c.inventory_drag(egui::CursorIcon::Default).is_none());
+    }
+    fn with_pointer() -> Shown {
+        Shown {
+            pointer: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_picture_is_sent_once_for_as_long_as_it_stays() {
+        let mut shown = with_pointer();
+        let sent: Vec<Change> = (0..300).map(|_| shown.step(Some(1), egui::CursorIcon::ZoomIn)).collect();
+        assert_eq!(sent[0], Change::Picture);
+        assert!(sent[1..].iter().all(|c| *c == Change::Nothing), "sent again while unchanged");
+        // another picture, then the first one back
+        assert_eq!(shown.step(Some(2), egui::CursorIcon::ZoomIn), Change::Picture);
+        assert_eq!(shown.step(Some(2), egui::CursorIcon::ZoomIn), Change::Nothing);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+    }
+
+    #[test]
+    fn a_picture_comes_back_over_the_system_cursor_egui_winit_sends() {
+        let mut shown = with_pointer();
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        // its fallback icon changes under the same picture: egui-winit sends it
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::Move), Change::Picture);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::Move), Change::Nothing);
+    }
+
+    #[test]
+    fn the_system_cursor_returns_when_the_picture_ends() {
+        let mut shown = with_pointer();
+        assert_eq!(shown.step(None, egui::CursorIcon::Default), Change::Nothing);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::Default), Change::Picture);
+        // egui-winit holds Default as sent: it would leave the picture up
+        assert_eq!(shown.step(None, egui::CursorIcon::Default), Change::System);
+        assert_eq!(shown.step(None, egui::CursorIcon::Default), Change::Nothing);
+        // (it sends a changed one itself)
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::Default), Change::Picture);
+        assert_eq!(shown.step(None, egui::CursorIcon::Text), Change::Nothing);
+    }
+
+    #[test]
+    fn nothing_is_sent_without_a_pointer_and_the_picture_returns_with_it() {
+        let mut shown = Shown::default();
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+        let moved = winit::event::WindowEvent::PointerMoved {
+            primary: true,
+            source: winit::event::PointerSource::Mouse,
+            device_id: None,
+            position: winit::dpi::PhysicalPosition::new(10.0, 10.0),
+        };
+        let left = winit::event::WindowEvent::PointerLeft {
+            primary: true,
+            position: None,
+            kind: winit::event::PointerKind::Mouse,
+            device_id: None,
+        };
+        shown.event(&moved);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+        shown.event(&left);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+        // back in the window egui-winit sends its icon again, over the picture
+        shown.event(&moved);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+    }
+
+    #[test]
+    fn a_new_state_sends_the_picture_again_at_the_first_move() {
+        // (a new window opens under the pointer: its move can come before
+        // the next frame, or after it)
+        for frame_between in [true, false] {
+            let mut shown = with_pointer();
+            assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+            shown.forget();
+            if frame_between {
+                assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+            }
+            shown.event(&winit::event::WindowEvent::PointerMoved {
+                primary: true,
+                source: winit::event::PointerSource::Mouse,
+                device_id: None,
+                position: winit::dpi::PhysicalPosition::new(10.0, 10.0),
+            });
+            assert_eq!(
+                shown.step(Some(1), egui::CursorIcon::ZoomIn),
+                Change::Picture,
+                "a frame between: {frame_between}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_pointer_follows_the_first_finger_only() {
+        use winit::event::{
+            ButtonSource,
+            ElementState::{Pressed, Released},
+            FingerId, WindowEvent,
+        };
+        let touch = |id, state| WindowEvent::PointerButton {
+            device_id: None,
+            state,
+            position: winit::dpi::PhysicalPosition::new(10.0, 10.0),
+            primary: id == 1,
+            button: ButtonSource::Touch {
+                finger_id: FingerId::from_raw(id),
+                force: None,
+            },
+            is_macos_activation_click: false,
+        };
+        let mut shown = Shown::default();
+        shown.event(&touch(1, Pressed));
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        // a second finger comes and goes: egui-winit keeps its pointer
+        shown.event(&touch(2, Pressed));
+        shown.event(&touch(2, Released));
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+        // so the picture's end still brings the system cursor back
+        assert_eq!(shown.step(None, egui::CursorIcon::ZoomIn), Change::System);
+        shown.event(&touch(1, Released));
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+    }
+
+    #[test]
+    fn a_new_scale_sends_the_picture_again_once() {
+        let mut shown = with_pointer();
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        shown.rescaled();
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Picture);
+        assert_eq!(shown.step(Some(1), egui::CursorIcon::ZoomIn), Change::Nothing);
+        // a system cursor is the system's to size
+        assert_eq!(shown.step(None, egui::CursorIcon::ZoomIn), Change::System);
+        shown.rescaled();
+        assert_eq!(shown.step(None, egui::CursorIcon::ZoomIn), Change::Nothing);
+    }
+
+    #[test]
+    fn every_system_cursor_has_its_window_cursor() {
+        for icon in egui::CursorIcon::ALL {
+            assert_eq!(system(icon).is_none(), icon == egui::CursorIcon::None, "{icon:?}");
+        }
     }
 }

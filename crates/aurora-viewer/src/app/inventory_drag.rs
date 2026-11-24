@@ -406,7 +406,7 @@ impl App {
         let Some(ids) = ui::inventory::drag::carried_ids(ctx) else {
             return Vec::new();
         };
-        if ctx.is_pointer_over_egui() {
+        if !ui::inventory::drag::over_world(ctx) {
             return Vec::new();
         }
         let Some((pos, released, ctrl)) = ctx.input(|i| {
@@ -485,7 +485,7 @@ impl App {
     /// the inventory folders keep the cargo (`task_drop::target`).
     fn task_drag_input(&mut self, ctx: &egui::Context, renderer: &Renderer) -> Option<InventoryDrop> {
         let cargo = egui::DragAndDrop::payload::<TaskDrag>(ctx)?;
-        if ctx.is_pointer_over_egui() {
+        if !ui::inventory::drag::over_world(ctx) {
             return None;
         }
         let (pos, released, ctrl) = ctx.input(|i| {
@@ -576,7 +576,7 @@ impl App {
     /// on an object (`prepare_notecard`).
     fn notecard_drag_input(&mut self, ctx: &egui::Context, renderer: &Renderer) -> Option<InventoryDrop> {
         let cargo = *egui::DragAndDrop::payload::<NotecardDrag>(ctx)?;
-        if ctx.is_pointer_over_egui() {
+        if !ui::inventory::drag::over_world(ctx) {
             return None;
         }
         let (pos, released, ctrl) = ctx.input(|i| {
@@ -828,7 +828,8 @@ impl App {
     /// while they are the target.
     fn avatar_give_input(&mut self, ctx: &egui::Context, renderer: &Renderer) -> Option<usize> {
         let ids = ui::inventory::drag::give_ids(ctx)?;
-        if !matches!(self.screen, Screen::World) || self.world.teleporting || self.exit_prompt.open || ctx.is_pointer_over_egui() {
+        if !matches!(self.screen, Screen::World) || self.world.teleporting || self.exit_prompt.open || !ui::inventory::drag::over_world(ctx)
+        {
             return None;
         }
         let (pos, released) = ctx.input(|i| Some((i.pointer.interact_pos()?, i.pointer.button_released(egui::PointerButton::Primary))))?;

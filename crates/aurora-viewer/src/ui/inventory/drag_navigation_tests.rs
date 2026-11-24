@@ -80,7 +80,7 @@ fn inventory_drag_navigation_toggles_once_per_visit_and_can_collapse_the_source(
 }
 
 #[test]
-fn inventory_drag_navigation_autoscrolls_both_directions_outside_the_field_and_stops_in_the_middle() {
+fn inventory_drag_navigation_autoscrolls_both_directions_and_stops_in_the_middle_or_out_of_the_window() {
     for filtered in [false, true] {
         let mut f = Fixture::new();
         long_list(&mut f, 1);
@@ -106,11 +106,21 @@ fn inventory_drag_navigation_autoscrolls_both_directions_outside_the_field_and_s
             f.frame(Vec::new(), false);
         }
         assert!((offset(&f, f.state.ui_id) - stopped).abs() < 0.1, "middle must stop immediately");
-        f.hover(egui::pos2(rect.center().x, rect.top() - 25.0));
+        f.hover(egui::pos2(rect.center().x, rect.top() + 4.0));
         for _ in 0..35 {
             f.frame(Vec::new(), false);
         }
         assert!(offset(&f, f.state.ui_id) < bottom - 250.0, "upward scrolling");
+        // out of the window (past the bottom of the screen here): it stops
+        f.hover(egui::pos2(rect.center().x, 1000.0));
+        let out = offset(&f, f.state.ui_id);
+        for _ in 0..12 {
+            f.frame(Vec::new(), false);
+        }
+        assert!(
+            (offset(&f, f.state.ui_id) - out).abs() < 0.1,
+            "out of the window must stop (filtered={filtered})"
+        );
         f.hover(down);
         for _ in 0..90 {
             f.frame(Vec::new(), false);
@@ -206,6 +216,44 @@ fn detached_inventory_list_accepts_ordinary_wheel_input() {
 }
 
 #[test]
+fn native_inventory_payload_scrolls_only_the_entered_list_while_the_pointer_rests() {
+    for detached in [false, true] {
+        let mut f = Fixture::new();
+        f.detached = detached;
+        long_list(&mut f, 20);
+        f.scrolling = Some(false);
+        f.two_windows = true;
+        f.settle();
+        let target = f.other.ui_id;
+        let rect = viewport(&f, target).0;
+        egui::DragAndDrop::set_payload(&f.ctx, InvDrag(id(100)));
+        let (viewport, _) = f.surface();
+        crate::outside::drag::set_hover(&f.ctx, viewport, Some(true));
+        f.hover(egui::pos2(rect.center().x, rect.bottom() - 4.0));
+        for _ in 0..30 {
+            f.frame(Vec::new(), false);
+        }
+        let down = offset(&f, target);
+        assert!(
+            down > 50.0,
+            "entered inventory scrolls without a local button: {down} (detached={detached})"
+        );
+        assert_eq!(offset(&f, f.state.ui_id), 0.0);
+        f.hover(egui::pos2(rect.center().x, rect.top() + 4.0));
+        for _ in 0..10 {
+            f.frame(Vec::new(), false);
+        }
+        assert!(offset(&f, target) < down);
+        crate::outside::drag::set_hover(&f.ctx, viewport, None);
+        f.frame(Vec::new(), false);
+        let stopped = offset(&f, target);
+        f.settle();
+        assert_eq!(offset(&f, target), stopped);
+        assert!(f.actions.is_empty());
+    }
+}
+
+#[test]
 fn desktop_text_import_uses_item_parent_and_scrolls_without_an_egui_button_press() {
     for (detached, filtered) in [(false, false), (false, true), (true, false), (true, true)] {
         let mut f = Fixture::new();
@@ -247,4 +295,80 @@ fn desktop_text_import_uses_item_parent_and_scrolls_without_an_egui_button_press
         assert!((offset(&f, f.other.ui_id) - stopped).abs() < 0.1);
         assert!(f.actions.is_empty(), "hovering and scrolling never moves or creates an item");
     }
+}
+
+#[test]
+fn inventory_drag_scroll_direction_stays_between_the_search_row_and_the_window() {
+    let list = egui::Rect::from_min_max(egui::pos2(0.0, 100.0), egui::pos2(300.0, 500.0));
+    let search = Some(60.0);
+    let at = |y: f32| egui::pos2(150.0, y);
+    // the edges of the list, the window's footer under it
+    assert_eq!(drag::navigation::direction(list, at(105.0), true, search), -1.0);
+    assert_eq!(drag::navigation::direction(list, at(495.0), true, search), 1.0);
+    assert_eq!(drag::navigation::direction(list, at(560.0), true, search), 1.0);
+    assert_eq!(drag::navigation::direction(list, at(300.0), true, search), 0.0);
+    // up over the search row, not past it (the tabs and buttons above)
+    assert_eq!(drag::navigation::direction(list, at(70.0), true, search), -1.0);
+    assert_eq!(drag::navigation::direction(list, at(55.0), true, search), 0.0);
+    // a window with no search row: up as far as its own top
+    assert_eq!(drag::navigation::direction(list, at(55.0), true, None), -1.0);
+    // out of the window, or beside the list
+    assert_eq!(drag::navigation::direction(list, at(560.0), false, search), 0.0);
+    assert_eq!(drag::navigation::direction(list, egui::pos2(350.0, 495.0), true, search), 0.0);
+}
+
+#[test]
+fn inventory_held_over_a_tab_opens_it_after_a_short_delay_and_only_there() {
+    let ctx = egui::Context::default();
+    let tab = egui::Rect::from_min_size(egui::pos2(100.0, 100.0), Vec2::new(80.0, 30.0));
+    let tab_id = egui::Id::unique("inventory_drag_tab_test");
+    let mut time = 0.0;
+    // one frame with the pointer at `pos`, its button held; `carry` sets an
+    // inventory cargo first
+    let mut frame = |pos: egui::Pos2, press: bool, carry: bool| -> bool {
+        time += 0.05;
+        let mut events = vec![egui::Event::PointerMoved(pos)];
+        if press {
+            events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        let mut opened = false;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(800.0, 600.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                if carry {
+                    egui::DragAndDrop::set_payload(ui.ctx(), InvDrag(id(1)));
+                }
+                opened = drag::navigation::tab_held_over(ui, tab, tab_id);
+            },
+        );
+        // no renderer takes the font atlas here (debug builds assert it)
+        output.textures_delta.clear();
+        opened
+    };
+    let on = tab.center();
+    let off = egui::pos2(400.0, 400.0);
+    // no cargo: a pressed pointer over the tab opens nothing
+    assert!(!frame(on, true, false));
+    for _ in 0..10 {
+        assert!(!frame(on, false, false));
+    }
+    // cargo held over the tab: not at once, then open
+    assert!(!frame(off, false, true));
+    assert!(!frame(on, false, false), "not as soon as the pointer is over the tab");
+    assert!(!frame(on, false, false));
+    let opened = (0..6).any(|_| frame(on, false, false));
+    assert!(opened, "the tab opens after the delay");
+    // away and back: a fresh delay
+    assert!(!frame(off, false, false));
+    assert!(!frame(on, false, false));
 }

@@ -113,7 +113,7 @@ fn stock_frame(shape: &egui::Shape, tint: Color32, border: Color32) -> Option<(e
 pub fn glaze(ctx: &egui::Context, p: &Palette) {
     let distinct = ctx
         .data(|d| d.get_temp::<(u64, Vec<LayerId>)>(Id::unique("distinct_menu_surfaces")))
-        .filter(|(frame, _)| *frame == ctx.cumulative_frame_nr())
+        .filter(|(frame, _)| *frame == ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT))
         .map(|(_, layers)| layers)
         .unwrap_or_default();
     // FSMenuBackgroundAlpha (LLMenuGL::draw), `ui::surface_opacity`
@@ -184,7 +184,7 @@ pub fn glaze(ctx: &egui::Context, p: &Palette) {
 /// A denser menu face and clearer edge when its parent uses the same panel face.
 /// Registration keeps all surface painting in the shared menu glass pass.
 pub fn distinct_surface(ui: &Ui) {
-    let frame = ui.ctx().cumulative_frame_nr();
+    let frame = ui.ctx().cumulative_frame_nr_for(egui::ViewportId::ROOT);
     ui.ctx().data_mut(|d| {
         let surfaces = d.get_temp_mut_or_default::<(u64, Vec<LayerId>)>(Id::unique("distinct_menu_surfaces"));
         if surfaces.0 != frame {
@@ -233,20 +233,15 @@ pub fn context_menu_at(ui: &Ui, id: Id, pos: egui::Pos2, p: &Palette, body: impl
     )
 }
 
-fn native_window_change_id(ctx: &egui::Context) -> Id {
-    Id::unique(("menus_native_window_change", ctx.viewport_id()))
-}
-
-/// Moving or resizing a window dismisses menus in its viewport, as the Legacy Viewer's
+/// Moving or resizing any window dismisses menus at once, as the Legacy Viewer's
 /// LLMenuHolderGL::handleMouseDown does before LLDragHandle/LLResizeBar take
 /// capture (indra/llui/llmenugl.cpp, lldraghandle.cpp, llresizebar.cpp). Check
 /// before painting, including menus drawn before the window being moved or
 /// resized and menus with external state.
 pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
-    let id = native_window_change_id(ctx);
     let changed = ctx
-        .data(|d| d.get_temp::<u64>(id))
-        .is_some_and(|frame| ctx.cumulative_frame_nr() <= frame);
+        .data(|d| d.get_temp::<u64>(Id::unique("menus_native_window_change")))
+        .is_some_and(|frame| ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT) <= frame);
     if !changed && !super::widgets::window_dragging(ctx) {
         return false;
     }
@@ -257,9 +252,8 @@ pub(crate) fn dismiss_on_window_change(ctx: &egui::Context) -> bool {
 /// Native move/resize events arrive between egui frames. Keep dismissal through
 /// the next frame and all its layout passes, including externally owned menus.
 pub(crate) fn window_geometry_changed(ctx: &egui::Context) {
-    let id = native_window_change_id(ctx);
-    let through = ctx.cumulative_frame_nr() + 1;
-    ctx.data_mut(|d| d.insert_temp(id, through));
+    let through = ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT) + 1;
+    ctx.data_mut(|d| d.insert_temp(Id::unique("menus_native_window_change"), through));
     Popup::close_all(ctx);
 }
 
@@ -863,6 +857,61 @@ pub fn item(ui: &mut Ui, p: &Palette, icon: &str, label: &str) -> bool {
     item_if(ui, p, icon, label, true)
 }
 
+/// A catalogue command with a right-click action to add or remove its toolbar button.
+pub fn command(ui: &mut Ui, p: &Palette, id: &'static str) -> bool {
+    command_row(ui, p, id, true, End::None, "")
+}
+
+pub fn command_keys(ui: &mut Ui, p: &Palette, id: &'static str, keys: &str) -> bool {
+    command_keys_if(ui, p, id, true, keys)
+}
+
+/// A catalogue command with its shortcut in the keys column, greyed out
+/// when `enabled` is false: the button keeps the short label.
+pub fn command_keys_if(ui: &mut Ui, p: &Palette, id: &'static str, enabled: bool, keys: &str) -> bool {
+    command_row(ui, p, id, enabled, End::Keys(keys), "")
+}
+
+pub fn command_check(ui: &mut Ui, p: &Palette, id: &'static str, checked: bool) -> bool {
+    command_row(ui, p, id, true, End::Check(checked), "")
+}
+
+pub fn command_tip(ui: &mut Ui, p: &Palette, id: &'static str, enabled: bool, tip: &str) -> bool {
+    command_row(ui, p, id, enabled, End::None, tip)
+}
+
+fn command_row(ui: &mut Ui, p: &Palette, id: &'static str, enabled: bool, end: End<'_>, tip: &str) -> bool {
+    let Some(command) = super::toolbar::command(id) else { return false };
+    // Unavailable actions can still be added to a toolbar for later use.
+    let response = row_lead_sensed(
+        ui,
+        p,
+        Lead::Icon(command.icon),
+        command.label(),
+        enabled,
+        end,
+        false,
+        Sense::click(),
+    );
+    if ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(Id::unique("toolbar_menu_demo")))
+        .unwrap_or(false)
+    {
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(Id::unique(("toolbar_menu_command", id)), response.rect));
+    }
+    super::toolbar::command_context(&response, id);
+    let clicked = enabled && response.clicked();
+    if !tip.is_empty() {
+        response.on_hover_text(tip);
+    }
+    if clicked {
+        ui.close();
+    }
+    clicked
+}
+
 /// Entry greyed out when `enabled` is false (Firestorm's on_enable).
 pub fn item_if(ui: &mut Ui, p: &Palette, icon: &str, label: &str, enabled: bool) -> bool {
     let clicked = row(ui, p, icon, label, enabled, End::None, false).clicked();
@@ -1042,7 +1091,10 @@ pub fn voice_volume(ui: &mut Ui, p: &Palette, v: VoiceVolume) -> Option<VoiceEdi
         ui.available_width().max(natural)
     };
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, VOICE_ROW_H), Sense::hover());
-    let (key, frame) = (keep_open_id(ui.layer_id()), ui.ctx().cumulative_frame_nr());
+    let (key, frame) = (
+        keep_open_id(ui.layer_id()),
+        ui.ctx().cumulative_frame_nr_for(egui::ViewportId::ROOT),
+    );
     ui.ctx().data_mut(|d| d.insert_temp(key, (frame, rect)));
     if !ui.is_rect_visible(rect) {
         return None;
@@ -1122,7 +1174,7 @@ pub(crate) fn clicks_kept_row(ctx: &egui::Context, popup: Id) -> bool {
     let Some((frame, rect)) = ctx.data(|d| d.get_temp::<(u64, egui::Rect)>(keep_open_id(layer))) else {
         return false;
     };
-    frame + 1 >= ctx.cumulative_frame_nr()
+    frame + 1 >= ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT)
         && ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|pos| rect.contains(pos)))
 }
 
@@ -1387,7 +1439,7 @@ fn hidden(ui: &mut Ui) -> egui::Response {
 /// Aurora's own: the Legacy Viewer's menus have no search.
 pub fn searchable(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui)) {
     let id = ui.layer_id().id.with("aurora_menu_search");
-    let frame = ui.ctx().cumulative_frame_nr();
+    let frame = ui.ctx().cumulative_frame_nr_for(egui::ViewportId::ROOT);
     let mut state = ui.data(|d| d.get_temp::<SearchState>(id)).unwrap_or_default();
     let opened = state.frame + 1 < frame;
     if opened {
@@ -1870,39 +1922,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn native_window_resize_does_not_dismiss_another_viewports_menus() {
-        let ctx = egui::Context::default();
-        let desktop = egui::ViewportId::from_hash_of("detached_menu");
-        let root = egui::ViewportId::ROOT;
-        let input = |viewport_id| egui::RawInput {
-            viewport_id,
-            viewports: [
-                (root, egui::ViewportInfo::default()),
-                (
-                    desktop,
-                    egui::ViewportInfo {
-                        parent: Some(root),
-                        ..Default::default()
-                    },
-                ),
-            ]
-            .into_iter()
-            .collect(),
-            ..Default::default()
-        };
-        // This test has no renderer to apply the font atlas updates.
-        for _ in 0..4 {
-            ctx.run_ui(input(root), |_| {}).textures_delta.clear();
-        }
-        window_geometry_changed(&ctx);
-        ctx.run_ui(input(desktop), |ui| assert!(!dismiss_on_window_change(ui.ctx())))
-            .textures_delta
-            .clear();
-        ctx.run_ui(input(root), |ui| assert!(dismiss_on_window_change(ui.ctx())))
-            .textures_delta
-            .clear();
     }
 }
