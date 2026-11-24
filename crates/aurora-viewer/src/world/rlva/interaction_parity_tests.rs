@@ -58,7 +58,11 @@ fn rlva_saving_a_script_into_a_locked_attachment_is_refused() {
     assert!(save(&world, collar));
     command(&mut world.rlva, A, "@remattach:chest=n");
     world.rlva_configure(false);
-    assert!(save(&world, collar), "RLVa off");
+    assert_eq!(
+        save(&world, collar),
+        !aurora_version::edition::CURRENT.always_on(),
+        "only an edition that can turn RLVa off releases the script lock"
+    );
 }
 
 fn texture(world: &World, i: usize) -> NetCommand {
