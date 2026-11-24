@@ -3,6 +3,11 @@ name: Fork editions
 # source; this branch's controller does not alter the source being packaged.
 on:
   workflow_dispatch:
+    inputs:
+      mac_ftrlv_only:
+        description: Build just the FTRLV Apple Silicon package
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
@@ -16,8 +21,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-24.04, macos-15]
-        edition: [classic, ftrlv]
+        os: ${{ fromJSON(inputs.mac_ftrlv_only && '["macos-15"]' || '["windows-latest","ubuntu-24.04","macos-15"]') }}
+        edition: ${{ fromJSON(inputs.mac_ftrlv_only && '["ftrlv"]' || '["classic","ftrlv"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
