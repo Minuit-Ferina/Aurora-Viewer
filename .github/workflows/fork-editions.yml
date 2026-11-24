@@ -1,135 +1,60 @@
 name: Fork editions
-# One-off distribution controller. The viewer checkout is the tested release
-# source; this branch's controller does not alter the source being packaged.
+# One-off publication of a pre-verified distribution on the fork.
 on:
   workflow_dispatch:
-    inputs:
-      mac_ftrlv_only:
-        description: Build just the FTRLV Apple Silicon package
-        type: boolean
-        default: false
-permissions:
-  contents: read
-env:
-  SOURCE_COMMIT: b0cae89f674c319d81675eb0331f4f944640b287
-  AURORA_VERSION_TAG: v0.9.13+patch.0.4.2
+permissions: {}
+concurrency:
+  group: release-patch-0-4-2
+  cancel-in-progress: false
 jobs:
-  editions:
-    if: github.repository == 'Minuit-Ferina/Aurora-Viewer'
-    name: package ${{ matrix.edition }} on ${{ matrix.os }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(inputs.mac_ftrlv_only && '["macos-15"]' || '["windows-latest","ubuntu-24.04","macos-15"]') }}
-        edition: ${{ fromJSON(inputs.mac_ftrlv_only && '["ftrlv"]' || '["classic","ftrlv"]') }}
-    runs-on: ${{ matrix.os }}
+  publish:
+    if: github.repository == 'Minuit-Ferina/Aurora-Viewer' && github.ref == 'refs/heads/chore/release-patch-0-4-2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      SOURCE: b0cae89f674c319d81675eb0331f4f944640b287
+      TAG: v0.9.13+patch.0.4.2
+      RELEASE_ID: '456764684'
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: b0cae89f674c319d81675eb0331f4f944640b287
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Pin source and local release identity
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Verify the exact draft and uploaded assets
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
-          if git rev-parse --verify "refs/tags/$AURORA_VERSION_TAG" >/dev/null 2>&1; then
-            test "$(git rev-parse "$AURORA_VERSION_TAG^{commit}")" = "$SOURCE_COMMIT"
-          else
-            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" tag -a "$AURORA_VERSION_TAG" "$SOURCE_COMMIT" -m "Aurora Viewer 0.9.13 - Patch 0.4.2"
-          fi
-      - name: System libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev
-      - name: Pinned Rust toolchain
-        run: rustup toolchain install --profile minimal --no-self-update
-      - uses: ./.github/actions/rust-cache
-        with:
-          name: fork-edition-${{ matrix.edition }}
-      - name: Build distribution archive (no test suite)
-        shell: pwsh
-        run: ./scripts/build-edition.ps1 -Edition ${{ matrix.edition }} -Out "${{ runner.temp }}/dist" -Release
-      - name: Verify archive identity and integrity
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" |
+            jq -e --arg tag "$TAG" --arg source "$SOURCE" \
+              '.draft and (.prerelease | not) and .tag_name == $tag and .target_commitish == $source' >/dev/null
+          cat > "$RUNNER_TEMP/expected-assets.json" <<'JSON'
+          [{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-linux-x64.tar.gz","size":253829091,"digest":"sha256:0eda667c4825c11ab99adaf35a65d8c274a8ac4ce4db8f072efc7b02cd4fb623"},{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-linux-x64.tar.gz.sha256","size":125,"digest":"sha256:ffc47e461e501a128914aab3f65cae6ac537b9b0d70aa5333ce793a2033c5fa1"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-linux-x64.tar.gz","size":253770568,"digest":"sha256:4bfca48dea6c29b449a479a8fe7f79b487e17c74e477944096913806af4c462f"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-linux-x64.tar.gz.sha256","size":123,"digest":"sha256:2d4591cd127b4f398a2a9cd8360916c0f0cb26e2acaa3cb9a82612e560057ea0"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-windows-x64.zip","size":116616558,"digest":"sha256:5646a0905101dada9d149241cb4fa6612e9a34377f81d3f5c50a816520102858"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-windows-x64.zip.sha256","size":122,"digest":"sha256:a2d3dac369c8c0525ca6d5dc196796e2c71e9fe256c0b11a47c097472be9488b"},{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-windows-x64.zip","size":116572177,"digest":"sha256:d3963203a536fbdb43650213de037b327a022a3e277cb33d93429b2ba66db9f6"},{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-windows-x64.zip.sha256","size":124,"digest":"sha256:42249df7e66f241243fe17177f7060bfbb0216dc4f527def163493e523a96a67"},{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-macos-arm64.zip","size":110967145,"digest":"sha256:e073b25a4fef643c51d3a36b5e7050120503f1bfd8dc30ac11c310920a649ca8"},{"name":"Aurora-Viewer-Classic-v0.9.13+patch.0.4.2-macos-arm64.zip.sha256","size":124,"digest":"sha256:03192a1f80fc78aae09d58619b95ac13c323bd090b6478c73dbf7135fcab9bfc"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-macos-arm64.zip","size":110780420,"digest":"sha256:2862e6212bce64635b2aaee5bdb935f9048011ddb2364a021df311edb3185ec8"},{"name":"Aurora-Viewer-FTRLV-v0.9.13+patch.0.4.2-macos-arm64.zip.sha256","size":122,"digest":"sha256:e6de742a4d73621a7ddc71890e5150433406e8ddff810135661cb9c39facacd1"}]
+          JSON
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" |
+            jq -ec 'if length == 12 and all(.[]; .state == "uploaded") then
+                map({name,size,digest}) | sort_by(.name)
+              else error("Unexpected draft asset list") end' > "$RUNNER_TEMP/actual-assets.json"
+          jq -ec 'sort_by(.name)' "$RUNNER_TEMP/expected-assets.json" > "$RUNNER_TEMP/sorted-assets.json"
+          cmp "$RUNNER_TEMP/sorted-assets.json" "$RUNNER_TEMP/actual-assets.json"
+      - name: Tag the tested source and publish
         shell: bash
-        env:
-          DIST: ${{ runner.temp }}/dist
-          EDITION: ${{ matrix.edition }}
         run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then interpreter=python; else interpreter=python3; fi
-          "$interpreter" - <<'PY'
-          import hashlib, json, os, pathlib, plistlib, subprocess, sys, tarfile, zipfile
-          root = pathlib.Path(os.environ['DIST'])
-          edition = os.environ['EDITION']
-          version = os.environ['AURORA_VERSION_TAG'][1:]
-          archives = list(root.glob('*.zip')) + list(root.glob('*.tar.gz'))
-          assert len(archives) == 1, archives
-          archive = archives[0]
-          def digest(stream):
-              with stream:
-                  return hashlib.file_digest(stream, 'sha256').hexdigest()
-          sha = digest(archive.open('rb'))
-          assert pathlib.Path(str(archive)+'.sha256').read_text().strip() == f'{sha}  {archive.name}'
-          stages = list(root.glob('.staging-*'))
-          assert len(stages) == 1
-          stage = stages[0]
-          if archive.suffix == '.zip':
-              with zipfile.ZipFile(archive) as packed:
-                  assert packed.testzip() is None
-                  names = packed.namelist()
-                  regular = [n for n in names if not n.endswith('/') and not n.startswith('__MACOSX/')]
-                  for name in regular:
-                      path = pathlib.PurePosixPath(name)
-                      assert not path.is_absolute() and '..' not in path.parts
-                      assert digest(packed.open(name)) == digest((stage/name).open('rb')), name
-          else:
-              with tarfile.open(archive, 'r:gz') as packed:
-                  names = packed.getnames()
-                  regular = [m.name for m in packed.getmembers() if m.isfile()]
-                  for name in regular:
-                      path = pathlib.PurePosixPath(name)
-                      assert not path.is_absolute() and '..' not in path.parts
-                      assert digest(packed.extractfile(name)) == digest((stage/name).open('rb')), name
-          manifests = list(stage.rglob('aurora-install.json'))
-          assert len(manifests) == 1
-          manifest = json.loads(manifests[0].read_text())
-          assert manifest == {'schema':2, 'version':version, 'edition':edition}, manifest
-          resources = manifests[0].parent
-          for item in ('LICENSE','NOTICE.md','README.md','assets/emoji/LICENSE-OFL.txt','assets/dictionaries/README.md'):
-              assert (resources/item).is_file(), item
-          if sys.platform == 'darwin':
-              apps = list(stage.glob('*.app'))
-              assert len(apps) == 1
-              app = apps[0]
-              exe = app/'Contents/MacOS/aurora-viewer'
-              subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
-              with (app/'Contents/Info.plist').open('rb') as stream:
-                  info = plistlib.load(stream)
-              expected = 'org.aurora-viewer.AuroraViewer' + ('.FTRLV' if edition == 'ftrlv' else '')
-              assert info['CFBundleIdentifier'] == expected, info
-              assert info['CFBundleShortVersionString'] == '0.9.13', info
-          elif sys.platform == 'win32':
-              exe = resources/'aurora-viewer.exe'
-          else:
-              exe = resources/('aurora-viewer-ftrlv' if edition == 'ftrlv' else 'aurora-viewer')
-          def query(*args):
-              return subprocess.check_output([str(exe),*args],text=True).strip()
-          assert query('--edition') == edition
-          assert query('--language','en','--version') == 'Aurora Viewer '+version
-          report = dict(source_commit=os.environ['SOURCE_COMMIT'],version=version,edition=edition,platform=sys.platform,archive=archive.name,sha256=sha,size=archive.stat().st_size,files=len(regular),checks=['compiled version and edition','install manifest','required files and licenses','archive-to-staging hashes','SHA-256 sidecar'])
-          (root/'archive-verification.json').write_text(json.dumps(report,indent=2))
-          print(json.dumps(report,indent=2))
-          PY
-      - name: Upload verified archive, checksum and report
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: aurora-${{ matrix.edition }}-${{ matrix.os }}
-          path: |
-            ${{ runner.temp }}/dist/*.zip
-            ${{ runner.temp }}/dist/*.tar.gz
-            ${{ runner.temp }}/dist/*.sha256
-            ${{ runner.temp }}/dist/archive-verification.json
-          if-no-files-found: error
+          set -euo pipefail
+          tag_ref="refs/tags/$TAG"
+          existing="$(git ls-remote origin "$tag_ref" "$tag_ref^{}")"
+          if [[ -z "$existing" ]]; then
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                tag -a "$TAG" "$SOURCE" -m 'Aurora Viewer 0.9.13 - Patch 0.4.2'
+            git push origin "$tag_ref"
+          fi
+          tagged="$(git ls-remote origin "$tag_ref^{}" | cut -f1)"
+          test "$tagged" = "$SOURCE"
+          gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" |
+            jq -e --arg tag "$TAG" '(.draft | not) and (.prerelease | not) and .tag_name == $tag' >/dev/null
