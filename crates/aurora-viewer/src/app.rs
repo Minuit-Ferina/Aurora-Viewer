@@ -21935,13 +21935,13 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        // Cmd+Q asks like the close button (mac_quit.rs). Cmd+H stays Hide.
+        // Cmd+Q opens the viewer's exit prompt even when a desktop panel has focus.
         // The native Window menu makes Cmd+M minimize and Ctrl+Cmd+F enter
         // full screen before the viewer's own shortcuts see them
         // (mac_window_menu.rs).
         #[cfg(target_os = "macos")]
         {
-            crate::mac_quit::route_quit_to_close();
+            crate::mac_quit::install();
             crate::mac_window_menu::install();
         }
         sync_auto_render_scale(&mut self.settings, window.scale_factor());
@@ -25886,6 +25886,14 @@ impl ApplicationHandler for App {
                 ));
             }
             return;
+        }
+        #[cfg(target_os = "macos")]
+        if crate::mac_quit::take_request() {
+            self.request_exit();
+            if let Some(gfx) = &self.gfx {
+                gfx.window.focus_window();
+                gfx.window.request_redraw();
+            }
         }
         self.sync_minimized_mute();
         if self.settings.window_fullscreen != self.fullscreen_applied {
