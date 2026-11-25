@@ -13141,8 +13141,9 @@ impl App {
         }
         ui::fonts::preview::release_unused(&self.egui_ctx);
         let allow_files = self.desktop_text_drop_enabled();
-        self.outside
-            .file_hover(|window| allow_files.then(|| self.desktop_text_import.drag_pointer(window)).flatten());
+        self.outside.prepare_passes(self.palette, |window| {
+            allow_files.then(|| self.desktop_text_import.drag_pointer(window)).flatten()
+        });
         self.outside_frame_start(event_loop, gfx.window.as_ref(), &mut gfx.renderer);
         let mut raw = gfx.egui_state.take_egui_input(gfx.window.as_ref());
         self.outside.root_input(&self.egui_ctx, gfx.window.as_ref(), &mut raw);
@@ -13486,18 +13487,14 @@ impl App {
         {
             self.inventory_ui.clipboard_changed(egui_state.clipboard_text().as_deref());
         }
-        self.text_menu.before(
-            &ctx,
-            &mut raw,
-            || egui_state.clipboard_text(),
-            self.demo.then_some(self.frame_count),
-        );
         let mut inventory_drop = Vec::new();
         let mut library_drop = None;
         let t_pass = Instant::now();
         let mut windows_ms = 0.0;
         self.publish_desktop_text_status(&ctx);
         let mut full = ctx.run_ui(raw, |ui| {
+            self.text_menu
+                .before_widgets(ui.ctx(), || egui_state.clipboard_text(), self.demo.then_some(self.frame_count));
             let window = gfx.window.id();
             let drag = self
                 .desktop_text_drop_enabled()

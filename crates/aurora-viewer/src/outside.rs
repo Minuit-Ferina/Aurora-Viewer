@@ -510,6 +510,8 @@ pub(crate) struct Outside {
 
 #[derive(Default)]
 struct Shared {
+    /// The palette for this frame's native passes, supplied by the viewer.
+    palette: Option<crate::theme::Palette>,
     drag: drag::Session,
     windows: HashMap<egui::ViewportId, Native>,
     /// The texture changes of this frame's passes outside, older than the
@@ -537,6 +539,7 @@ struct Native {
     title: Option<String>,
     /// The window's events of the system, as egui reads them.
     input: egui_winit::State,
+    text_menu: crate::ui::text_menu::TextMenu,
     focused: bool,
     /// A field or a menu of the window read the keyboard at its last pass.
     reads_keys: bool,
@@ -725,10 +728,21 @@ fn pass(shared: &Rc<RefCell<Shared>>, ctx: &egui::Context, viewport: egui::Immed
     ctx.options_mut(|o| o.max_passes = std::num::NonZeroUsize::MIN);
     // (nothing of `shared` is borrowed while the window's code runs)
     let mut out = ctx.run_ui(input, |ui| {
+        if let Some(native) = shared.borrow_mut().windows.get_mut(&ids.this) {
+            native.text_menu.before_widgets(ui.ctx(), || native.input.clipboard_text(), None);
+        }
         if let Some((window, pointer)) = &window {
             crate::ui::inventory::text_import::begin(ui.ctx(), window.id(), window.surface_size(), window.scale_factor(), *pointer);
         }
         viewport_ui_cb(ui);
+        {
+            let mut host = shared.borrow_mut();
+            if let Some(palette) = host.palette
+                && let Some(native) = host.windows.get_mut(&ids.this)
+            {
+                native.text_menu.after(ui.ctx(), &palette);
+            }
+        }
         crate::ui::inventory::text_import::finish(ui.ctx(), ids.this);
         if drag::viewport_hover(ui.ctx()) == Some(true) {
             cursor = crate::ui::inventory::task_drop::hover_cursor(ui.ctx()).or_else(|| crate::ui::inventory::drag::hover_cursor(ui.ctx()));
@@ -1066,6 +1080,7 @@ impl Outside {
                 of_interface: false,
                 title: None,
                 input,
+                text_menu: Default::default(),
                 focused,
                 reads_keys: false,
                 pass: None,
@@ -1145,11 +1160,14 @@ impl Outside {
             .map(|(viewport, native)| (native.window.clone(), *viewport))
     }
 
-    pub fn file_hover(
+    pub fn prepare_passes(
         &mut self,
+        palette: crate::theme::Palette,
         mut pointer: impl FnMut(WindowId) -> Option<(winit::data_transfer::DataTransferId, winit::dpi::PhysicalPosition<f64>)>,
     ) {
-        for native in self.shared.borrow_mut().windows.values_mut() {
+        let mut shared = self.shared.borrow_mut();
+        shared.palette = Some(palette);
+        for native in shared.windows.values_mut() {
             native.file_pointer = pointer(native.window.id());
         }
     }
