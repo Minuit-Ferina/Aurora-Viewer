@@ -1,4 +1,5 @@
 use super::*;
+use egui::RawInput;
 use egui::text::CCursor;
 
 #[test]
@@ -75,16 +76,16 @@ impl Bench {
     }
 
     fn frame(&mut self, events: Vec<Event>) {
-        let mut raw = RawInput {
+        let raw = RawInput {
             screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(500.0, 400.0))),
             events,
             ..Default::default()
         };
         let clipboard = self.clipboard.clone();
         let Bench { ctx, menu, text, kind, .. } = self;
-        menu.before(ctx, &mut raw, || clipboard.clone(), None);
         let p = crate::theme::Theme::default().palette();
         let mut output = ctx.run_ui(raw, |ui| {
+            menu.before_widgets(ui.ctx(), || clipboard.clone(), None);
             let id = Id::unique(FIELD);
             match kind {
                 Kind::Editable => {
@@ -167,10 +168,19 @@ fn a_right_click_on_a_field_opens_the_menu_and_keeps_the_selection() {
     // the popup is an egui area: drawn from its second frame
     b.frame(Vec::new());
     let open = b.menu.open.as_ref().expect("still open");
-    let layer = egui::LayerId::new(egui::Order::Foreground, Id::unique("text_field_menu").with(open.serial));
+    let layer = egui::LayerId::new(egui::Order::Foreground, popup_id(&b.ctx, open.serial));
     assert!(b.ctx.memory(|m| m.areas().is_visible(&layer)));
     // a click outside closes it
     b.click(Pos2::new(480.0, 380.0), PointerButton::Primary);
+    assert!(b.menu.open.is_none());
+}
+
+#[test]
+fn the_field_menu_closes_when_its_window_loses_focus() {
+    let mut b = Bench::new("draft", Kind::Editable);
+    b.click(b.center(), PointerButton::Secondary);
+    assert!(b.menu.open.is_some());
+    b.frame(vec![Event::WindowFocused(false)]);
     assert!(b.menu.open.is_none());
 }
 
@@ -182,10 +192,8 @@ fn chosen_entries_run_in_the_field() {
     b.frame(Vec::new());
     // click the first row, Cut: the menu takes the focus, the field gets it back
     let open = b.menu.open.as_ref().expect("open");
-    let rect = b
-        .ctx
-        .memory(|m| m.area_rect(Id::unique("text_field_menu").with(open.serial)))
-        .expect("menu laid out");
+    let id = popup_id(&b.ctx, open.serial);
+    let rect = b.ctx.memory(|m| m.area_rect(id)).expect("menu laid out");
     let first = Pos2::new(rect.center().x, rect.top() + rect.height() / 10.0);
     b.click(first, PointerButton::Primary);
     b.frame(Vec::new());
@@ -203,6 +211,120 @@ fn chosen_entries_run_in_the_field() {
     b.menu.pending = Some((Id::unique(FIELD), Pending::Entry(Entry::Delete)));
     b.frame(Vec::new());
     assert_eq!(b.text, "");
+}
+
+/// Native Conversations runs its UI within the root pass. The child owns the draft,
+/// keyboard focus and menu, while clipboard commands leave with its platform output.
+#[test]
+fn the_detached_composer_cuts_and_pastes_its_own_selection() {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    let ctx = Context::default();
+    let theme = crate::theme::Theme::default();
+    theme.apply(&ctx, 1.0);
+    let palette = theme.palette();
+    ctx.set_embed_viewports(false);
+    let child = egui::ViewportId::from_hash_of("detached conversations");
+    let events = Rc::new(Cell::new(Vec::<Event>::new()));
+    let clipboard = Rc::new(RefCell::new(None::<String>));
+    let input = events.clone();
+    let copied = clipboard.clone();
+    Context::set_immediate_viewport_renderer(move |ctx, viewport| {
+        let egui::ImmediateViewport {
+            ids, mut viewport_ui_cb, ..
+        } = viewport;
+        let info = egui::ViewportInfo {
+            parent: Some(ids.parent),
+            ..Default::default()
+        };
+        let raw = RawInput {
+            viewport_id: ids.this,
+            viewports: [(ids.this, info)].into_iter().collect(),
+            screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(500.0, 400.0))),
+            events: input.take(),
+            ..Default::default()
+        };
+        let max_passes = ctx.options(|o| o.max_passes);
+        ctx.options_mut(|o| o.max_passes = std::num::NonZeroUsize::MIN);
+        let mut out = ctx.run_ui(raw, |ui| viewport_ui_cb(ui));
+        ctx.options_mut(|o| o.max_passes = max_passes);
+        for command in out.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                *copied.borrow_mut() = Some(text);
+            }
+        }
+        out.textures_delta.clear();
+    });
+
+    let mut root_menu = TextMenu::default();
+    let mut child_menu = TextMenu::default();
+    let mut root_draft = String::from("main window");
+    let mut child_draft = String::from("nearby draft");
+    let field = Id::unique("detached composer");
+    let mut frame = |child_events: Vec<Event>| {
+        events.set(child_events);
+        let mut composer = egui::Rect::NOTHING;
+        let mut popup = None;
+        let mut out = ctx.run_ui(RawInput::default(), |ui| {
+            root_menu.before_widgets(ui.ctx(), || clipboard.borrow().clone(), None);
+            let root = ui.add(egui::TextEdit::singleline(&mut root_draft));
+            root.request_focus();
+            ui.ctx().show_viewport_immediate(child, egui::ViewportBuilder::default(), |ui, _| {
+                child_menu.before_widgets(ui.ctx(), || clipboard.borrow().clone(), None);
+                composer = ui.add(egui::TextEdit::multiline(&mut child_draft).id(field)).rect;
+                child_menu.after(ui.ctx(), &palette);
+                if let Some(open) = &child_menu.open {
+                    assert_eq!(open.field, field);
+                    let id = popup_id(ui.ctx(), open.serial);
+                    popup = ui.ctx().memory(|m| m.area_rect(id));
+                }
+            });
+            root_menu.after(ui.ctx(), &palette);
+            assert!(root_menu.open.is_none());
+        });
+        out.textures_delta.clear();
+        (composer.left_top() + egui::vec2(12.0, 10.0), popup, child_draft.is_empty())
+    };
+
+    let click = |at, button| {
+        [true, false].map(|pressed| {
+            vec![
+                Event::PointerMoved(at),
+                Event::PointerButton {
+                    pos: at,
+                    button,
+                    pressed,
+                    modifiers: Modifiers::NONE,
+                },
+            ]
+        })
+    };
+    let (at, _, _) = frame(Vec::new());
+    // Start the selection elsewhere in the text so the following right click
+    // is a single click, rather than egui's double click selecting one word.
+    for events in click(at + egui::vec2(40.0, 0.0), PointerButton::Primary) {
+        frame(events);
+    }
+    frame(vec![key(Key::A, Modifiers::COMMAND)]);
+    for (row, empty_after) in [(0, true), (2, false)] {
+        for events in click(at, PointerButton::Secondary) {
+            frame(events);
+        }
+        let (_, menu, _) = frame(Vec::new());
+        let menu = menu.expect("the child draws the editing menu");
+        // The five equally high rows are Cut, Copy, Paste, Delete and Select All.
+        let y = menu.top() + menu.height() * (row as f32 + 0.5) / ENTRIES.len() as f32;
+        for events in click(Pos2::new(menu.center().x, y), PointerButton::Primary) {
+            frame(events);
+        }
+        let (_, popup, empty) = frame(Vec::new());
+        assert!(popup.is_none());
+        assert_eq!(empty, empty_after);
+        assert_eq!(clipboard.borrow().as_deref(), Some("nearby draft"));
+    }
+    assert_eq!(child_draft, "nearby draft");
+    assert_eq!(root_draft, "main window");
 }
 
 #[test]

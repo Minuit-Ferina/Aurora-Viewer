@@ -1,4 +1,4 @@
-//! Right-click menu of every text field, like Firestorm's text editors
+//! Right-click menu of every text field, like the Legacy Viewer's text editors
 //! (LLLineEditor / LLTextEditor::showContextMenu and menu_text_editor.xml,
 //! indra/llui, originally LGPL 2.1): Cut, Copy, Paste, Delete and Select
 //! All, greyed out by the rules of canCut / canCopy / canPaste /
@@ -9,8 +9,8 @@
 //!
 //! egui's `TextEdit` has no menu of its own, and the viewer has well over a
 //! hundred of them: one hook around the interface pass covers them all
-//! without touching their call sites. `before` runs on the raw input of the
-//! frame, `after` at the end of the pass:
+//! without touching their call sites. Each window runs `before_widgets` and
+//! `after` in its own viewport pass so edits use that window's focus:
 //! - the field is the focused one with a `TextEditState` under the right
 //!   click (egui focuses a field on any press);
 //! - whether it is editable or a password comes from the IME request egui
@@ -26,7 +26,7 @@
 use crate::theme::Palette;
 use egui::text::CCursorRange;
 use egui::text_edit::TextEditState;
-use egui::{Context, Event, IMEPurpose, Id, Key, Modifiers, PointerButton, Pos2, RawInput};
+use egui::{Context, Event, IMEPurpose, Id, Key, Modifiers, PointerButton, Pos2};
 
 /// The entries, in Firestorm's order (menu_text_editor.xml).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,28 +182,39 @@ pub(crate) struct TextMenu {
     demo_open: bool,
 }
 
+fn popup_id(ctx: &Context, serial: u64) -> Id {
+    ctx.viewport_id().0.with(("text_field_menu", serial))
+}
+
 impl TextMenu {
-    /// On the raw input, before the pass. `clipboard` reads the system
-    /// clipboard (only on a right click or for Paste); `demo_frame` is the
-    /// app's frame in demo mode.
-    pub fn before(&mut self, ctx: &Context, raw: &mut RawInput, mut clipboard: impl FnMut() -> Option<String>, demo_frame: Option<u64>) {
+    /// Before the fields handle input, while this viewport owns egui's focus.
+    /// A repeated layout pass must not replay editing commands or demo input.
+    pub fn before_widgets(&mut self, ctx: &Context, mut clipboard: impl FnMut() -> Option<String>, demo_frame: Option<u64>) {
+        if ctx.current_pass_index() != 0 {
+            return;
+        }
+        // A click in another native window never reaches this popup.
+        if self.open.is_some() && ctx.input(|i| i.events.contains(&Event::WindowFocused(false))) {
+            self.open = None;
+        }
         if let Some((field, pending)) = self.pending.take()
             && ctx.memory(|m| m.has_focus(field))
         {
             match pending {
                 Pending::Entry(entry) => {
                     let text = if entry == Entry::Paste { clipboard() } else { None };
-                    raw.events.extend(events(entry, text));
+                    ctx.input_mut(|i| i.events.extend(events(entry, text)));
                 }
-                Pending::Replace(word, with) => replace(ctx, raw, field, &word, with),
+                Pending::Replace(word, with) => replace(ctx, field, &word, with),
             }
         }
-        let right = |pressed: bool| {
-            raw.events
-                .iter()
-                .any(|e| matches!(e, Event::PointerButton { button: PointerButton::Secondary, pressed: p, .. } if *p == pressed))
-        };
-        self.pressed = if right(true) {
+        let (pressed, released) = ctx.input(|i| {
+            (
+                i.pointer.button_pressed(PointerButton::Secondary),
+                i.pointer.button_released(PointerButton::Secondary),
+            )
+        });
+        self.pressed = if pressed {
             ctx.memory(|m| m.focused()).and_then(|field| {
                 let range = TextEditState::load(ctx, field)?.cursor.char_range()?;
                 (!range.is_empty()).then_some((field, range))
@@ -211,7 +222,7 @@ impl TextMenu {
         } else {
             None
         };
-        if right(false) {
+        if released {
             self.clipboard = clipboard().is_some_and(|text| !text.is_empty());
         }
         if let Some(frame) = demo_frame {
@@ -220,8 +231,8 @@ impl TextMenu {
                     self.clipboard = clipboard().is_some_and(|text| !text.is_empty());
                     self.demo_open = true;
                 }
-                (Some(SpellingDemo::Replace), DEMO_TYPE) => raw.events.push(Event::Text("brb ".into())),
-                (Some(SpellingDemo::Replace), DEMO_TYPE_MORE) => raw.events.push(Event::Text("ty ".into())),
+                (Some(SpellingDemo::Replace), DEMO_TYPE) => ctx.input_mut(|i| i.events.push(Event::Text("brb ".into()))),
+                (Some(SpellingDemo::Replace), DEMO_TYPE_MORE) => ctx.input_mut(|i| i.events.push(Event::Text("ty ".into()))),
                 _ => {}
             }
         }
@@ -230,8 +241,10 @@ impl TextMenu {
             match frame {
                 DEMO_FOCUS => ctx.memory_mut(|m| m.request_focus(chat)),
                 DEMO_TYPE => {
-                    raw.events.push(Event::Text("Hello from the demo".into()));
-                    raw.events.push(key(Key::A, Modifiers::COMMAND));
+                    ctx.input_mut(|i| {
+                        i.events.push(Event::Text("Hello from the demo".into()));
+                        i.events.push(key(Key::A, Modifiers::COMMAND));
+                    });
                 }
                 DEMO_OPEN => {
                     self.clipboard = clipboard().is_some_and(|text| !text.is_empty());
@@ -304,7 +317,7 @@ impl TextMenu {
         let mut keep = true;
         let mut chosen = None;
         let mut done = false;
-        super::menu::popup_at(ctx, Id::unique("text_field_menu").with(open.serial), open.pos, &mut keep, p, |ui| {
+        super::menu::popup_at(ctx, popup_id(ctx, open.serial), open.pos, &mut keep, p, |ui| {
             if let Some(word) = &spell {
                 match &suggestions {
                     Some(Some(list)) => {
@@ -369,7 +382,7 @@ fn misspelled_at_cursor(ctx: &Context, field: Id) -> Option<Misspelled> {
 
 /// A suggestion pasted over its word, selected first, if the field still
 /// holds that misspelled word there (LLLineEditor::replaceWithSuggestion).
-fn replace(ctx: &Context, raw: &mut RawInput, field: Id, word: &Misspelled, with: String) {
+fn replace(ctx: &Context, field: Id, word: &Misspelled, with: String) {
     let still = super::spelling::marked(ctx, field).is_some_and(|marked| marked.iter().any(|(r, w)| *r == word.range && *w == word.word));
     if !still || with.is_empty() {
         return;
@@ -382,7 +395,7 @@ fn replace(ctx: &Context, raw: &mut RawInput, field: Id, word: &Misspelled, with
         egui::text::CCursor::new(word.range.end),
     )));
     state.store(ctx, field);
-    raw.events.push(Event::Paste(with));
+    ctx.input_mut(|i| i.events.push(Event::Paste(with)));
 }
 
 /// The text field `field` under `pos`, if the menu may open there.
