@@ -2,6 +2,30 @@
 
 use super::*;
 
+/// A real egui child pass with an input queue independent of the root's.
+pub(crate) fn detached_input(ctx: &egui::Context, window: &str) -> std::rc::Rc<std::cell::RefCell<egui::RawInput>> {
+    let queue = std::rc::Rc::new(std::cell::RefCell::new(egui::RawInput::default()));
+    let next = queue.clone();
+    let id = egui::Id::unique(window);
+    ctx.set_embed_viewports(false);
+    crate::outside::want(ctx, id, true);
+    crate::outside::set_native(ctx, id, true);
+    egui::Context::set_immediate_viewport_renderer(move |ctx, viewport| {
+        assert_eq!(viewport.ids.this, crate::outside::viewport(id));
+        let mut input = next.take();
+        input.viewport_id = viewport.ids.this;
+        input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(840.0, 580.0)));
+        input.time = Some(ctx.input(|i| i.time));
+        let info = input.viewports.entry(viewport.ids.this).or_default();
+        info.parent = Some(viewport.ids.parent);
+        info.focused = Some(input.focused);
+        let mut draw = viewport.viewport_ui_cb;
+        let mut output = ctx.run_ui(input, |ui| draw(ui));
+        output.textures_delta.clear();
+    });
+    queue
+}
+
 fn window(id: &str) -> Floater<'_> {
     Floater::new(id, "Window", egui::pos2(20.0, 20.0), Vec2::new(400.0, 300.0))
 }

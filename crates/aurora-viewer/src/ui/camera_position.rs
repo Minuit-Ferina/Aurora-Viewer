@@ -145,14 +145,14 @@ impl CameraPositionUi {
             return out;
         }
         let width = window_width(ctx, &s.camera);
-        Floater::new(
+        let (_, pointer) = Floater::new(
             WINDOW,
             tr!("ui-options-camera-camera-position"),
             Pos2::new(340.0, 200.0),
             Vec2::new(width, 200.0),
         )
         .auto_height()
-        .show(ctx, p, open, |ui| {
+        .show_with_pointer(ctx, p, open, |ui, _| {
             ui.spacing_mut().item_spacing.y = 8.0;
             let body = ui.add_enabled_ui(!locked, |ui| self.body(ui, p, s, &mut out));
             if locked {
@@ -160,7 +160,7 @@ impl CameraPositionUi {
             }
         });
         self.unsaved |= out.changed;
-        if self.unsaved && (!*open || !ctx.input(|i| i.pointer.any_down())) {
+        if self.unsaved && (!*open || !pointer.held) {
             self.unsaved = false;
             out.save_settings = true;
         }

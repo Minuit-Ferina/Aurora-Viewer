@@ -21,18 +21,19 @@ impl FollowUi {
     pub fn show(&mut self, ctx: &egui::Context, p: &Palette, name: &str, recovering: bool, settings: &mut FollowSettings) -> Actions {
         let mut actions = Actions::default();
         if !self.open {
+            actions.save = std::mem::take(&mut self.save_pending);
             return actions;
         }
         #[cfg(test)]
         self.rects.clear();
-        Floater::new(
+        let (_, pointer) = Floater::new(
             "follow",
             aurora_i18n::tr!("follow-title"),
             egui::pos2(40.0, 160.0),
             egui::vec2(340.0, 190.0),
         )
         .fixed()
-        .show(ctx, p, &mut self.open, |ui| {
+        .show_with_pointer(ctx, p, &mut self.open, |ui, _| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
             ui.label(egui::RichText::new(name).strong());
             ui.label(aurora_i18n::tr!("follow-distance"));
@@ -65,7 +66,7 @@ impl FollowUi {
         // Closing the controller also stops its follow, including Ctrl+W.
         actions.stop |= !self.open;
         self.save_pending |= actions.changed;
-        if actions.stop || !ctx.input(|input| input.pointer.any_down()) {
+        if actions.stop || !pointer.held {
             actions.save = std::mem::take(&mut self.save_pending);
         }
         actions

@@ -239,9 +239,9 @@ impl QuickPrefsUi {
         let pos = egui::pos2(screen.right() - WIDTH - 300.0, screen.top() + 90.0);
         let Hover { height, enabled } = hover;
         let enabled = enabled && height.ready();
-        Floater::new(WINDOW, aurora_i18n::tr!("toolbar-command-quickprefs"), pos, Vec2::new(WIDTH, 420.0))
+        let (_, pointer) = Floater::new(WINDOW, aurora_i18n::tr!("toolbar-command-quickprefs"), pos, Vec2::new(WIDTH, 420.0))
             .auto_height()
-            .show(ctx, p, open, |ui| {
+            .show_with_pointer(ctx, p, open, |ui, _| {
                 ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
                 // the user-defined rows
                 for slot in Slot::ROWS {
@@ -269,11 +269,11 @@ impl QuickPrefsUi {
             });
         // saved once the button is released, not at every frame of a drag
         self.unsaved |= out.changed;
-        if self.unsaved && !ctx.input(|i| i.pointer.any_down()) {
+        if self.unsaved && !pointer.held {
             self.unsaved = false;
             settings.save();
         }
-        if self.hover_editing && !ctx.input(|i| i.pointer.any_down()) {
+        if self.hover_editing && !pointer.held {
             if enabled {
                 height.commit();
             }

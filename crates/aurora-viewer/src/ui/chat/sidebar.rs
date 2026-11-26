@@ -514,8 +514,8 @@ pub(super) fn show(
                     }
                 }
             }
-            if let Some(out) = st.reorder.finish(ui, p, st.demo_reorder) {
-                actions.push(ConvAction::PopOutAt(out.conversation, out.pos));
+            if let Some(action) = st.reorder.finish(ui, p, st.demo_reorder) {
+                actions.push(action);
             }
             // the search starts new conversations: friends without one, and
             // the resident search

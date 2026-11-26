@@ -56,14 +56,14 @@ impl HoverHeightUi {
         } = options;
         let enabled = enabled && height.ready();
         let mut preferences_changed = false;
-        Floater::new(
+        let (_, pointer) = Floater::new(
             "hover_height",
             aurora_i18n::tr!("ui-context-hover-height"),
             egui::pos2(480.0, 100.0),
             egui::vec2(440.0, if neutral_pose_test.is_some() { 368.0 } else { 332.0 }),
         )
         .fixed()
-        .show(ctx, p, &mut self.open, |ui| {
+        .show_with_pointer(ctx, p, &mut self.open, |ui, _| {
             // Sitting down or standing up shows the height that now applies.
             let posture = height.posture();
             if self.followed != Some(posture) {
@@ -195,21 +195,21 @@ impl HoverHeightUi {
         });
         // A drag only previews; release commits once, including release
         // outside the slider or closing the floater during the gesture.
-        if self.editing && !ctx.input(|i| i.pointer.any_down()) {
+        if self.editing && !pointer.held {
             if enabled {
                 height.commit();
             }
             self.editing = false;
         }
         if let Some(posture) = self.seated_editing
-            && !ctx.input(|i| i.pointer.any_down())
+            && !pointer.held
         {
             if enabled {
                 height.commit_seated(posture);
             }
             self.seated_editing = None;
         }
-        if self.offset_editing && !ctx.input(|i| i.pointer.any_down()) {
+        if self.offset_editing && !pointer.held {
             if enabled && *automatic {
                 height.commit();
             }
@@ -535,6 +535,29 @@ mod tests {
             assert_eq!(f.height.value(), 0.2);
             assert!(f.height.next_update(Some(1)).is_none());
         }
+    }
+
+    #[test]
+    fn detached_offset_previews_while_held_and_commits_once_on_release() {
+        let mut f = Fixture::new();
+        let child = crate::ui::widgets::outside_tests::detached_input(&f.ctx, "hover_height");
+        for _ in 0..3 {
+            f.frame(Vec::new());
+        }
+        let rect = f.panel.offset_rect.unwrap();
+        let point = egui::pos2(rect.left() + 195.0, rect.center().y);
+        child.borrow_mut().events = vec![egui::Event::PointerMoved(point), button(point, true)];
+        assert!(!f.frame(Vec::new()));
+        assert!(f.offset > 0.0 && f.panel.previewing_offset());
+        let point = point - egui::vec2(20.0, 0.0);
+        child.borrow_mut().events = vec![egui::Event::PointerMoved(point)];
+        assert!(!f.frame(Vec::new()));
+        assert!(f.height.next_update(Some(1)).is_none());
+        child.borrow_mut().events = vec![button(point, false)];
+        assert!(f.frame(Vec::new()));
+        assert!(!f.panel.previewing_offset());
+        assert!(matches!(f.height.next_update(Some(1)), Some(NetCommand::SetHoverHeight { .. })));
+        assert!(!f.frame(Vec::new()));
     }
 
     #[test]

@@ -231,7 +231,7 @@ pub struct FloaterState {
     /// Texture tab: 0 Classic (Blinn-Phong), 1 PBR, 2 Media.
     pub tex_tab: usize,
     /// A block being dragged out of the build window with Alt.
-    pub detach_drag: Option<crate::build::layout::Block>,
+    pub detach_drag: Option<(crate::build::layout::Block, egui::ViewportId)>,
     /// Each detached window's rect when the button went down, to tell a
     /// move by its title (put back when dropped on the build window).
     detach_press: std::collections::BTreeMap<crate::build::layout::Block, egui::Rect>,
@@ -649,7 +649,7 @@ pub fn show(
     if layout::settings_shown(ctx, tool) {
         floater.side_outside = layout::SETTINGS_ROOM;
     }
-    floater.show(ctx, p, &mut open, |ui| {
+    let (drawn, _) = floater.show_with_pointer(ctx, p, &mut open, |ui, pointer| {
         common::typography(ui);
         // (in the window's own pass: outside the viewer's, it is another window)
         widgets::copied_feedback(ui.ctx(), p, uuid_feedback, window_rect(ui.ctx()));
@@ -663,7 +663,11 @@ pub fn show(
             layout::settings(ui.ctx(), p, tool, world, s, mods, layout::Beside::Outside(room));
             layout::finish(ui.ctx(), p, tool, s);
         }
+        detach::finish(ui.ctx(), pointer, p, tool, s);
     });
+    if drawn.is_none() {
+        tool.ui.detach_drag = None;
+    }
     if restore_text {
         name_focus::apply(ctx);
     }
@@ -710,7 +714,6 @@ pub fn show(
         tool.ui.layout.open = true;
         tool.ui.grid_options_open = false;
     }
-    detach::finish(ctx, p, tool, s);
     detach::windows(ctx, p, tool, world, s, mods, env);
     if !outside {
         layout::settings(ctx, p, tool, world, s, mods, layout::Beside::Window);

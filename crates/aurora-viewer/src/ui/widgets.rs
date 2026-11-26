@@ -18,7 +18,7 @@ mod field_centering_tests;
 #[cfg(test)]
 mod movement_tests;
 #[cfg(test)]
-mod outside_tests;
+pub(crate) mod outside_tests;
 pub(crate) use cascade::Group as CascadeGroup;
 #[cfg(test)]
 mod auto_height_tests;
@@ -716,6 +716,24 @@ pub fn take_title_rename(ctx: &egui::Context, window: &str) -> Option<String> {
     ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::unique(window).with("title_rename_result")))
 }
 
+/// Button state from the viewport drawing the floater body in this pass.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FloaterPointer {
+    pub held: bool,
+    primary_down: bool,
+    pub primary_released: bool,
+}
+
+impl FloaterPointer {
+    /// Only the viewport that took the press may complete the drag. A focus
+    /// loss or a missing release cancels it, including after a host change.
+    pub(crate) fn cancels_drag(self, ctx: &egui::Context, origin: egui::ViewportId) -> bool {
+        ctx.viewport_id() != origin
+            || !(self.primary_down || self.primary_released)
+            || ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    }
+}
+
 pub struct Floater<'a> {
     pub id: &'a str,
     pub title: String,
@@ -1009,6 +1027,27 @@ impl<'a> Floater<'a> {
     pub fn attention_flash(mut self, flash: (f32, bool)) -> Self {
         self.attention_flash = Some(flash);
         self
+    }
+
+    /// Sample the pointer in the body's own pass. Callers finishing a preview
+    /// after `show` use the same sample. A hidden or closed body holds nothing.
+    pub(crate) fn show_with_pointer<R>(
+        self,
+        ctx: &egui::Context,
+        p: &Palette,
+        open: &mut bool,
+        body: impl FnOnce(&mut egui::Ui, FloaterPointer) -> R,
+    ) -> (Option<R>, FloaterPointer) {
+        let mut pointer = FloaterPointer::default();
+        let result = self.show(ctx, p, open, |ui| {
+            pointer = ui.input(|i| FloaterPointer {
+                held: i.focused && i.pointer.any_down(),
+                primary_down: i.focused && i.pointer.primary_down(),
+                primary_released: i.focused && i.pointer.primary_released(),
+            });
+            body(ui, pointer)
+        });
+        (result, pointer)
     }
 
     /// Show the floater; `open` is cleared by the close button.

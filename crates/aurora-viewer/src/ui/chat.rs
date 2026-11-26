@@ -3971,7 +3971,7 @@ pub fn show(
 ) -> Vec<ConvAction> {
     let enlarged = st.previews.enlarged();
     st.previews.lightbox_keys(ctx);
-    st.reorder.begin(ctx, world);
+    st.reorder.sync_sessions(world);
     // what the thumbnails' menus asked, drawn with the bars before
     let mut actions = std::mem::take(&mut st.thumbnails.actions);
     let mut friends = friends;
@@ -4099,7 +4099,8 @@ pub fn show(
         least.y = least.y.max(column);
     }
     floater.min_size = floater.min_size.max(least);
-    let image_bounds = floater.show(ctx, p, open, |ui| {
+    let (image_bounds, _) = floater.show_with_pointer(ctx, p, open, |ui, pointer| {
+        st.reorder.begin(ui.ctx(), pointer);
         let bounds = ui.available_rect_before_wrap().intersect(ui.clip_rect());
         if enlarged {
             ui.disable();
@@ -4249,8 +4250,8 @@ pub fn show(
                             st.select_tab(Some(other));
                         }
                     }
-                    if let Some(out) = st.reorder.finish(ui, p, st.demo_reorder) {
-                        actions.push(ConvAction::PopOutAt(out.conversation, out.pos));
+                    if let Some(action) = st.reorder.finish(ui, p, st.demo_reorder) {
+                        actions.push(action);
                     }
                 });
             });
@@ -4269,6 +4270,9 @@ pub fn show(
         });
         bounds
     });
+    if image_bounds.is_none() {
+        st.reorder.cancel();
+    }
     docking::target(ctx, *open && !minimized && image_bounds.is_some());
     st.previews.lightbox(ctx, p, image_bounds.filter(|_| *open));
     if tear_off {

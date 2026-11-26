@@ -159,10 +159,8 @@ impl PhototoolsUi {
         keep_fov: Option<f32>,
     ) -> Out {
         let mut out = Out::default();
-        // the pending save first: a drag that ended with the window closed
-        // is still saved
-        self.save_when_released(ctx, settings, keep_fov);
         if !*open {
+            self.save_when_released(false, settings, keep_fov);
             return out;
         }
         self.rows.share_from(preferences);
@@ -178,19 +176,19 @@ impl PhototoolsUi {
         if self.over_viewfinder {
             floater.order = egui::Order::Foreground;
         }
-        floater.show(ctx, p, open, |ui| {
+        let (_, pointer) = floater.show_with_pointer(ctx, p, open, |ui, _| {
             self.body(ui, p, settings, &mut env, &mut out);
         });
         self.unsaved |= out.changed;
-        self.save_when_released(ctx, settings, keep_fov);
+        self.save_when_released(pointer.held, settings, keep_fov);
         out
     }
 
     /// Saved once the button is released, not at every frame of a drag.
     /// `keep_fov`: the user's view angle while the viewfinder is on (it
     /// writes its own focal length into the setting): what is written.
-    fn save_when_released(&mut self, ctx: &egui::Context, settings: &Settings, keep_fov: Option<f32>) {
-        if self.unsaved && !ctx.input(|i| i.pointer.any_down()) {
+    fn save_when_released(&mut self, held: bool, settings: &Settings, keep_fov: Option<f32>) {
+        if self.unsaved && !held {
             self.unsaved = false;
             settings.save_with_fov(keep_fov);
         }

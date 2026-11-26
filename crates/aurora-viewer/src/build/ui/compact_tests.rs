@@ -1534,6 +1534,49 @@ fn resize_inspector(inspector: &mut Inspector, size: Vec2) -> (egui::Rect, Vec<(
 }
 
 #[test]
+fn detached_inspector_keeps_alt_drag_until_the_section_leaves_its_own_window() {
+    use crate::build::layout::Block;
+    let mut inspector = Inspector::new();
+    inspector.settings.expanded = true;
+    for _ in 0..3 {
+        inspector.show(vec![]);
+    }
+    let id = super::super::INSPECTOR_ID;
+    let input = crate::ui::widgets::outside_tests::detached_input(&inspector.ctx, id);
+    for _ in 0..3 {
+        input.borrow_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
+        inspector.show(vec![]);
+    }
+    let start = inspector
+        .ctx
+        .data(|d| d.get_temp::<egui::Rect>(egui::Id::unique("build-transform-viewport")))
+        .unwrap()
+        .center();
+    let drag_to = start + egui::vec2(25.0, 0.0);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::ALT,
+    };
+    for outside in [false, true] {
+        let frame = |inspector: &mut Inspector, events| {
+            input.borrow_mut().events = events;
+            inspector.show(vec![]);
+        };
+        frame(&mut inspector, vec![egui::Event::PointerMoved(start)]);
+        frame(&mut inspector, vec![button(start, true)]);
+        frame(&mut inspector, vec![egui::Event::PointerMoved(drag_to)]);
+        frame(&mut inspector, vec![]);
+        assert_eq!(inspector.tool.ui.detach_drag.map(|(block, _)| block), Some(Block::Transform));
+        let end = if outside { egui::pos2(-24.0, 80.0) } else { drag_to };
+        frame(&mut inspector, vec![egui::Event::PointerMoved(end), button(end, false)]);
+        assert!(inspector.tool.ui.detach_drag.is_none());
+        assert_eq!(inspector.settings.detached.contains_key(&Block::Transform), outside);
+    }
+}
+
+#[test]
 fn construction_presentations_follow_pointer_resizing_without_changing_selection_or_drafts() {
     let mut inspector = Inspector::new();
     inspector.tool.tab = 3;

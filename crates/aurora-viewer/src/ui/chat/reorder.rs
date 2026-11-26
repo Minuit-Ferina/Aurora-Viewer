@@ -34,6 +34,7 @@ struct Row {
 /// the pointer took it in the entry, and the entry's size.
 #[derive(Clone, Copy, Debug)]
 struct Grab {
+    viewport: egui::ViewportId,
     conversation: Option<Uuid>,
     offset: Vec2,
     size: Vec2,
@@ -55,14 +56,6 @@ struct Spot {
     landing: Landing,
     from: usize,
     to: usize,
-}
-
-/// What a drag let go of asks: the conversation (None: the nearby chat) in
-/// its own window, its top left corner at `pos`.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct PopOut {
-    pub conversation: Option<Uuid>,
-    pub pos: Pos2,
 }
 
 /// Where the dragged entry's ghost stands, and whether a drop there pops
@@ -128,7 +121,7 @@ pub(super) struct State {
 }
 
 impl State {
-    pub fn begin(&mut self, ctx: &egui::Context, world: &World) {
+    pub fn sync_sessions(&mut self, world: &World) {
         let mut remaining: HashSet<_> = world.social.ims.iter().map(|s| s.other).collect();
         self.order.retain(|id| remaining.remove(id));
         let new = world.social.ims.iter().map(|s| s.other).filter(|id| remaining.remove(id));
@@ -144,6 +137,9 @@ impl State {
         } else {
             self.order.extend(new);
         }
+    }
+
+    pub fn begin(&mut self, ctx: &egui::Context, pointer: crate::ui::widgets::FloaterPointer) {
         let pass = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
         if self.laid_out.is_none_or(|last| last + 1 < pass) {
             self.offsets.clear();
@@ -159,8 +155,7 @@ impl State {
         // viewer: the carried entry glides home from its card, as a drop
         // does (the rows are still the last pass's)
         if let Some(grab) = self.grab
-            && (ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
-                || ctx.input(|i| !i.focused || (!i.pointer.primary_down() && !i.pointer.primary_released())))
+            && pointer.cancels_drag(ctx, grab.viewport)
         {
             self.release(grab.conversation.zip(self.last_pointer.map(|at| at - grab.offset)));
             self.cancel();
@@ -170,7 +165,7 @@ impl State {
         self.seeding = std::mem::take(&mut self.seed);
     }
 
-    fn cancel(&mut self) {
+    pub(super) fn cancel(&mut self) {
         self.grab = None;
         self.targets.clear();
         self.last_pointer = None;
@@ -191,6 +186,7 @@ impl State {
                 .or(response.interact_pointer_pos())
                 .unwrap_or(response.rect.center());
             self.grab = Some(Grab {
+                viewport: response.ctx.viewport_id(),
                 conversation,
                 offset: at - response.rect.min,
                 size: response.rect.size(),
@@ -399,9 +395,14 @@ impl State {
     /// After the list's entries: the drag's gap, cursor and scrolling, and
     /// its drop. A drop outside the window asks for the conversation's own
     /// window there.
-    pub fn finish(&mut self, ui: &mut egui::Ui, p: &Palette, demo: Option<Demo>) -> Option<PopOut> {
+    pub fn finish(&mut self, ui: &mut egui::Ui, p: &Palette, demo: Option<Demo>) -> Option<super::ConvAction> {
         // the window holding the list (the Conversations window)
-        let window = ui.ctx().memory(|m| m.area_rect(ui.layer_id().id)).unwrap_or(ui.clip_rect());
+        let in_viewer = ui.ctx().viewport_id() == egui::ViewportId::ROOT;
+        let window = if in_viewer {
+            ui.ctx().memory(|m| m.area_rect(ui.layer_id().id)).unwrap_or(ui.clip_rect())
+        } else {
+            ui.ctx().content_rect()
+        };
         if demo.is_some() && self.grab.is_none() {
             let first = self.rows.first().map(|first| first.rect);
             let second = self
@@ -456,9 +457,14 @@ impl State {
             let drop = if out {
                 // the others close the gap it leaves smoothly
                 self.release(None);
-                at.map(|at| PopOut {
-                    conversation: grab.conversation,
-                    pos: at - grab.offset,
+                at.map(|at| {
+                    if in_viewer {
+                        super::ConvAction::PopOutAt(grab.conversation, at - grab.offset)
+                    } else {
+                        // The new floater opens at its own viewer placement.
+                        // The detached window's local coordinates belong to it alone.
+                        super::ConvAction::PopOut(grab.conversation)
+                    }
                 })
             } else {
                 self.release(grab.conversation.zip(at.map(|at| at - grab.offset)));
@@ -612,6 +618,7 @@ mod tests {
             });
         }
         let grab = Grab {
+            viewport: egui::ViewportId::ROOT,
             conversation: Some(grabbed),
             offset: egui::vec2(20.0, 22.0),
             size: egui::vec2(200.0, 44.0),

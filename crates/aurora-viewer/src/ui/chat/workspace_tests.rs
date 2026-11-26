@@ -1051,6 +1051,59 @@ fn conversation_reorder_demo_drags_out_of_the_window() {
 }
 
 #[test]
+fn detached_conversation_drag_uses_only_its_own_button_focus_and_escape() {
+    for (escape, lose_focus) in [(false, false), (true, false), (false, true)] {
+        let mut h = Harness::new(ChatStyle::Aurora);
+        let child = crate::ui::widgets::outside_tests::detached_input(&h.frames.ctx, "conversations");
+        h.st.demo_reorder = Some(super::super::ReorderDemo::Drop);
+        h.settle();
+        for frame in 700..=760 {
+            let mut events = super::super::reorder::demo_events(&h.frames.ctx, frame);
+            if escape && frame == 735 {
+                events.push(egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Default::default(),
+                });
+            }
+            {
+                let mut input = child.borrow_mut();
+                input.events = events;
+                input.focused = !(lose_focus && frame >= 735);
+            }
+            h.frame(Vec::new());
+            if (720..760).contains(&frame) {
+                assert_eq!(h.st.reorder.dragging(Some(JANE)), frame < 735 || !(escape || lose_focus));
+            }
+        }
+        assert!(!h.st.reorder.dragging(Some(JANE)));
+        assert_eq!(h.st.reorder.sessions(&h.world)[0].0, if escape || lose_focus { JANE } else { BOB });
+    }
+}
+
+#[test]
+fn detached_conversation_drag_tears_off_only_beyond_the_native_client() {
+    for (end, tears_off) in [(egui::pos2(690.0, 290.0), false), (egui::pos2(-30.0, 290.0), true)] {
+        let mut h = Harness::new(ChatStyle::Aurora);
+        let child = crate::ui::widgets::outside_tests::detached_input(&h.frames.ctx, "conversations");
+        h.st.demo_reorder = Some(super::super::ReorderDemo::Drop);
+        h.settle();
+        for frame in 700..=720 {
+            child.borrow_mut().events = super::super::reorder::demo_events(&h.frames.ctx, frame);
+            h.frame(Vec::new());
+        }
+        assert!(h.st.reorder.dragging(Some(JANE)));
+        child.borrow_mut().events = vec![egui::Event::PointerMoved(end)];
+        h.frame(Vec::new());
+        child.borrow_mut().events = Harness::drop_at(end);
+        h.frame(Vec::new());
+        assert_eq!(h.st.popped.contains(Some(JANE)), tears_off);
+    }
+}
+
+#[test]
 fn conversation_reorder_demo_uses_the_current_window_position() {
     let mut h = Harness::new(ChatStyle::Aurora);
     h.st.demo_reorder = Some(super::super::ReorderDemo::Drop);

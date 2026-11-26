@@ -199,7 +199,7 @@ pub(super) fn source(ui: &egui::Ui, p: &Palette, tool: &mut BuildTool, s: &Build
     if !available(s) || tool.ui.layout.organizing {
         return;
     }
-    let dragging = tool.ui.detach_drag == Some(block);
+    let dragging = tool.ui.detach_drag == Some((block, ui.ctx().viewport_id()));
     if !dragging && (!ui.input(|i| i.modifiers.alt) || tool.ui.detach_drag.is_some()) {
         return;
     }
@@ -207,7 +207,7 @@ pub(super) fn source(ui: &egui::Ui, p: &Palette, tool: &mut BuildTool, s: &Build
         .interact(rect, egui::Id::unique(("build-detach", block, place)), egui::Sense::drag())
         .on_hover_cursor(egui::CursorIcon::Grab);
     if response.drag_started() {
-        tool.ui.detach_drag = Some(block);
+        tool.ui.detach_drag = Some((block, ui.ctx().viewport_id()));
     }
     if !dragging && response.hovered() && tool.ui.detach_drag.is_none() {
         widgets::organization_source(ui, p, rect, true, true);
@@ -237,13 +237,19 @@ fn outline_main(ctx: &egui::Context, p: &Palette, rect: egui::Rect) {
 
 /// After the build window: the block carried with Alt, dropped outside the
 /// build window, opens in its own window there.
-pub(super) fn finish(ctx: &egui::Context, p: &Palette, tool: &mut BuildTool, s: &mut BuildSettings) {
-    let Some(block) = tool.ui.detach_drag else {
+pub(super) fn finish(ctx: &egui::Context, input: widgets::FloaterPointer, p: &Palette, tool: &mut BuildTool, s: &mut BuildSettings) {
+    let Some((block, origin)) = tool.ui.detach_drag else {
         return;
     };
+    if input.cancels_drag(ctx, origin) {
+        tool.ui.detach_drag = None;
+        return;
+    }
     let pointer = ctx.pointer_interact_pos();
-    let inside = |pos: egui::Pos2| main_rect(ctx).is_some_and(|rect| rect.contains(pos));
-    if ctx.input(|i| i.pointer.primary_down()) {
+    let in_viewer = origin == egui::ViewportId::ROOT;
+    let bounds = if in_viewer { main_rect(ctx) } else { Some(ctx.content_rect()) };
+    let inside = |pos: egui::Pos2| bounds.is_some_and(|rect| rect.contains(pos));
+    if !input.primary_released {
         widgets::organization_drag_preview(ctx, p, egui::Id::unique("build-detach-drag"), title(block));
         if pointer.is_some_and(inside) {
             ctx.set_cursor_icon(egui::CursorIcon::NotAllowed);
@@ -262,13 +268,17 @@ pub(super) fn finish(ctx: &egui::Context, p: &Palette, tool: &mut BuildTool, s: 
         tool.ui.detach_fit.insert(block, FIT_FRAMES);
     }
     // The title bar under the pointer, as if the block were carried by it.
-    let corner = pos - egui::vec2(40.0, 14.0);
-    let screen = ctx.content_rect();
-    let corner = egui::pos2(
-        corner.x.clamp(screen.left(), (screen.right() - size.x).max(screen.left())),
-        corner.y.clamp(screen.top(), (screen.bottom() - size.y).max(screen.top())),
-    );
-    widgets::place_floater(ctx, id, corner, size);
+    // A desktop inspector reports client-local coordinates. Its new section
+    // uses its normal viewer placement instead of treating those as viewer points.
+    if in_viewer {
+        let corner = pos - egui::vec2(40.0, 14.0);
+        let screen = ctx.content_rect();
+        let corner = egui::pos2(
+            corner.x.clamp(screen.left(), (screen.right() - size.x).max(screen.left())),
+            corner.y.clamp(screen.top(), (screen.bottom() - size.y).max(screen.top())),
+        );
+        widgets::place_floater(ctx, id, corner, size);
+    }
     s.detached.insert(block, true);
     if block.tab() == Some(tool.tab) {
         // The build window shows the next section left in it.
